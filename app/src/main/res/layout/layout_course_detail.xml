@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/windowBackground">
+
+    <LinearLayout
+        android:id="@+id/layoutInnerCourseView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <include
+            layout="@layout/item_detailed_course_card"
+            android:id="@+id/includedDetailedCourseCardFromCourseDetailLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp" />
+
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardCourseUtils"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="#243228"
+            app:strokeWidth="1dp"
+            app:strokeColor="#1AFFFFFF">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="8dp"
+                android:animateLayoutChanges="true"
+                android:clickable="true"
+                android:focusable="true">
+
+                <RelativeLayout
+                    android:id="@+id/layoutUtilsHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackground">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_centerVertical="true"
+                        android:layout_marginStart="12dp"
+                        android:text="Course Management"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.1"
+                        android:textColor="?attr/colorPrimary" />
+
+                    <ImageView
+                        android:id="@+id/imgUtilsExpandIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
+                        android:layout_marginEnd="8dp"
+                        android:src="@drawable/ic_add"
+                        app:tint="?attr/actionItemColor" />
+                </RelativeLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutUtilsContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCourseStats"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="View Student Statistics"
+                        android:textAlignment="viewStart"
+                        android:paddingStart="12dp"
+                        app:icon="@drawable/ic_view"
+                        app:iconPadding="16dp"
+                        android:textColor="?attr/actionItemColor"
+                        app:tint="?attr/actionItemColor"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnImportSchedule"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Import Session Schedule"
+                        android:textAlignment="viewStart"
+                        android:paddingStart="12dp"
+                        app:icon="@drawable/ic_import"
+                        app:iconPadding="16dp"
+                        android:textColor="?attr/actionItemColor"
+                        app:tint="?attr/actionItemColor"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnExportCourse"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Export Full Roster (CSV)"
+                        android:textAlignment="viewStart"
+                        android:paddingStart="12dp"
+                        app:icon="@drawable/ic_export"
+                        app:iconPadding="16dp"
+                        android:textColor="?attr/actionItemColor"
+                        app:tint="?attr/actionItemColor"/>
+
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <TextView
+            android:id="@+id/txtSessionsLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sessions"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp"
+            android:textColor="?android:attr/textColorPrimary"/>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false">>
+            <LinearLayout
+                android:id="@+id/sessionContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="75dp"/>
+        </ScrollView>
+    </LinearLayout>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnAddSession"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="24dp"
+        app:srcCompat="@drawable/ic_add"
+        app:backgroundTint="?attr/cardBackgroundColor"
+        app:tint="?attr/actionItemColor"
+        app:strokeColor="?attr/cardFrameColor"/>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

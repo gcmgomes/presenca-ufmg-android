@@ -1,0 +1,25 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.Presensor" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/chalk_white</item>
+        <item name="colorOnPrimary">@color/blackboard_green</item>
+
+        <item name="android:windowBackground">@color/blackboard_green</item>
+        <item name="colorSurface">@color/surface_dark</item>
+
+        <item name="android:statusBarColor">#141D16</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/chalk_white</item>
+        <item name="android:textColorSecondary" format="color">@color/chalk_blue</item>
+        <item name="timestampColor" format="color">@color/chalk_teal</item>
+        <item name="actionItemColor" format="color">@color/chalk_blue</item>
+        <item name="descriptiveTextColor" format="color">@color/chalk_orange</item>
+        <item name="cardFrameColor" format="color">@color/blackboard_frame</item>
+        <item name="cardBackgroundColor" format="color">@color/blackboard_lighter_green</item>
+
+        <item name="studentSkippedClassColor" format="color">@color/chalk_red</item>
+        <item name="studentAttendedClassColor" format="color">@color/chalk_green</item>
+    </style>
+
+    <style name="Theme.Presensor" parent="Base.Theme.Presensor" />
+</resources>

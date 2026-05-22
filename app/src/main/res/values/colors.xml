@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="my_brand_blue">#2196F3</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="teal_200">#80CBC4</color>
+    <item name="text_secondary" type="color">#757575</item>
+    <item name="divider_color" type="color">#E0E0E0</item>
+    <item name="card_surface" type="color">#FFFFFF</item>
+    <item name="lightStatusBarColor" type="color">#FFFFFF</item>
+    <item name="darkStatusBarColor" type="color">#000000</item>
+
+    <color name="blackboard_green">#1B261E</color>
+    <color name="blackboard_lighter_green">#243228</color>
+    <color name="blackboard_frame">#40FFFFFF</color>
+
+
+    <color name="chalk_white">#F5F5F5</color>
+    <color name="chalk_yellow">#FFF59D</color>
+
+    <color name="chalk_blue">#81D4FA</color>
+    <color name="chalk_pink">#F48FB1</color>
+    <color name="chalk_red">#EF9A9A</color>
+    <color name="chalk_orange">#FFCC80</color>
+    <color name="chalk_green">#C5E1A5</color>
+    <color name="chalk_teal">#80CBC4</color>
+    <color name="chalk_purple">#B39DDB</color>
+    <color name="chalk_tan">#D7CCC8</color>
+
+    <array name="chalk_colors_list">
+        <item>@color/chalk_red</item>
+        <item>@color/chalk_orange</item>
+        <item>@color/chalk_yellow</item>
+        <item>@color/chalk_green</item>
+        <item>@color/chalk_teal</item>
+        <item>@color/chalk_blue</item>
+        <item>@color/chalk_purple</item>
+        <item>@color/chalk_pink</item>
+        <item>@color/chalk_tan</item>
+    </array>
+
+    <color name="background_dark">@color/blackboard_green</color>
+    <color name="surface_dark">#243027</color>
+</resources>

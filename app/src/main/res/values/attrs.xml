@@ -1,0 +1,9 @@
+<resources>
+    <attr name="timestampColor" format="color" />
+    <attr name="actionItemColor" format="color" />
+    <attr name="descriptiveTextColor" format="color" />
+    <attr name="cardFrameColor" format="color" />
+    <attr name="cardBackgroundColor" format="color" />
+    <attr name="studentSkippedClassColor" format="color" />
+    <attr name="studentAttendedClassColor" format="color" />
+</resources>

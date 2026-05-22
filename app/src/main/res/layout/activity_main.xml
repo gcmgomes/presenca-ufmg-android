@@ -1,0 +1,40 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="false">
+
+    <LinearLayout
+        android:id="@+id/layoutUniversalContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <include
+            android:id="@+id/layoutDashboardView"
+            layout="@layout/layout_dashboard" />
+
+        <include
+            android:id="@+id/layoutCourseView"
+            layout="@layout/layout_course_detail"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/layoutSessionView"
+            layout="@layout/layout_session_detail"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/layoutCourseStatisticsView"
+            layout="@layout/layout_course_statistics"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View
+        android:id="@+id/statusBarBackground"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:elevation="10dp"
+        android:background="?android:attr/statusBarColor"/>
+
+</FrameLayout>
