@@ -111,7 +111,7 @@ object CourseUtilities {
                 val wasPresent = allAttendance.any {
                     it.studentEmail == student.email && it.sessionName == session.name
                 }
-                csvBuilder.append(if (wasPresent) ",P" else ",")
+                csvBuilder.append(if (wasPresent) ",1" else ",0")
             }
             csvBuilder.append("\n")
         }

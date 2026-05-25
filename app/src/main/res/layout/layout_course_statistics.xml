@@ -26,7 +26,7 @@
         app:cardBackgroundColor="?attr/cardBackgroundColor">
 
         <androidx.appcompat.widget.SearchView
-            android:id="@+id/searchStudents"
+            android:id="@+id/searchStudentsAttendance"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:iconifiedByDefault="false"

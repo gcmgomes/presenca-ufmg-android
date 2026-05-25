@@ -21,6 +21,7 @@ import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -73,6 +74,14 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var dashboardView: View
     private lateinit var layoutCourseView: View
     private lateinit var layoutSessionView: View
+
+
+    // Cache storage for the currently active course statistics state
+    private var cachedActiveStudents: List<Student> = emptyList()
+    private var cachedAllSessions: List<Session> = emptyList()
+    private var cachedAllAttendance: List<AttendanceRecord> = emptyList()
+    private var cachedSessionIds: List<Long> = emptyList()
+    private var currentStatsView: View? = null
 
 
 
@@ -183,6 +192,8 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         currentState = AppState.COURSE
         toggleAllViews(layoutCourseView = true)
         courseController.refreshCourseUI()
+        loadDetailedCourseData()
+
     }
 
     private fun toggleAllViews(layoutDashboardView: Boolean = false, layoutCourseView: Boolean = false, layoutSessionView: Boolean = false, layoutCourseStatisticsView: Boolean = false) {
@@ -315,41 +326,94 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         return typedValue.data
     }
 
-    private fun openCourseStatistics() {
+    private fun loadDetailedCourseData() {
         val course = courseController.getSelectedCourse() ?: return
-        currentState = AppState.COURSE_STATS
-        val container = findViewById<LinearLayout>(R.id.layoutCourseStatisticsView)
-        toggleAllViews(layoutCourseStatisticsView = true)
-        container.removeAllViews()
-
-        val statsView = layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
-        container.addView(statsView)
-
         lifecycleScope.launch(Dispatchers.IO) {
-            val nowMillis = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            val allSessions = db.dao().getSessionsByCourse(course.id).filter { it.date <= nowMillis }
+            val nowMillis =
+                LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+            val sessionsDeferred = async(Dispatchers.IO) { db.dao().getSessionsByCourse(course.id) }
+
+            val allSessions = sessionsDeferred.await().filter { it.date <= nowMillis }
+
             val sessionIds = allSessions.map { it.id }
 
-            val allAttendance = mutableListOf<AttendanceRecord>()
-            sessionIds.forEach { sid -> allAttendance.addAll(db.dao().getAttendanceRecordsForSession(sid)) }
+            val attendanceDeferred = async(Dispatchers.IO) {
+                db.dao().getAllAttendanceForCourse(course.id)
+            }
+
+
+            val allAttendance = attendanceDeferred.await()
 
             val attendeeEmails = allAttendance.map { it.studentEmail }.distinct()
             val activeStudents = db.dao().getAllStudents().filter { it.email in attendeeEmails }
 
-            // Delegate statistical card numbers using the course controller helper
+            cachedActiveStudents = activeStudents
+            cachedAllSessions = allSessions
+            cachedAllAttendance = allAttendance
+            cachedSessionIds = sessionIds
+        }
+    }
+
+    private fun setupDetailedCourseView(statsView: View) {
+        val course = courseController.getSelectedCourse() ?: return
+        currentStatsView = statsView
+
+        val detailedCourseSearchView = statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
+        detailedCourseSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean = false
+            override fun onQueryTextChange(newText: String?): Boolean {
+                refreshCourseAttendanceList(newText ?: "")
+                return true
+            }
+        })
+
+        lifecycleScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) {
-                courseController.fillCourseDetailedCardStatistics(statsView, course, sessionIds, attendeeEmails, allAttendance)
+
 
                 val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
                 rv.layoutManager = LinearLayoutManager(this@MainActivity)
+
+                // Instantiated EXACTLY once
                 rv.adapter = StudentStatsAdapter(
-                    activeStudents, allSessions, allAttendance, sessionIds,
+                    cachedActiveStudents, cachedAllSessions, cachedAllAttendance, cachedSessionIds,
                     getColorFromAttr = { attr -> getColorFromAttr(attr) },
                     makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter() },
                     fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) }
                 )
             }
         }
+    }
+
+    private fun refreshCourseAttendanceList(filter: String = "") {
+        val statsView = currentStatsView ?: return
+
+        val filteredStudents = if (filter.isEmpty()) {
+            cachedActiveStudents
+        } else {
+            cachedActiveStudents.filter { it.name.contains(filter, ignoreCase = true) }
+        }
+
+        val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
+
+        // Safely cast the existing adapter and update its list internal pointers instantly
+        (rv.adapter as? StudentStatsAdapter)?.updateData(filteredStudents)
+    }
+
+    private fun openCourseStatistics() {
+        val course = courseController.getSelectedCourse() ?: return
+        currentState = AppState.COURSE_STATS
+        val container = findViewById<LinearLayout>(R.id.layoutCourseStatisticsView)
+        container.removeAllViews()
+        toggleAllViews()
+
+        val statsView = layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
+        container.addView(statsView)
+        setupDetailedCourseView(statsView)
+        refreshCourseAttendanceList()
+        courseController.fillCourseDetailedCardStatistics(statsView, course, cachedSessionIds, cachedActiveStudents.map{it.email}, cachedAllAttendance)
+        toggleAllViews(layoutCourseStatisticsView = true)
     }
 
     private fun getColorForAccent(courseName: String): Int {
