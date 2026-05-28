@@ -99,6 +99,7 @@ class CourseController(
         return txtName?.text?.toString() ?: "Attendance"
     }
 
+    // move this to appdatabase.kt
     fun loadSessionsFromDb(course: Course) {
         lifecycleOwner.lifecycleScope.launch {
             val sessionsDeferred = async(Dispatchers.IO) { db.dao().getSessionsByCourse(course.id) }
@@ -116,7 +117,7 @@ class CourseController(
             val attendeeEmails = allAttendance.filter { pastSessionIds.contains(it.sessionId) }.map { it.studentEmail }.distinct()
 
             val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
-            fillCourseDetailedCardStatistics(layoutCourseView, course, sessionIds, attendeeEmails, allAttendance)
+            fillCourseDetailedCardStatistics(layoutCourseView, course, sessionIds.toSet(), attendeeEmails, allAttendance)
         }
     }
 
@@ -125,7 +126,7 @@ class CourseController(
         selectedCourse?.let { loadSessionsFromDb(it) }
     }
 
-    fun fillCourseDetailedCardStatistics(card: View, course: Course, sessionIds: List<Long>, studentEmails: List<String>, courseAttendances: List<AttendanceRecord>) {
+    fun fillCourseDetailedCardStatistics(card: View, course: Course, sessionIds: Set<Long>, studentEmails: List<String>, courseAttendances: List<AttendanceRecord>) {
         card.findViewById<TextView>(R.id.txtDetailCourseName).text = course.name
         card.findViewById<TextView>(R.id.txtDetailCourseSemester).text = CourseUtilities.formatYearSemester(course.year, course.semester)
         card.findViewById<View>(R.id.viewCourseDetailAccent).setBackgroundColor(getColorForAccent(course.name))

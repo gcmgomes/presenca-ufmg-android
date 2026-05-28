@@ -18,7 +18,7 @@ class StudentStatsAdapter(
     private var activeStudents: List<Student>, // Changed from val to var to allow dataset updates
     private val allSessions: List<Session>,
     private val allAttendance: List<AttendanceRecord>,
-    private val sessionIds: List<Long>,
+    private val sessionIds: Set<Long>,
     private val getColorFromAttr: (Int) -> Int,
     private val makeSessionTimeFormatter: () -> DateTimeFormatter,
     private val fromMillisToLocalDate: (Long) -> LocalDate

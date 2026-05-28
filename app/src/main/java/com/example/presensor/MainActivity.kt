@@ -76,11 +76,6 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var layoutSessionView: View
 
 
-    // Cache storage for the currently active course statistics state
-    private var cachedActiveStudents: List<Student> = emptyList()
-    private var cachedAllSessions: List<Session> = emptyList()
-    private var cachedAllAttendance: List<AttendanceRecord> = emptyList()
-    private var cachedSessionIds: List<Long> = emptyList()
     private var currentStatsView: View? = null
 
 
@@ -336,7 +331,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
             val allSessions = sessionsDeferred.await().filter { it.date <= nowMillis }
 
-            val sessionIds = allSessions.map { it.id }
+            val sessionIds = allSessions.map { it.id }.toSet()
 
             val attendanceDeferred = async(Dispatchers.IO) {
                 db.dao().getAllAttendanceForCourse(course.id)
@@ -348,10 +343,12 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             val attendeeEmails = allAttendance.map { it.studentEmail }.distinct()
             val activeStudents = db.dao().getAllStudents().filter { it.email in attendeeEmails }
 
-            cachedActiveStudents = activeStudents
-            cachedAllSessions = allSessions
-            cachedAllAttendance = allAttendance
-            cachedSessionIds = sessionIds
+            db.getCourseCache().courseId = course.id
+            db.getCourseCache().activeStudents = activeStudents
+            db.getCourseCache().activeStudentEmails = attendeeEmails.toSet()
+            db.getCourseCache().allSessions = allSessions
+            db.getCourseCache().allAttendance = allAttendance
+            db.getCourseCache().sessionIds = sessionIds
         }
     }
 
@@ -377,7 +374,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
                 // Instantiated EXACTLY once
                 rv.adapter = StudentStatsAdapter(
-                    cachedActiveStudents, cachedAllSessions, cachedAllAttendance, cachedSessionIds,
+                    db.getCourseCache().activeStudents, db.getCourseCache().allSessions, db.getCourseCache().allAttendance, db.getCourseCache().sessionIds,
                     getColorFromAttr = { attr -> getColorFromAttr(attr) },
                     makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter() },
                     fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) }
@@ -389,11 +386,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private fun refreshCourseAttendanceList(filter: String = "") {
         val statsView = currentStatsView ?: return
 
-        val filteredStudents = if (filter.isEmpty()) {
-            cachedActiveStudents
-        } else {
-            cachedActiveStudents.filter { it.name.contains(filter, ignoreCase = true) }
-        }
+        val filteredStudents = db.getCourseCache().getFilteredStudents(filter)
 
         val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
 
@@ -412,7 +405,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         container.addView(statsView)
         setupDetailedCourseView(statsView)
         refreshCourseAttendanceList()
-        courseController.fillCourseDetailedCardStatistics(statsView, course, cachedSessionIds, cachedActiveStudents.map{it.email}, cachedAllAttendance)
+        courseController.fillCourseDetailedCardStatistics(statsView, course, db.getCourseCache().sessionIds, db.getCourseCache().activeStudents.map{it.email}, db.getCourseCache().allAttendance)
         toggleAllViews(layoutCourseStatisticsView = true)
     }
 
@@ -438,17 +431,9 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
                     defaultSessionName = "Class $count",
                     isDialogOpenSetter = { isDialogOpen = it },
                     onSessionCreated = { sessionName, dateMillis ->
-                        lifecycleScope.launch {
-                            db.dao().insertSession(
-                                Session(
-                                    courseId = courseId,
-                                    name = sessionName,
-                                    date = CourseUtilities.fromMillisToLocalDate(dateMillis)
-                                        .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                )
-                            )
-                            courseController.refreshCourseUI()
-                        }
+                        db.insertSession(lifecycleScope, courseId, sessionName, CourseUtilities.fromMillisToLocalDate(dateMillis)
+                            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                        courseController.refreshCourseUI()
                     }
                 )
             }
