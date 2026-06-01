@@ -1,7 +1,9 @@
 package com.example.presensor
 
 import android.content.ContentResolver
+import android.content.res.TypedArray
 import android.net.Uri
+import android.widget.ImageView
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -17,17 +19,76 @@ import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.AttendanceRecord
+import java.nio.charset.StandardCharsets
+import java.time.ZoneOffset
 
 object CourseUtilities {
 
-    fun parseSessionsFromCsv(contentResolver: ContentResolver, uri: Uri, courseId: Long): List<Session> {
+    private fun parseSessionCsvLine(line: String): List<String> {
+        val tokens = mutableListOf<String>()
+        var currentToken = StringBuilder()
+        var inQuotes = false
+
+        // Determine delimiter dynamically per line row context
+        val delimiter = if (line.contains(";")) ';' else ','
+
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (c == '"') {
+                // Check for escaped quotes ("") inside a quoted block
+                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                    currentToken.append('"')
+                    i++ // Skip next quote character
+                } else {
+                    inQuotes = !inQuotes // Toggle quote state machine flag
+                }
+            } else if ((c == delimiter) && !inQuotes) {
+                tokens.add(currentToken.toString().trim())
+                currentToken.setLength(0) // Reset builder buffer
+            } else {
+                currentToken.append(c)
+            }
+            i++
+        }
+        tokens.add(currentToken.toString().trim())
+        return tokens
+    }
+
+    fun parseSessionsFromCsv(
+        contentResolver: ContentResolver,
+        uri: Uri,
+        courseId: Long
+    ): List<Session> {
         val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val sessionsToInsert = mutableListOf<Session>()
 
         contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.bufferedReader().useLines { lines ->
-                lines.drop(1).forEach { line ->
-                    val tokens = line.split(Regex("[,;]")).map { it.trim() }
+            // Force the InputStreamReader wrapper explicitly to eliminate internal system-default fallback variations
+            val reader = java.io.BufferedReader(
+                java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8)
+            )
+
+            var isFirstLine = true
+
+            reader.use { bufferedReader ->
+                var line: String? = bufferedReader.readLine()
+
+                while (line != null) {
+                    // 1. Clean up Excel/Google Sheets BOM character immediately on the absolute first line
+                    if (isFirstLine) {
+                        if (line.startsWith("\uFEFF")) {
+                            line = line.substring(1)
+                        }
+                        isFirstLine = false
+
+                        // Skip processing the header row entirely
+                        line = bufferedReader.readLine()
+                        continue
+                    }
+
+                    // Split safely by both Comma and Semicolon formats
+                    val tokens = parseSessionCsvLine(line)
 
                     if (tokens.size >= 2) {
                         var sessionName = ""
@@ -41,12 +102,14 @@ object CourseUtilities {
                                 localDate = firstTokenDate
                                 sessionName = tokens[1]
                             }
+
                             secondTokenDate != null -> {
                                 localDate = secondTokenDate
                                 sessionName = tokens[0]
                             }
                         }
 
+                        // Clean string layout values directly before saving them down into Room data trees
                         if (localDate != null && sessionName.isNotEmpty()) {
                             val timestamp = localDate.atStartOfDay(ZoneId.systemDefault())
                                 .toInstant()
@@ -61,6 +124,9 @@ object CourseUtilities {
                             )
                         }
                     }
+
+                    // Advance the reader loop safely
+                    line = bufferedReader.readLine()
                 }
             }
         }
@@ -70,9 +136,13 @@ object CourseUtilities {
     fun parseStudentsFromCsv(contentResolver: ContentResolver, uri: Uri): List<Student> {
         val students = mutableListOf<Student>()
         contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.bufferedReader().useLines { lines ->
+            inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
                 lines.forEachIndexed { index, line ->
-                    if (line.isBlank() || (index == 0 && line.contains("email", ignoreCase = true))) {
+                    if (line.isBlank() || (index == 0 && line.contains(
+                            "email",
+                            ignoreCase = true
+                        ))
+                    ) {
                         return@forEachIndexed
                     }
 
@@ -90,7 +160,12 @@ object CourseUtilities {
         return students
     }
 
-    fun generateCsvString(course: Course, allSessions: List<Session>, allAttendance: List<AttendanceRecord>, allStudents: List<Student>): String {
+    fun generateCsvString(
+        course: Course,
+        allSessions: List<Session>,
+        allAttendance: List<AttendanceRecord>,
+        allStudents: List<Student>
+    ): String {
         val csvBuilder = StringBuilder()
 
         val activeEmails = allAttendance.map { it.studentEmail }.toSet()
@@ -134,10 +209,8 @@ object CourseUtilities {
         return !targetDate.isBefore(startOfWeek) && !targetDate.isAfter(endOfWeek)
     }
 
-    fun fromMillisToLocalDate(date: Long): LocalDate {
-        return Instant.ofEpochMilli(date)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
+    fun fromMillisToLocalDate(utcMillis: Long): LocalDate {
+        return Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
     }
 
     fun fromMillisToLocalDateTime(millis: Long): LocalDateTime {
@@ -153,5 +226,36 @@ object CourseUtilities {
 
     fun formatYearSemester(year: Int, semester: Int): String {
         return "$year/$semester"
+    }
+
+    fun updateLockIconUI(isLocked: Boolean, lockIcon: ImageView) {
+        if (isLocked) {
+            lockIcon.setImageResource(R.drawable.status_lock)
+            lockIcon.alpha = 1.0f
+        } else {
+            lockIcon.setImageResource(R.drawable.status_unlock)
+            lockIcon.alpha = 0.5f
+        }
+    }
+
+
+    fun updateEditIconUI(isLocked: Boolean, editIcon: ImageView) {
+        if (isLocked) {
+            editIcon.setImageResource(R.drawable.ic_edit)
+            editIcon.alpha = 0.4f
+        } else {
+            editIcon.setImageResource(R.drawable.ic_edit)
+            editIcon.alpha = 1.0f
+        }
+    }
+
+
+    fun getColorForAccent(courseName: String, colorArray: TypedArray): Int {
+        val colors = IntArray(colorArray.length())
+        for (i in 0 until colorArray.length()) {
+            colors[i] = colorArray.getColor(i, 0)
+        }
+        colorArray.recycle()
+        return colors[Math.abs(courseName.hashCode()) % colors.size]
     }
 }

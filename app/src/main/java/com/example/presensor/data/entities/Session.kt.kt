@@ -6,11 +6,12 @@ import androidx.room.PrimaryKey
 
 @Entity(
     indices = [Index(value = ["courseId"])]
-) data class Session(
+)
+data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val courseId: Long,
-    val name: String,
-    val date: Long,
-    val isLocked: Boolean = false
+    var name: String,
+    var date: Long,
+    var isLocked: Boolean = false
 )
 

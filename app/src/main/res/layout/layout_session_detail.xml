@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -48,13 +47,15 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:layout_alignParentStart="true"
-                        android:layout_toStartOf="@id/imgMasterLock">
+                        android:layout_toStartOf="@id/btnEditSessionInternal">
 
                         <TextView
                             android:id="@+id/txtSessionTitle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Class 1"
+                            android:maxLines="2"
+                            android:ellipsize="end"
                             android:textColor="?attr/colorPrimary"
                             android:textSize="24sp"
                             android:textStyle="bold" />
@@ -68,6 +69,20 @@
                             android:textColor="?attr/descriptiveTextColor"
                             android:textSize="14sp" />
                     </LinearLayout>
+
+                    <ImageView
+                        android:id="@+id/btnEditSessionInternal"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_centerVertical="true"
+                        android:layout_toStartOf="@id/imgMasterLock"
+                        android:layout_marginEnd="16dp"
+                        android:padding="4dp"
+                        android:src="@drawable/ic_edit"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        app:tint="?attr/actionItemColor" />
 
                     <ImageView
                         android:id="@+id/imgMasterLock"
@@ -103,5 +118,15 @@
                 android:paddingBottom="100dp" />
         </androidx.core.widget.NestedScrollView>
     </LinearLayout>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnRegisterManualAttendance"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="24dp"
+        app:srcCompat="@drawable/ic_add"
+        app:backgroundTint="?attr/cardBackgroundColor"
+        app:tint="?attr/actionItemColor" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

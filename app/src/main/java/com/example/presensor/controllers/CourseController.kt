@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
 import com.example.presensor.CourseUtilities
+import com.example.presensor.DialogFactory
 import com.example.presensor.MainUiBinder
 import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.data.AppDatabase
@@ -35,6 +36,7 @@ import com.example.presensor.data.entities.AttendanceRecord
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,8 +49,8 @@ class CourseController(
     private var selectedCourse: Course?,
     private val db: AppDatabase,
     private val onSessionSelected: (Session) -> Unit,
-    private val onSessionLongClicked: (Session) -> Unit,
     private val onToggleLockRequested: (Session, ImageView) -> Unit,
+    private val onEditSessionRequested: (Session, ImageView) -> Unit,
     private val onOpenStatistics: () -> Unit,
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
@@ -59,16 +61,18 @@ class CourseController(
     private val btnCourseStats: Button = activity.findViewById(R.id.btnCourseStats)
     private val btnImportSchedule: MaterialButton = activity.findViewById(R.id.btnImportSchedule)
 
-    private val importSessionLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            result.data?.data?.let { uri -> importSessionsFromCsv(uri, selectedCourse!!.id) }
+    private val importSessionLauncher =
+        activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                result.data?.data?.let { uri -> importSessionsFromCsv(uri, selectedCourse!!.id) }
+            }
         }
-    }
 
 
-    private val exportLauncher = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        uri?.let { performExport(it) }
-    }
+    private val exportLauncher =
+        activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+            uri?.let { performExport(it) }
+        }
 
     init {
         setupCourseUtilsAccordion()
@@ -79,9 +83,47 @@ class CourseController(
         return selectedCourse
     }
 
-    fun setSelectedCourse(course: Course?) {
+    private fun setSelectedCourse(course: Course?) {
         selectedCourse = course
     }
+
+    fun prepare(course: Course?): Job? {
+        if (course == null) return null
+
+        setSelectedCourse(course)
+
+        // Return the Job reference to the caller
+        return lifecycleOwner.lifecycleScope.launch {
+            db.loadSessionsForCourse(course)
+        }
+    }
+
+    fun clear() {
+        selectedCourse = null
+    }
+
+
+    fun showCreateSessionDialog() {
+        val courseId = getSelectedCourse()!!.id
+        lifecycleOwner.lifecycleScope.launch {
+            val count = db.getCourseCache().allSessions.size + 1
+            withContext(Dispatchers.Main) {
+                DialogFactory.showCreateSessionDialog(
+                    context = activity,
+                    layoutInflater = layoutInflater,
+                    fragmentManager = activity.supportFragmentManager,
+                    defaultSessionName = "Class $count",
+                    onSessionCreated = { sessionName, dateMillis ->
+                        addSession(
+                            courseId, sessionName, CourseUtilities.fromMillisToLocalDate(dateMillis)
+                                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        )
+                    }
+                )
+            }
+        }
+    }
+
 
     private fun setupOnClickListeners() {
         btnCourseStats.setOnClickListener { onOpenStatistics() }
@@ -99,44 +141,48 @@ class CourseController(
         return txtName?.text?.toString() ?: "Attendance"
     }
 
-    // move this to appdatabase.kt
-    fun loadSessionsFromDb(course: Course) {
+    fun addSession(courseId: Long, sessionName: String, date: Long) {
         lifecycleOwner.lifecycleScope.launch {
-            val sessionsDeferred = async(Dispatchers.IO) { db.dao().getSessionsByCourse(course.id) }
-            val attendanceDeferred = async(Dispatchers.IO) { db.dao().getAllAttendanceForCourse(course.id) }
-
-            val sessions = sessionsDeferred.await().sortedByDescending { it.date }
-            val allAttendance = attendanceDeferred.await()
-
-            val nowMillis = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            val pastSessionIds = sessions.filter { it.date <= nowMillis }.map { it.id }.toSet()
-
-            refreshSessionsList(sessions)
-
-            val sessionIds = sessions.filter { it.date <= nowMillis }.map { it.id }
-            val attendeeEmails = allAttendance.filter { pastSessionIds.contains(it.sessionId) }.map { it.studentEmail }.distinct()
-
-            val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
-            fillCourseDetailedCardStatistics(layoutCourseView, course, sessionIds.toSet(), attendeeEmails, allAttendance)
+            db.insertSession(courseId, sessionName, date)
+            refreshCourseUI()
         }
     }
 
-
     fun refreshCourseUI() {
-        selectedCourse?.let { loadSessionsFromDb(it) }
+        selectedCourse?.let {
+            refreshSessionsList(db.getCourseCache().allSessions)
+            val cache = db.getCourseCache()
+            val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
+            fillCourseDetailedCardStatistics(
+                layoutCourseView,
+                selectedCourse!!,
+                cache.sessionIds,
+                cache.activeStudentEmails,
+                cache.allAttendance
+            )
+        }
     }
 
-    fun fillCourseDetailedCardStatistics(card: View, course: Course, sessionIds: Set<Long>, studentEmails: List<String>, courseAttendances: List<AttendanceRecord>) {
+    fun fillCourseDetailedCardStatistics(
+        card: View,
+        course: Course,
+        sessionIds: Set<Long>,
+        studentEmails: Set<String>,
+        courseAttendances: List<AttendanceRecord>
+    ) {
         card.findViewById<TextView>(R.id.txtDetailCourseName).text = course.name
-        card.findViewById<TextView>(R.id.txtDetailCourseSemester).text = CourseUtilities.formatYearSemester(course.year, course.semester)
-        card.findViewById<View>(R.id.viewCourseDetailAccent).setBackgroundColor(getColorForAccent(course.name))
+        card.findViewById<TextView>(R.id.txtDetailCourseSemester).text =
+            CourseUtilities.formatYearSemester(course.year, course.semester)
+        card.findViewById<View>(R.id.viewCourseDetailAccent)
+            .setBackgroundColor(getColorForAccent(course.name))
 
         val studentCount = studentEmails.size
         val sessionCount = sessionIds.size
 
         val avgAttendance = if (studentCount > 0 && sessionCount > 0) {
             val totalPossible = studentCount * sessionCount
-            val actualLogs = courseAttendances.map { it.sessionId to it.studentEmail }.distinct().size
+            val actualLogs =
+                courseAttendances.map { it.sessionId to it.studentEmail }.distinct().size
             (actualLogs.toFloat() / totalPossible.toFloat() * 100).toInt()
         } else {
             0
@@ -150,9 +196,21 @@ class CourseController(
     private fun refreshSessionsList(sessions: List<Session>) {
         sessionContainer.removeAllViews()
 
-        val thisWeekSessions = sessions.filter { CourseUtilities.isDateInCurrentWeek(CourseUtilities.fromMillisToLocalDate(it.date)) }
-        val upcomingSessions = sessions.filter { !CourseUtilities.isDateInCurrentWeek(CourseUtilities.fromMillisToLocalDate(it.date)) && CourseUtilities.fromMillisToLocalDate(it.date).isAfter(LocalDate.now()) }
-        val pastSessions = sessions.filter { !CourseUtilities.isDateInCurrentWeek(CourseUtilities.fromMillisToLocalDate(it.date)) && CourseUtilities.fromMillisToLocalDate(it.date).isBefore(LocalDate.now()) }.sortedBy { it.date }
+        val thisWeekSessions = sessions.filter {
+            CourseUtilities.isDateInCurrentWeek(
+                CourseUtilities.fromMillisToLocalDate(it.date)
+            )
+        }
+        val upcomingSessions = sessions.filter {
+            !CourseUtilities.isDateInCurrentWeek(
+                CourseUtilities.fromMillisToLocalDate(it.date)
+            ) && CourseUtilities.fromMillisToLocalDate(it.date).isAfter(LocalDate.now())
+        }
+        val pastSessions = sessions.filter {
+            !CourseUtilities.isDateInCurrentWeek(
+                CourseUtilities.fromMillisToLocalDate(it.date)
+            ) && CourseUtilities.fromMillisToLocalDate(it.date).isBefore(LocalDate.now())
+        }.sortedBy { it.date }
 
         addSessionsToCourseView("This week", thisWeekSessions)
         addSessionsToCourseView("Upcoming sessions", upcomingSessions)
@@ -166,33 +224,51 @@ class CourseController(
         }
     }
 
+
+    private fun showDeleteSessionDialog(session: Session) {
+        DialogFactory.showDestructiveDeleteDialog(
+            context = activity,
+            title = "Final Confirmation",
+            message = "You are about to delete '${session.name}'. This action is permanent. Please type DELETE below:",
+            onConfirmed = {
+                lifecycleOwner.lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        db.deleteSession(session)
+                    }
+                    refreshCourseUI()
+                    Toast.makeText(activity, "Session permanently removed", Toast.LENGTH_SHORT)
+                        .show()
+                }
+            }
+        )
+    }
+
     private fun addSessionCardToContainer(session: Session) {
         val itemView = layoutInflater.inflate(R.layout.item_session_card, sessionContainer, false)
         val dateFormat = CourseUtilities.makeSessionTimeFormatter()
 
         val imgLock = itemView.findViewById<ImageView>(R.id.imgSessionLockOnSessionView)
-        itemView.findViewById<View>(R.id.viewSessionAccent).setBackgroundColor(getColorForAccent(session.name))
+        itemView.findViewById<View>(R.id.viewSessionAccent)
+            .setBackgroundColor(getColorForAccent(session.name))
         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
-        itemView.findViewById<TextView>(R.id.txtSessionDetails).text = CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)
+        itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
+            CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)
 
-        updateLockIconUI(session.isLocked, imgLock)
+
+
+        CourseUtilities.updateLockIconUI(session.isLocked, imgLock)
         imgLock.setOnClickListener { onToggleLockRequested(session, imgLock) }
+
+        val editBtn = itemView.findViewById<ImageView>(R.id.btnEditSession)
+        CourseUtilities.updateEditIconUI(session.isLocked, editBtn)
+        editBtn.setOnClickListener { onEditSessionRequested(session, editBtn) }
+
         itemView.setOnClickListener { onSessionSelected(session) }
         itemView.setOnLongClickListener {
-            onSessionLongClicked(session)
+            showDeleteSessionDialog(session)
             true
         }
         sessionContainer.addView(itemView)
-    }
-
-    fun updateLockIconUI(isLocked: Boolean, lockIcon: ImageView) {
-        if (isLocked) {
-            lockIcon.setImageResource(R.drawable.status_lock)
-            lockIcon.alpha = 1.0f
-        } else {
-            lockIcon.setImageResource(R.drawable.status_unlock)
-            lockIcon.alpha = 0.5f
-        }
     }
 
     private fun setupCourseUtilsAccordion() {
@@ -236,8 +312,6 @@ class CourseController(
     }
 
 
-
-
     private fun showImportPreview(sessions: List<Session>) {
         val bottomSheet = BottomSheetDialog(activity)
         val view = layoutInflater.inflate(R.layout.layout_import_session_preview, null)
@@ -252,20 +326,23 @@ class CourseController(
         txtImportCount.text = "Found ${sessions.size} sessions."
 
         btnConfirm.setOnClickListener {
-            activity.lifecycleScope.launch { db.dao().insertSessions(sessions) }
-            bottomSheet.dismiss()
-            refreshCourseUI()
-            Toast.makeText(activity, "Imported ${sessions.size} sessions", Toast.LENGTH_SHORT).show()
+            activity.lifecycleScope.launch {
+                db.insertSessions(sessions)
+                bottomSheet.dismiss()
+                refreshCourseUI()
+                Toast.makeText(activity, "Imported ${sessions.size} sessions", Toast.LENGTH_SHORT)
+                    .show()
+            }
         }
         bottomSheet.show()
     }
 
 
-
     private fun importSessionsFromCsv(uri: Uri, courseId: Long) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val sessionsToInsert = CourseUtilities.parseSessionsFromCsv(activity.contentResolver, uri, courseId)
+                val sessionsToInsert =
+                    CourseUtilities.parseSessionsFromCsv(activity.contentResolver, uri, courseId)
                 if (sessionsToInsert.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         showImportPreview(sessionsToInsert)
@@ -278,19 +355,18 @@ class CourseController(
     }
 
 
-
-
-
     private fun triggerImportSessionPicker() {
         if (selectedCourse == null) return
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "text/comma-separated-values"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/csv", "text/comma-separated-values", "text/plain"))
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("text/csv", "text/comma-separated-values", "text/plain")
+            )
         }
         importSessionLauncher.launch(intent)
     }
-
 
 
     private fun performExport(uri: Uri) {
@@ -299,15 +375,33 @@ class CourseController(
             val sessions = db.dao().getSessionsByCourse(course.id).sortedBy { it.date }
             val sessionIds = sessions.map { it.id }
             val allAttendance = mutableListOf<AttendanceRecord>()
-            sessionIds.forEach { sid -> allAttendance.addAll(db.dao().getAttendanceRecordsForSession(sid)) }
+            sessionIds.forEach { sid ->
+                allAttendance.addAll(
+                    db.dao().getAttendanceRecordsForSession(sid)
+                )
+            }
             val allStudents = db.dao().getAllStudents()
 
-            val csvData = CourseUtilities.generateCsvString(course, sessions, allAttendance, allStudents)
+            val csvData =
+                CourseUtilities.generateCsvString(course, sessions, allAttendance, allStudents)
             try {
-                activity.contentResolver.openOutputStream(uri)?.use { it.write(csvData.toByteArray()) }
-                withContext(Dispatchers.Main) { Toast.makeText(activity, "Roster exported!", Toast.LENGTH_SHORT).show() }
+                activity.contentResolver.openOutputStream(uri)
+                    ?.use { it.write(csvData.toByteArray()) }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        activity,
+                        "Roster exported!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { Toast.makeText(activity, "Export failed", Toast.LENGTH_SHORT).show() }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        activity,
+                        "Export failed",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
     }

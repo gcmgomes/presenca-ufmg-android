@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -39,15 +38,18 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:layout_alignParentStart="true"
-                android:layout_toStartOf="@id/imgSessionLockOnSessionView">
+                android:layout_toStartOf="@id/btnEditSession">
 
                 <TextView
                     android:id="@+id/txtSessionName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Class 1"
+                    android:text="Class"
+                    android:maxLines="2"
+                    android:maxWidth="200dp"
                     android:textSize="18sp"
                     android:textStyle="bold"
+                    android:ellipsize="end"
                     android:textColor="?attr/colorPrimary" />
 
                 <TextView
@@ -56,8 +58,21 @@
                     android:layout_height="wrap_content"
                     android:text="Example"
                     android:textColor="?attr/descriptiveTextColor"
-                    android:textSize="14sp"/>
+                    android:textSize="14sp" />
             </LinearLayout>
+
+            <ImageView
+                android:id="@+id/btnEditSession"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_centerVertical="true"
+                android:layout_toStartOf="@id/imgSessionLockOnSessionView"
+                android:layout_marginEnd="16dp"
+                android:src="@drawable/ic_edit"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                app:tint="?attr/actionItemColor" />
 
             <ImageView
                 android:id="@+id/imgSessionLockOnSessionView"

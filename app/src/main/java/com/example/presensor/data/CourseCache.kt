@@ -28,6 +28,46 @@ class CourseCache {
         }
     }
 
+    fun computeFromMinimalData(
+        courseId: Long?,
+        sessions: List<Session>,
+        attendances: List<AttendanceRecord>,
+        students: List<Student>
+    ) {
+        this.courseId = courseId
+        allSessions = sessions
+        allAttendance = attendances
+        activeStudentEmails = allAttendance.map { it.studentEmail }.toSet()
+        activeStudents = students.filter { it.email in activeStudentEmails }
+        sessionIds = allSessions.map { it.id }.toSet()
+    }
+
+    fun deleteSession(session: Session) {
+        computeFromMinimalData(
+            courseId,
+            allSessions.filter { it.id != session.id },
+            allAttendance.filter { it.sessionId != session.id },
+            activeStudents
+        )
+    }
+
+    fun addAttendance(student: Student, session: Session, attendanceRecord: AttendanceRecord) {
+        if (!activeStudentEmails.contains(student.email)) {
+            activeStudents += student
+            activeStudentEmails += student.email
+        }
+        allAttendance += attendanceRecord
+    }
+
+    fun updateSessionLock(sessionId: Long, newStatus: Boolean) {
+        allSessions.find { it.id == sessionId }?.isLocked = newStatus
+    }
+
+    fun updateSession(session: Session) {
+        allSessions.find { it.id == session.id }?.name = session.name
+        allSessions.find { it.id == session.id }?.date = session.date
+    }
+
 
     /**
      * Resets the entire state when navigating away or switching contexts.

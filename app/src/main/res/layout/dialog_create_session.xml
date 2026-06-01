@@ -11,6 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Session Name"
+        android:imeOptions="actionDone"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -22,14 +23,6 @@
     </com.google.android.material.textfield.TextInputLayout>
 
 
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="The name will update automatically based on the type, but you can override it."
-        android:textSize="12sp"
-        android:textColor="@android:color/darker_gray" />
     <!-- Add this below the Session Name TextInputLayout -->
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/tilSessionDate"
