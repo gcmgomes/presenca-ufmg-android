@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -54,7 +53,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_marginStart="12dp"
-                        android:text="Course Management"
+                        android:text="@string/menu_title_course_management"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:textAllCaps="true"
@@ -86,64 +85,66 @@
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="View Student Statistics"
+                        android:text="@string/menu_course_statistics"
                         android:textAlignment="viewStart"
                         android:paddingStart="12dp"
                         app:icon="@drawable/ic_view"
                         app:iconPadding="16dp"
                         android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor"/>
+                        app:tint="?attr/actionItemColor" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnImportSchedule"
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Import Session Schedule"
+                        android:text="@string/menu_course_import"
                         android:textAlignment="viewStart"
                         android:paddingStart="12dp"
                         app:icon="@drawable/ic_import"
                         app:iconPadding="16dp"
                         android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor"/>
+                        app:tint="?attr/actionItemColor" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnExportCourse"
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Export Full Roster (CSV)"
+                        android:text="@string/menu_course_export"
                         android:textAlignment="viewStart"
                         android:paddingStart="12dp"
                         app:icon="@drawable/ic_export"
                         app:iconPadding="16dp"
                         android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor"/>
+                        app:tint="?attr/actionItemColor" />
 
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
         <TextView
             android:id="@+id/txtSessionsLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Sessions"
+            android:text="@string/stats_sessions"
             android:textSize="20sp"
             android:textStyle="bold"
             android:layout_marginTop="8dp"
-            android:textColor="?android:attr/textColorPrimary"/>
+            android:textColor="?android:attr/textColorPrimary" />
 
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false">>
+
             <LinearLayout
                 android:id="@+id/sessionContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingBottom="75dp"/>
+                android:paddingBottom="75dp" />
         </ScrollView>
     </LinearLayout>
 
@@ -156,6 +157,6 @@
         app:srcCompat="@drawable/ic_add"
         app:backgroundTint="?attr/cardBackgroundColor"
         app:tint="?attr/actionItemColor"
-        app:strokeColor="?attr/cardFrameColor"/>
+        app:strokeColor="?attr/cardFrameColor" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

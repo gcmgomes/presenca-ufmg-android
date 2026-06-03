@@ -7,12 +7,15 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isGone
 import androidx.lifecycle.LifecycleOwner
@@ -42,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.math.abs
 
 class CourseController(
     private val activity: AppCompatActivity,
@@ -61,13 +65,14 @@ class CourseController(
     private val btnCourseStats: Button = activity.findViewById(R.id.btnCourseStats)
     private val btnImportSchedule: MaterialButton = activity.findViewById(R.id.btnImportSchedule)
 
+    private val btnEditCourse: ImageView = activity.findViewById<ImageView>(R.id.btnEditCourse)
+
     private val importSessionLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
                 result.data?.data?.let { uri -> importSessionsFromCsv(uri, selectedCourse!!.id) }
             }
         }
-
 
     private val exportLauncher =
         activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
@@ -92,6 +97,12 @@ class CourseController(
 
         setSelectedCourse(course)
 
+        btnEditCourse.setOnClickListener {
+            showEditCourseDialog(selectedCourse!!) {
+                refreshCourseUI()
+            }
+        }
+
         // Return the Job reference to the caller
         return lifecycleOwner.lifecycleScope.launch {
             db.loadSessionsForCourse(course)
@@ -102,17 +113,18 @@ class CourseController(
         selectedCourse = null
     }
 
-
     fun showCreateSessionDialog() {
         val courseId = getSelectedCourse()!!.id
         lifecycleOwner.lifecycleScope.launch {
             val count = db.getCourseCache().allSessions.size + 1
             withContext(Dispatchers.Main) {
+                // Resolved using layout string formatting token parameters securely
+                val sessionPlaceholder = activity.getString(R.string.session_text) + " $count"
                 DialogFactory.showCreateSessionDialog(
                     context = activity,
                     layoutInflater = layoutInflater,
                     fragmentManager = activity.supportFragmentManager,
-                    defaultSessionName = "Class $count",
+                    defaultSessionName = sessionPlaceholder,
                     onSessionCreated = { sessionName, dateMillis ->
                         addSession(
                             courseId, sessionName, CourseUtilities.fromMillisToLocalDate(dateMillis)
@@ -124,12 +136,10 @@ class CourseController(
         }
     }
 
-
     private fun setupOnClickListeners() {
         btnCourseStats.setOnClickListener { onOpenStatistics() }
         btnImportSchedule.setOnClickListener { triggerImportSessionPicker() }
         btnExportCourse.setOnClickListener {
-            // Replaces the inline anonymous logic from original MainActivity
             val courseName = txtDetailCourseNameText()
             val fileName = "Attendance_${courseName.replace(" ", "_")}.csv"
             exportLauncher.launch(fileName)
@@ -138,7 +148,8 @@ class CourseController(
 
     private fun txtDetailCourseNameText(): String {
         val txtName = activity.findViewById<TextView>(R.id.txtDetailCourseName)
-        return txtName?.text?.toString() ?: "Attendance"
+        return txtName?.text?.toString()
+            ?: activity.getString(R.string.filename_attendance_fallback)
     }
 
     fun addSession(courseId: Long, sessionName: String, date: Long) {
@@ -171,8 +182,16 @@ class CourseController(
         courseAttendances: List<AttendanceRecord>
     ) {
         card.findViewById<TextView>(R.id.txtDetailCourseName).text = course.name
+
+        // Dynamic localized layout ordinal mapping integration ("1st Semester" vs "1º Semestre")
+        val semesterOrdinal = if (course.semester == 1) {
+            activity.getString(R.string.semester_ordinal_1st)
+        } else {
+            activity.getString(R.string.semester_ordinal_2nd)
+        }
         card.findViewById<TextView>(R.id.txtDetailCourseSemester).text =
-            CourseUtilities.formatYearSemester(course.year, course.semester)
+            activity.getString(R.string.semester_display_format, course.year, semesterOrdinal)
+
         card.findViewById<View>(R.id.viewCourseDetailAccent)
             .setBackgroundColor(getColorForAccent(course.name))
 
@@ -212,9 +231,19 @@ class CourseController(
             ) && CourseUtilities.fromMillisToLocalDate(it.date).isBefore(LocalDate.now())
         }.sortedBy { it.date }
 
-        addSessionsToCourseView("This week", thisWeekSessions)
-        addSessionsToCourseView("Upcoming sessions", upcomingSessions)
-        addSessionsToCourseView("Past sessions", pastSessions)
+        // Localized structural header elements matching layout boundaries cleanly
+        addSessionsToCourseView(
+            activity.getString(R.string.current_semester_head_text),
+            thisWeekSessions
+        )
+        addSessionsToCourseView(
+            activity.getString(R.string.upcoming_semester_head_text),
+            upcomingSessions
+        )
+        addSessionsToCourseView(
+            activity.getString(R.string.previous_semester_head_text),
+            pastSessions
+        )
     }
 
     private fun addSessionsToCourseView(title: String, sessions: List<Session>) {
@@ -224,20 +253,22 @@ class CourseController(
         }
     }
 
-
     private fun showDeleteSessionDialog(session: Session) {
         DialogFactory.showDestructiveDeleteDialog(
             context = activity,
-            title = "Final Confirmation",
-            message = "You are about to delete '${session.name}'. This action is permanent. Please type DELETE below:",
+            title = activity.getString(R.string.dialog_delete_session_title),
+            message = activity.getString(R.string.dialog_delete_session_message, session.name),
             onConfirmed = {
                 lifecycleOwner.lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
                         db.deleteSession(session)
                     }
                     refreshCourseUI()
-                    Toast.makeText(activity, "Session permanently removed", Toast.LENGTH_SHORT)
-                        .show()
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.toast_session_properties_modified),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         )
@@ -245,7 +276,7 @@ class CourseController(
 
     private fun addSessionCardToContainer(session: Session) {
         val itemView = layoutInflater.inflate(R.layout.item_session_card, sessionContainer, false)
-        val dateFormat = CourseUtilities.makeSessionTimeFormatter()
+        val dateFormat = CourseUtilities.makeSessionTimeFormatter(activity)
 
         val imgLock = itemView.findViewById<ImageView>(R.id.imgSessionLockOnSessionView)
         itemView.findViewById<View>(R.id.viewSessionAccent)
@@ -253,8 +284,6 @@ class CourseController(
         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
         itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
             CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)
-
-
 
         CourseUtilities.updateLockIconUI(session.isLocked, imgLock)
         imgLock.setOnClickListener { onToggleLockRequested(session, imgLock) }
@@ -308,9 +337,8 @@ class CourseController(
             colors[i] = typedArray.getColor(i, 0)
         }
         typedArray.recycle()
-        return colors[Math.abs(courseName.hashCode()) % colors.size]
+        return colors[abs(courseName.hashCode()) % colors.size]
     }
-
 
     private fun showImportPreview(sessions: List<Session>) {
         val bottomSheet = BottomSheetDialog(activity)
@@ -323,20 +351,162 @@ class CourseController(
 
         recyclerView.layoutManager = LinearLayoutManager(activity)
         recyclerView.adapter = ImportPreviewAdapter(sessions)
-        txtImportCount.text = "Found ${sessions.size} sessions."
+
+        // Maps to: <string name="dialog_import_sessions_hint">Found %1$d sessions. Please verify the dates.</string>
+        txtImportCount.text =
+            activity.getString(R.string.dialog_import_sessions_hint, sessions.size)
+        btnConfirm.text = activity.getString(R.string.dialog_import_sessions_button_text)
 
         btnConfirm.setOnClickListener {
             activity.lifecycleScope.launch {
                 db.insertSessions(sessions)
                 bottomSheet.dismiss()
                 refreshCourseUI()
-                Toast.makeText(activity, "Imported ${sessions.size} sessions", Toast.LENGTH_SHORT)
-                    .show()
+
+                // Maps to: <string name="toast_imported_sessions">Imported %1$d sessions</string>
+                val toastMsg = activity.getString(R.string.toast_imported_sessions, sessions.size)
+                Toast.makeText(activity, toastMsg, Toast.LENGTH_SHORT).show()
             }
         }
         bottomSheet.show()
     }
 
+    fun showCreateCourseDialog(onCourseCreated: () -> Unit) {
+        val context = activity
+        // Inflate your newly created layout file
+        val dialogView = activity.layoutInflater.inflate(R.layout.dialog_add_course, null)
+
+        val edtName = dialogView.findViewById<EditText>(R.id.edtCourseName)
+        val edtYear = dialogView.findViewById<EditText>(R.id.edtCourseYear)
+        val spinnerSemester = dialogView.findViewById<Spinner>(R.id.spinnerSemester)
+
+        // Pre-fill the current calendar year as a smart default value
+        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        edtYear.setText(currentYear.toString())
+
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(context.getString(R.string.title_new_course))
+            .setView(dialogView)
+            .setPositiveButton(
+                context.getString(R.string.action_create),
+                null
+            ) // Set null to manually override closure behaviour for validation checks
+            .setNegativeButton(context.getString(R.string.action_cancel), null)
+            .create()
+
+        dialog.show()
+
+        // Override the Positive Button click directly to handle field data validations
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val courseName = edtName.text.toString().trim()
+            val yearRaw = edtYear.text.toString().trim()
+
+            // Safely extract selection directly out of the matched localized resource items string array
+            val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
+
+            if (courseName.isEmpty()) {
+                edtName.error = context.getString(R.string.error_empty_name)
+                return@setOnClickListener
+            }
+
+            val parsedYear = yearRaw.toIntOrNull()
+            if (parsedYear == null || yearRaw.isEmpty()) {
+                edtYear.error = context.getString(R.string.label_year)
+                return@setOnClickListener
+            }
+
+            // Run insertion logic on background coroutine worker pool thread safely
+            lifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    val newCourse = Course(
+                        name = courseName,
+                        year = parsedYear,
+                        semester = selectedSemester
+                    )
+                    db.dao().insertCourse(newCourse)
+                }
+                onCourseCreated()
+                dialog.dismiss()
+            }
+        }
+    }
+
+
+    fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
+        val context = activity
+        val dialogView = activity.layoutInflater.inflate(R.layout.dialog_add_course, null)
+
+        val edtName = dialogView.findViewById<EditText>(R.id.edtCourseName)
+        val edtYear = dialogView.findViewById<EditText>(R.id.edtCourseYear)
+        val spinnerSemester = dialogView.findViewById<Spinner>(R.id.spinnerSemester)
+
+        // 1. Pre-populate fields with existing course values
+        edtName.setText(course.name)
+        edtYear.setText(course.year.toString())
+
+        // Position spinner to match the course's active semester (1 or 2)
+        val semesterIndex = if (course.semester == 2) 1 else 0
+        spinnerSemester.setSelection(semesterIndex)
+
+        // 2. Build and display the Material / AlertDialog template
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(context.getString(R.string.title_edit_course))
+            .setView(dialogView)
+            .setPositiveButton(
+                context.getString(R.string.action_save),
+                null
+            ) // Set null here to prevent auto-closing on invalid validation
+            .setNegativeButton(context.getString(R.string.action_cancel), null)
+            .create()
+
+        dialog.show()
+
+        // 3. Override the positive button click listener to enforce text validation rules
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val updatedName = edtName.text.toString().trim()
+            val yearRaw = edtYear.text.toString().trim()
+
+            // Fetch selected integer value out of the configured string array map
+            val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
+
+            if (updatedName.isEmpty()) {
+                edtName.error = context.getString(R.string.error_empty_name)
+                return@setOnClickListener
+            }
+
+            val updatedYear = yearRaw.toIntOrNull()
+            if (updatedYear == null || yearRaw.isEmpty()) {
+                edtYear.error =
+                    context.getString(R.string.label_year) // Or a specific invalid year error
+                return@setOnClickListener
+            }
+
+            // 4. Input validated; mutate state tree safely inside your Coroutine Dispatcher context
+            lifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    val updatedCourse = course.copy(
+                        name = updatedName,
+                        year = updatedYear,
+                        semester = selectedSemester
+                    )
+                    db.dao().updateCourse(updatedCourse)
+                    if (selectedCourse != null && updatedCourse.id == selectedCourse!!.id) {
+                        selectedCourse = updatedCourse
+                    }
+                }
+
+                // 5. Provide UI success indicators and refresh foreground layouts
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_course_updated),
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                onCourseEdited()
+                dialog.dismiss()
+            }
+        }
+    }
 
     private fun importSessionsFromCsv(uri: Uri, courseId: Long) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
@@ -354,7 +524,6 @@ class CourseController(
         }
     }
 
-
     private fun triggerImportSessionPicker() {
         if (selectedCourse == null) return
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -367,7 +536,6 @@ class CourseController(
         }
         importSessionLauncher.launch(intent)
     }
-
 
     private fun performExport(uri: Uri) {
         val course = selectedCourse ?: return
@@ -383,14 +551,20 @@ class CourseController(
             val allStudents = db.dao().getAllStudents()
 
             val csvData =
-                CourseUtilities.generateCsvString(course, sessions, allAttendance, allStudents)
+                CourseUtilities.generateCsvString(
+                    activity,
+                    course,
+                    sessions,
+                    allAttendance,
+                    allStudents
+                )
             try {
                 activity.contentResolver.openOutputStream(uri)
                     ?.use { it.write(csvData.toByteArray()) }
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         activity,
-                        "Roster exported!",
+                        activity.getString(R.string.toast_export_success),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -398,13 +572,11 @@ class CourseController(
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         activity,
-                        "Export failed",
+                        activity.getString(R.string.toast_export_failed),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
             }
         }
     }
-
-
 }

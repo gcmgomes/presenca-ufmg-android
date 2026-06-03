@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Review Schedule"
+        android:text="@string/dialog_import_sessions"
         android:textSize="20sp"
         android:textStyle="bold" />
 
@@ -17,18 +17,20 @@
         android:id="@+id/txtImportCount"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="We found 30 sessions. Please verify the dates."
+        android:text="@string/dialog_import_sessions_hint"
         android:textColor="?attr/descriptiveTextColor"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="16dp" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvImportPreview"
         android:layout_width="match_parent"
-        android:layout_height="300dp" /> <com.google.android.material.button.MaterialButton
-    android:id="@+id/btnConfirmImport"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="16dp"
-    android:text="Import All Sessions"
-    app:cardCornerRadius="8dp" />
+        android:layout_height="300dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConfirmImport"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/dialog_import_sessions_button_text"
+        app:cardCornerRadius="8dp" />
 </LinearLayout>

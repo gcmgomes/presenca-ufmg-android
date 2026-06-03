@@ -44,7 +44,7 @@
                     android:id="@+id/txtSessionName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Class"
+                    android:text="@string/hint_session_name"
                     android:maxLines="2"
                     android:maxWidth="200dp"
                     android:textSize="18sp"
@@ -56,7 +56,7 @@
                     android:id="@+id/txtSessionDetails"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Example"
+                    android:text="@string/hint_session_date"
                     android:textColor="?attr/descriptiveTextColor"
                     android:textSize="14sp" />
             </LinearLayout>

@@ -1,6 +1,7 @@
 package com.example.presensor
 
 import android.content.ContentResolver
+import android.content.Context
 import android.content.res.TypedArray
 import android.net.Uri
 import android.widget.ImageView
@@ -161,6 +162,7 @@ object CourseUtilities {
     }
 
     fun generateCsvString(
+        context: Context,
         course: Course,
         allSessions: List<Session>,
         allAttendance: List<AttendanceRecord>,
@@ -173,14 +175,17 @@ object CourseUtilities {
             .filter { it.email in activeEmails }
             .sortedBy { it.name }
 
-        csvBuilder.append("Student Name,Email,RFID")
+        // Extracted standard headers to R.string to keep export layouts decoupled from static literals
+        csvBuilder.append(context.getString(R.string.csv_header_student_identity))
         allSessions.forEach { session ->
             csvBuilder.append(",${session.name}")
         }
         csvBuilder.append("\n")
 
+        val fallbackNa = context.getString(R.string.label_not_applicable)
+
         activeStudents.forEach { student ->
-            csvBuilder.append("${student.name},${student.email},${student.rfid ?: "N/A"}")
+            csvBuilder.append("${student.name},${student.email},${student.rfid ?: fallbackNa}")
 
             allSessions.forEach { session ->
                 val wasPresent = allAttendance.any {
@@ -220,12 +225,19 @@ object CourseUtilities {
         )
     }
 
-    fun makeSessionTimeFormatter(): DateTimeFormatter {
-        return DateTimeFormatter.ofPattern("EEEE, dd 'de' MMMM", Locale.getDefault())
+    fun makeSessionTimeFormatter(context: Context): DateTimeFormatter {
+        // Now resolves the localized format dynamically via layout configurations
+        val pattern = context.getString(R.string.session_date_display_format)
+        return DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
     }
 
-    fun formatYearSemester(year: Int, semester: Int): String {
-        return "$year/$semester"
+    fun formatYearSemester(context: Context, year: Int, semester: Int): String {
+        val semesterString = if (semester == 1) {
+            context.getString(R.string.semester_ordinal_1st)
+        } else {
+            context.getString(R.string.semester_ordinal_2nd)
+        }
+        return context.getString(R.string.semester_display_format, year, semesterString)
     }
 
     fun updateLockIconUI(isLocked: Boolean, lockIcon: ImageView) {

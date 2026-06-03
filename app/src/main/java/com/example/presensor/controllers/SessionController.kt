@@ -6,9 +6,9 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -53,7 +53,7 @@ class SessionController(
 
     private fun updateCardOnSessionView(name: String, date: Long) {
         txtSessionTitle.text = name
-        val dateFormat = CourseUtilities.makeSessionTimeFormatter()
+        val dateFormat = CourseUtilities.makeSessionTimeFormatter(context)
         txtSessionSubtitle.text =
             CourseUtilities.fromMillisToLocalDate(date).format(dateFormat)
         viewSessionDetailAccent.setBackgroundColor(getColorForAccent(name))
@@ -79,10 +79,6 @@ class SessionController(
             }
             updateCardOnSessionView(activeSession!!.name, activeSession!!.date)
         }
-
-        // --- ADD THE SESSION EDIT ACTION HOOK HERE ---
-        // Assuming you have passed/referenced btnEditSession into this controller class
-
 
         loadAttendanceList()
     }
@@ -111,17 +107,21 @@ class SessionController(
                 EditText(context).apply { inputType = android.text.InputType.TYPE_CLASS_TEXT }
 
             AlertDialog.Builder(context)
-                .setTitle("Unlock Session ${targetSession.name}")
-                .setMessage("Enter the session name:")
+                .setTitle(context.getString(R.string.dialog_unlock_title, targetSession.name))
+                .setMessage(context.getString(R.string.dialog_unlock_message))
                 .setView(input)
-                .setPositiveButton("Unlock") { _, _ ->
+                .setPositiveButton(context.getString(R.string.action_unlock)) { _, _ ->
                     if (input.text.toString() == targetSession.name) {
                         executeLockStateUpdate(targetSession, false)
                     } else {
-                        Toast.makeText(context, "Incorrect Password", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.error_incorrect_password),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(context.getString(R.string.action_cancel), null)
                 .show()
         } else {
             executeLockStateUpdate(targetSession, true)
@@ -141,40 +141,52 @@ class SessionController(
                     }
                 }
                 onSessionStateMutated()
-                val msg = if (shouldLock) "Session Locked" else "Session Unlocked"
+
+                val msg = if (shouldLock) {
+                    context.getString(R.string.msg_session_locked)
+                } else {
+                    context.getString(R.string.msg_session_unlocked)
+                }
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    /**
-     * Refactored to handle both standard hardware scans and manual student selections seamlessly
-     */
     fun registerAttendance(student: Student?, time: Long) {
         val session = activeSession ?: return
         activity.lifecycleScope.launch {
             if (session.isLocked) {
-                Toast.makeText(activity, "Session is locked", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.msg_session_locked),
+                    Toast.LENGTH_SHORT
+                ).show()
                 return@launch
             }
 
             if (student != null) {
-                // Safe lookup identifier fallback if a student record doesn't have an RFID key assigned yet
                 val identifier =
                     if (!student.rfid.isNullOrEmpty()) student.rfid else "MANUAL:${student.email}"
 
                 db.recordAttendance(student, session, time)
                 loadAttendanceList()
             } else {
-                Toast.makeText(activity, "Tag not registered", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.toast_tag_not_registered),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
 
     fun showEditSessionDialog(session: Session) {
         if (session.isLocked) {
-            Toast.makeText(context, "Session is locked", Toast.LENGTH_SHORT)
-                .show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.msg_session_locked),
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
         DialogFactory.showEditSessionDialog(
@@ -189,43 +201,36 @@ class SessionController(
                         date = updatedTimestamp
                     )
 
-                    // 1. Commit changes to Room database safely
                     db.updateSession(modifiedSession)
 
-                    // 2. Synchronize internal memory state properties instantly
                     if (activeSession != null) {
                         activeSession = modifiedSession
                     }
 
-                    // 3. Immediately redraw text fields to prevent displaying stale data state properties
                     txtSessionTitle.text = updatedName
                     txtSessionSubtitle.text =
                         CourseUtilities.fromMillisToLocalDate(updatedTimestamp)
-                            .format(CourseUtilities.makeSessionTimeFormatter())
+                            .format(CourseUtilities.makeSessionTimeFormatter(context))
                     viewSessionDetailAccent.setBackgroundColor(getColorForAccent(updatedName))
 
-                    // 4. Notify structural data outer observers to match the changes
                     onSessionStateMutated()
 
-                    Toast.makeText(context, "Session properties modified", Toast.LENGTH_SHORT)
-                        .show()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_session_properties_modified),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             })
     }
 
-    /**
-     * Displays an inline lookup dialog of course students, automatically excluding records
-     * that have already logged an attendance entry for the active session context.
-     */
     fun showManualAttendanceDialog() {
         val currentSession = activeSession ?: return
 
         lifecycleOwner.lifecycleScope.launch {
-            // Get all students enrolled and current logs in parallel
             val allStudents = db.dao().getAllStudents().sortedBy { it.name }
             val currentAttendance = db.dao().getAttendanceRecordsForSession(currentSession.id)
 
-            // Map present students to dynamically clear them from selection list
             val presentEmails = currentAttendance.map { it.studentEmail }.toSet()
             val absentStudents = allStudents.filter { it.email !in presentEmails }
 
@@ -243,7 +248,7 @@ class SessionController(
 
                     if (filtered.isEmpty()) {
                         val emptyRow = TextView(context).apply {
-                            text = "No matching students found"
+                            text = context.getString(R.string.msg_no_students_found)
                             textSize = 14f
                             setPadding(30, 40, 30, 40)
                             gravity = android.view.Gravity.CENTER
@@ -278,9 +283,9 @@ class SessionController(
                 refreshAbsenteeList("")
 
                 manualDialog = AlertDialog.Builder(context)
-                    .setTitle("Manual Attendance")
+                    .setTitle(context.getString(R.string.title_manual_attendance))
                     .setView(dialogView)
-                    .setNegativeButton("Cancel", null)
+                    .setNegativeButton(context.getString(R.string.action_cancel), null)
                     .create()
 
                 manualDialog.show()

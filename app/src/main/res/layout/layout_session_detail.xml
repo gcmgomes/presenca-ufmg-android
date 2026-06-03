@@ -53,7 +53,7 @@
                             android:id="@+id/txtSessionTitle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Class 1"
+                            android:text="@string/hint_session_name"
                             android:maxLines="2"
                             android:ellipsize="end"
                             android:textColor="?attr/colorPrimary"
@@ -65,7 +65,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Monday, May 10"
+                            android:text="@string/hint_session_date"
                             android:textColor="?attr/descriptiveTextColor"
                             android:textSize="14sp" />
                     </LinearLayout>
@@ -99,7 +99,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Attendance List"
+            android:text="@string/title_attendance_list"
             android:textSize="18sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp"

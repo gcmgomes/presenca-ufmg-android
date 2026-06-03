@@ -12,6 +12,9 @@ interface PresensorDao {
     @Insert
     suspend fun insertCourse(c: Course): Long
 
+    @Update
+    suspend fun updateCourse(course: Course)
+
     @Delete
     suspend fun deleteCourse(course: Course)
 

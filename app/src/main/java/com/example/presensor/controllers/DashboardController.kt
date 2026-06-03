@@ -50,6 +50,8 @@ class DashboardController(
     private val scope: CoroutineScope,
     private val onCourseSelected: (Course) -> Unit,
     private val onCourseLongClicked: (Course) -> Unit,
+    private val onCourseCreateRequested: (() -> Unit) -> Unit,
+    private val onCourseEditRequested: (Course) -> Unit // Add this new callback token
 ) {
     // Safely look up views directly from the Activity context to prevent null reference crashes
     private val container: LinearLayout = activity.findViewById(R.id.currentCoursesContainer)
@@ -79,8 +81,10 @@ class DashboardController(
 
         val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportStudentPreview)
         val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmStudentImport)
+
+        // Maps to: "Found %1$d students. Please verify their information." / "Foram encontrados %1$d alunos..."
         view.findViewById<TextView>(R.id.txtImportStudentCount).text =
-            "We found ${students.size} students. Please verify the roster."
+            activity.getString(R.string.dialog_import_students_hint, students.size)
 
         recyclerView.layoutManager = LinearLayoutManager(activity)
         recyclerView.adapter = ImportStudentAdapter(students)
@@ -89,9 +93,11 @@ class DashboardController(
             activity.lifecycleScope.launch {
                 withContext(Dispatchers.IO) { db.dao().insertStudents(students) }
                 bottomSheet.dismiss()
+
+                // Maps to: "%1$d aulas importadas" or customizable toast parameters safely
                 Toast.makeText(
                     activity,
-                    "Successfully imported ${students.size} students",
+                    activity.getString(R.string.toast_imported_sessions, students.size),
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -109,14 +115,18 @@ class DashboardController(
                     } else {
                         Toast.makeText(
                             activity,
-                            "No valid students found in CSV",
+                            activity.getString(R.string.msg_no_students_found),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Error: Check CSV format", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.toast_export_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -178,7 +188,11 @@ class DashboardController(
         activity.findViewById<Button>(R.id.btnImportStudents)
             .setOnClickListener { triggerStudentImportPicker() }
         activity.findViewById<FloatingActionButton>(R.id.btnCreateCourse)
-            .setOnClickListener { showCreateCourseDialog() }
+            .setOnClickListener {
+                onCourseCreateRequested {
+                    refreshDashboard()
+                }
+            }
     }
 
     fun refreshDashboard(filter: String = "") {
@@ -186,8 +200,14 @@ class DashboardController(
         val curYear = calendar.get(Calendar.YEAR)
         val curSemester = if (calendar.get(Calendar.MONTH) < 6) 1 else 2
 
+        // Maps cleanly using layout format ordinal definitions
+        val semesterString = if (curSemester == 1) {
+            activity.getString(R.string.semester_ordinal_1st)
+        } else {
+            activity.getString(R.string.semester_ordinal_2nd)
+        }
         txtCurrentTerm.text =
-            "Current Term: " + CourseUtilities.formatYearSemester(curYear, curSemester)
+            activity.getString(R.string.semester_display_format, curYear, semesterString)
 
         scope.launch {
             var allCourses = db.dao().getAllCourses()
@@ -203,11 +223,20 @@ class DashboardController(
             val previousSemesters =
                 allCourses.filter { (it.year == curYear && it.semester < curSemester) || (it.year < curYear) }
 
-            addCoursesToSection("This Semester", thisSemester)
-            addCoursesToSection("Upcoming", nextSemester)
+            addCoursesToSection(
+                activity.getString(R.string.current_semester_head_text),
+                thisSemester
+            )
+            addCoursesToSection(
+                activity.getString(R.string.upcoming_semester_head_text),
+                nextSemester
+            )
 
             if (previousSemesters.isNotEmpty()) {
-                MainUiBinder.addSectionHeader(container, "Previous Semesters")
+                MainUiBinder.addSectionHeader(
+                    container,
+                    activity.getString(R.string.previous_semester_head_text)
+                )
                 var lastYear = -1
                 previousSemesters.sortedWith(compareByDescending<Course> { it.year }.thenByDescending { it.semester })
                     .forEach { course ->
@@ -233,29 +262,29 @@ class DashboardController(
         cardView.findViewById<View>(R.id.viewCourseAccent)
             .setBackgroundColor(getColorForAccent(course.name))
         cardView.findViewById<TextView>(R.id.txtCourseName).text = course.name
+
+        val semesterString = if (course.semester == 1) {
+            activity.getString(R.string.semester_ordinal_1st)
+        } else {
+            activity.getString(R.string.semester_ordinal_2nd)
+        }
         cardView.findViewById<TextView>(R.id.txtCourseDetails).text =
-            CourseUtilities.formatYearSemester(course.year, course.semester)
+            activity.getString(R.string.semester_display_format, course.year, semesterString)
 
         cardView.setOnClickListener { onCourseSelected(course) }
         cardView.setOnLongClickListener {
             onCourseLongClicked(course)
             true
         }
-        container.addView(cardView)
-    }
 
-    fun showCreateCourseDialog() {
-        DialogFactory.showCreateCourseDialog(
-            context = activity,
-            layoutInflater,
-            onCourseCreated = { name, year, semester ->
-                scope.launch {
-                    val newCourse = Course(name = name, year = year, semester = semester)
-                    db.insertCourse(newCourse)
-                    refreshDashboard()
-                }
-            }
-        )
+        // Inside your Course Adapter's ViewHolder binding block:
+        val imgEditCourse = cardView.findViewById<ImageView>(R.id.imgEditCourseDashboard)
+
+        imgEditCourse.setOnClickListener {
+            // Trigger the custom long click / edit callback passing the selected course
+            onCourseEditRequested(course)
+        }
+        container.addView(cardView)
     }
 
     private fun getColorForAccent(courseName: String): Int {

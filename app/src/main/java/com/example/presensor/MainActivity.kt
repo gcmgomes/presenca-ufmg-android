@@ -127,6 +127,17 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             scope = lifecycleScope,
             onCourseSelected = { course -> selectCourse(course) },
             onCourseLongClicked = { course -> showDeleteCourseDialog(course) },
+            onCourseCreateRequested = {
+                courseController.showCreateCourseDialog {
+                    dashboardController.refreshDashboard()
+                }
+            },
+            onCourseEditRequested = { course ->
+                // Intercept the pencil click and display your course modification UI
+                courseController.showEditCourseDialog(course) {
+                    dashboardController.refreshDashboard()
+                }
+            }
         )
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
@@ -255,30 +266,12 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         sessionController.openSessionView(session)
     }
 
-    private fun showDeleteSessionDialog(session: Session) {
-        DialogFactory.showDestructiveDeleteDialog(
-            context = this,
-            title = "Final Confirmation",
-            message = "You are about to delete '${session.name}'. This action is permanent. Please type DELETE below:",
-            onConfirmed = {
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
-                        db.dao().deleteAttendancesBySessionId(session.id)
-                        db.dao().deleteSession(session)
-                    }
-                    courseController.refreshCourseUI()
-                    Toast.makeText(
-                        this@MainActivity, "Session permanently removed", Toast.LENGTH_SHORT
-                    ).show()
-                }
-            })
-    }
 
     private fun showDeleteCourseDialog(course: Course) {
         DialogFactory.showDestructiveDeleteDialog(
             context = this,
-            title = "Final Confirmation",
-            message = "You are about to delete '${course.name}'. This action is permanent. Please type DELETE below:",
+            title = getString(R.string.dialog_delete_course_title),
+            message = getString(R.string.dialog_delete_course_message, course.name),
             onConfirmed = {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
@@ -291,7 +284,9 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
                     }
                     dashboardController.refreshDashboard()
                     Toast.makeText(
-                        this@MainActivity, "Course permanently removed", Toast.LENGTH_SHORT
+                        this@MainActivity,
+                        getString(R.string.toast_course_deleted_success),
+                        Toast.LENGTH_SHORT
                     ).show()
                 }
             })
@@ -356,7 +351,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
                     db.getCourseCache().allAttendance,
                     db.getCourseCache().sessionIds,
                     getColorFromAttr = { attr -> getColorFromAttr(attr) },
-                    makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter() },
+                    makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter(this@MainActivity) },
                     fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) })
             }
         }

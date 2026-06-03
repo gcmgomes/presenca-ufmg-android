@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Presensor</string>
+
+    <string name="action_text">Ações</string>
+    <string name="hint_search_course">Buscar cursos por nome…</string>
+    <string name="current_semester_head_text">Semestre atual</string>
+    <string name="previous_semester_head_text">Semestres anteriores</string>
+    <string name="upcoming_semester_head_text">Semestres futuros</string>
+    <string name="semester_display_format">%1$d - %2$s Semestre</string>
+    <string name="semester_ordinal_1st">1º</string>
+    <string name="semester_ordinal_2nd">2º</string>
+
+    <string name="title_new_course">Novo Curso</string>
+    <string name="title_edit_course">Editar Detalhes do Curso</string>
+    <string name="hint_course_name">Nome do Curso</string>
+    <string name="hint_course_semester">Semestre do curso</string>
+    <string name="label_year">Ano</string>
+    <string name="label_semester">Semestre</string>
+    <string name="select_year">Selecionar Ano</string>
+    <string name="select_semester">Selecionar Semestre</string>
+    <string name="menu_title_course_management">Gerenciar curso</string>
+    <string name="menu_course_statistics">Estatísticas do curso</string>
+    <string name="menu_course_import">Importar cronograma</string>
+    <string name="menu_course_export">Exportar presenças (csv)</string>
+
+    <string name="session_text">Aula</string>
+    <string name="title_new_session">Nova Aula</string>
+    <string name="title_edit_session">Editar Detalhes da Aula</string>
+    <string name="hint_session_name">Nome da aula</string>
+    <string name="hint_session_date">Data da aula</string>
+    <string name="select_session_date">Selecionar Data da Aula</string>
+    <string name="session_date_display_format">EEEE, dd \'de\' MMMM</string>
+
+    <string name="title_attendance_list">Lista de Presença</string>
+    <string name="title_manual_attendance">Inserir aluno manualmente</string>
+    <string name="hint_search_student">Buscar estudante por nome ou email…</string>
+    <string name="student_name">Nome aluno</string>
+    <string name="student_email">aluno@email.com.br</string>
+    <string name="stats_students">Alunos</string>
+    <string name="stats_sessions">Aulas</string>
+    <string name="stats_attendance">Presença</string>
+
+    <string name="label_tag_id">ID da Tag: %1$s</string>
+    <string name="title_assign_tag">Atribuir Tag: %1$s</string>
+    <string name="label_student_row_with_tag">%1$s\n- %2$s\n- [%3$s]</string>
+    <string name="label_student_row_no_tag">%1$s\n- %2$s\n- [Sem tag]</string>
+    <string name="dialog_tag_registered_title">Tag Já Registrada</string>
+    <string name="dialog_tag_registered_message">Esta tag está atualmente associada a %1$s (%2$s).\n\nDeseja desvincular esta tag para que ela possa ser reinstanciada?</string>
+    <string name="dialog_overwrite_tag_title">Substituir Tag?</string>
+    <string name="dialog_overwrite_tag_message">%1$s já está vinculado à tag %2$s.\n\nDeseja substituí-la pela nova tag %3$s?</string>
+
+    <string name="dialog_import_sessions">Verifique o cronograma sendo importado</string>
+    <string name="dialog_import_sessions_hint">Foram encontradas %1$d aulas. Por favor verifique as datas.</string>
+    <string name="dialog_import_sessions_button_text">Importar aulas</string>
+    <string name="dialog_import_students">Verifique a lista de alunos sendo importada</string>
+    <string name="dialog_import_students_hint">Foram encontrados %1$d alunos. Por favor verifique suas informações.</string>
+    <string name="dialog_import_students_button_text">Importar alunos</string>
+    <string name="csv_header_student_identity">Nome do Aluno,Email,Tag</string>
+    <string name="filename_attendance_fallback">Presenca</string>
+    <string name="label_not_applicable">N/A</string>
+
+    <string name="dialog_unlock_title">Desbloquear Aula %1$s</string>
+    <string name="dialog_unlock_message">Digite o nome da aula:</string>
+    <string name="msg_session_locked">Aula Bloqueada</string>
+    <string name="msg_session_unlocked">Aula Desbloqueada</string>
+
+    <string name="action_create">Criar</string>
+    <string name="action_save">Salvar</string>
+    <string name="action_unlock">Desbloquear</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_yes">Sim</string>
+    <string name="action_no">Não</string>
+    <string name="action_replace">Substituir</string>
+
+    <string name="dialog_delete_course_title">Confirmação Final</string>
+    <string name="dialog_delete_course_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite DELETE abaixo:</string>
+    <string name="dialog_delete_session_title">Confirmação Final</string>
+    <string name="dialog_delete_session_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite EXCLUIR abaixo:</string>
+    <string name="hint_delete_confirm">Digite \'DELETE\' para confirmar</string>
+
+    <string name="error_empty_name">O nome não pode estar vazio</string>
+    <string name="error_invalid_email">Digite um e-mail válido</string>
+    <string name="error_incorrect_password">Senha Incorreta</string>
+    <string name="error_delete_confirmation_mismatch">O texto deve corresponder exatamente</string>
+    <string name="msg_no_students_found">Nenhum aluno encontrado</string>
+    <string name="toast_course_updated">Curso atualizado com sucesso</string>
+    <string name="toast_course_deleted_success">Curso removido permanentemente</string>
+    <string name="toast_session_properties_modified">Propriedades da aula modificadas</string>
+    <string name="toast_imported_sessions">%1$d aulas importadas</string>
+    <string name="toast_tag_not_registered">Tag não registrada</string>
+    <string name="toast_tag_unbound">Tag desvinculada</string>
+    <string name="toast_tag_assigned_success">Tag vinculada com sucesso!</string>
+    <string name="toast_student_registered_success">%1$s registrado com sucesso</string>
+    <string name="toast_export_success">Lista de presença exportada!</string>
+    <string name="toast_export_failed">Falha na exportação</string>
+    <string name="date_picker_display_format">dd \'de\' MMM \'de\' yyyy</string>
+
+    <string-array name="semesters_array">
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+</resources>

@@ -1,28 +1,29 @@
 package com.example.presensor
 
 import android.content.Context
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.NumberPicker
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.example.presensor.data.entities.Session
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
-import com.example.presensor.data.entities.Session
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Locale
-import android.view.inputmethod.InputMethodManager
 
 object DialogFactory {
 
-    // Replacement private state tracking variable
+    // Unique identification tags for dialog lifecycle operations
+    private const val TAG_DATE_PICKER_CREATE = "DATE_PICKER"
+    private const val TAG_DATE_PICKER_EDIT = "EDIT_DATE_PICKER"
+
     private var isDialogOpen = false
 
     /**
@@ -51,7 +52,7 @@ object DialogFactory {
             setPadding(60, 20, 60, 0)
         }
         val input = EditText(context).apply {
-            hint = "Type 'DELETE' to confirm"
+            hint = context.getString(R.string.hint_delete_confirm)
             setSingleLine(true)
         }
         container.addView(input)
@@ -60,49 +61,44 @@ object DialogFactory {
             .setTitle(title)
             .setMessage(message)
             .setView(container)
-            .setPositiveButton("Confirm", null)
-            .setNegativeButton("Cancel", null)
-            .showWithSmartNfcReading() // Uses the internal tracker now
+            .setPositiveButton(R.string.action_text, null)
+            .setNegativeButton(R.string.action_cancel, null)
+            .showWithSmartNfcReading()
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             if (input.text.toString().trim() == "DELETE") {
                 onConfirmed()
                 dialog.dismiss()
             } else {
-                input.error = "Text must match exactly"
+                input.error = context.getString(R.string.error_delete_confirmation_mismatch)
             }
         }
     }
 
     fun showCreateCourseDialog(
         context: Context,
-        layoutInflater: LayoutInflater, // Pass LayoutInflater from Activity/Fragment
+        layoutInflater: LayoutInflater,
         onCourseCreated: (name: String, year: Int, semester: Int) -> Unit
     ) {
-        // 1. Inflate the custom XML layout file
         val dialogView = layoutInflater.inflate(R.layout.dialog_create_course, null)
         val edtCourseName = dialogView.findViewById<TextInputEditText>(R.id.edtCourseName)
         val edtCourseYear = dialogView.findViewById<TextInputEditText>(R.id.edtCourseYear)
         val edtCourseSemester = dialogView.findViewById<TextInputEditText>(R.id.edtCourseSemester)
 
-        // Calculate dynamic calendar defaults
         val calendar = Calendar.getInstance()
         val currentYear = calendar.get(Calendar.YEAR)
         val currentSemester = if (calendar.get(Calendar.MONTH) < 6) 1 else 2
 
-        // Mutable state trackers captured when options change
         var selectedYear = currentYear
         var selectedSemester = currentSemester
 
-        // Set initial layout texts
         edtCourseYear.setText(selectedYear.toString())
         edtCourseSemester.setText(selectedSemester.toString())
 
-        // 2. Setup Year selection modal sheet fallback hook
         val yearsArray = ((currentYear - 5)..(currentYear + 1)).map { it.toString() }.toTypedArray()
         edtCourseYear.setOnClickListener {
             AlertDialog.Builder(context)
-                .setTitle("Select Year")
+                .setTitle(R.string.select_year)
                 .setItems(yearsArray) { _, which ->
                     selectedYear = yearsArray[which].toInt()
                     edtCourseYear.setText(selectedYear.toString())
@@ -110,11 +106,11 @@ object DialogFactory {
                 .show()
         }
 
-        // 3. Setup Semester selection modal sheet fallback hook
-        val semestersArray = arrayOf("1", "2")
+        // Extracted local semester array definition to resources xml
+        val semestersArray = context.resources.getStringArray(R.array.semesters_array)
         edtCourseSemester.setOnClickListener {
             AlertDialog.Builder(context)
-                .setTitle("Select Semester")
+                .setTitle(R.string.select_semester)
                 .setItems(semestersArray) { _, which ->
                     selectedSemester = semestersArray[which].toInt()
                     edtCourseSemester.setText(selectedSemester.toString())
@@ -122,7 +118,6 @@ object DialogFactory {
                 .show()
         }
 
-        // 4. Force Checkmark enter key to hide soft input system tray keyboard panel layout instantly
         edtCourseName.setOnEditorActionListener { v, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 val imm =
@@ -135,20 +130,23 @@ object DialogFactory {
             }
         }
 
-        // 5. Construct and show the Material dialog
         AlertDialog.Builder(context)
-            .setTitle("New Course")
+            .setTitle(R.string.title_new_course)
             .setView(dialogView)
-            .setPositiveButton("Create") { _, _ ->
+            .setPositiveButton(R.string.action_create) { _, _ ->
                 val name = edtCourseName.text.toString().trim()
                 if (name.isNotEmpty()) {
                     onCourseCreated(name, selectedYear, selectedSemester)
                 } else {
-                    Toast.makeText(context, "Name cannot be empty", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.error_empty_name),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
-            .setNegativeButton("Cancel", null)
-            .showWithSmartNfcReading() // Preserves your custom helper reading engine scope extension
+            .setNegativeButton(R.string.action_cancel, null)
+            .showWithSmartNfcReading()
     }
 
     fun showEditSessionDialog(
@@ -158,24 +156,23 @@ object DialogFactory {
         session: Session,
         onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
     ) {
-        // 1. Inflate the shared Material design input fields
         val dialogView = layoutInflater.inflate(R.layout.dialog_create_session, null)
 
-        // 2. Pre-populate and auto-select existing Session Name
         val edtName = dialogView.findViewById<EditText>(R.id.edtSessionName)
         edtName.setText(session.name)
         edtName.selectAll()
 
-        // 3. Setup and pre-populate the Session Date field with existing timestamp
         val edtDate = dialogView.findViewById<TextInputEditText>(R.id.edtSessionDate)
         var selectedTimestamp = session.date
-        val dateFormat = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.getDefault())
+
+        // Extracted patterns into layout string resources dynamically matching active configurations
+        val pattern = context.getString(R.string.date_picker_display_format)
+        val dateFormat = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
         edtDate.setText(CourseUtilities.fromMillisToLocalDate(selectedTimestamp).format(dateFormat))
 
-        // 4. Bind the identical MaterialDatePicker workflow
         edtDate.setOnClickListener {
             val datePicker = MaterialDatePicker.Builder.datePicker()
-                .setTitleText("Select Session Date")
+                .setTitleText(context.getString(R.string.select_session_date))
                 .setSelection(selectedTimestamp)
                 .build()
 
@@ -184,10 +181,9 @@ object DialogFactory {
                 val localDate = Instant.ofEpochMilli(selection).atZone(ZoneOffset.UTC).toLocalDate()
                 edtDate.setText(localDate.format(dateFormat))
             }
-            datePicker.show(fragmentManager, "EDIT_DATE_PICKER")
+            datePicker.show(fragmentManager, TAG_DATE_PICKER_EDIT)
         }
 
-        // 5. Force keyboard "Checkmark" enter action to dismiss software tray properly
         edtName.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 val imm =
@@ -200,23 +196,22 @@ object DialogFactory {
             }
         }
 
-        // 6. Build and show the dialog utilizing your safe NFC reading suspension framework
         AlertDialog.Builder(context)
-            .setTitle("Edit Session Details")
+            .setTitle(R.string.title_edit_session)
             .setView(dialogView)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.action_save) { _, _ ->
                 val nameText = edtName.text.toString().trim()
                 if (nameText.isNotEmpty()) {
                     onSessionUpdated(nameText, selectedTimestamp)
                 } else {
-                    android.widget.Toast.makeText(
+                    Toast.makeText(
                         context,
-                        "Name cannot be empty",
-                        android.widget.Toast.LENGTH_SHORT
+                        context.getString(R.string.error_empty_name),
+                        Toast.LENGTH_SHORT
                     ).show()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .showWithSmartNfcReading()
     }
 
@@ -234,12 +229,15 @@ object DialogFactory {
 
         val edtDate = dialogView.findViewById<TextInputEditText>(R.id.edtSessionDate)
         var selectedTimestamp = System.currentTimeMillis()
-        val dateFormat = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.getDefault())
+
+        // Extracted patterns into layout string resources dynamically matching active configurations
+        val pattern = context.getString(R.string.date_picker_display_format)
+        val dateFormat = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
         edtDate.setText(CourseUtilities.fromMillisToLocalDate(selectedTimestamp).format(dateFormat))
 
         edtDate.setOnClickListener {
             val datePicker = MaterialDatePicker.Builder.datePicker()
-                .setTitleText("Select Session Date")
+                .setTitleText(context.getString(R.string.select_session_date))
                 .setSelection(selectedTimestamp)
                 .build()
 
@@ -248,16 +246,25 @@ object DialogFactory {
                 val localDate = Instant.ofEpochMilli(selection).atZone(ZoneOffset.UTC).toLocalDate()
                 edtDate.setText(localDate.format(dateFormat))
             }
-            datePicker.show(fragmentManager, "DATE_PICKER")
+            datePicker.show(fragmentManager, TAG_DATE_PICKER_CREATE)
         }
 
         AlertDialog.Builder(context)
-            .setTitle("New Session")
+            .setTitle(R.string.title_new_session)
             .setView(dialogView)
-            .setPositiveButton("Create") { _, _ ->
-                onSessionCreated(edtName.text.toString(), selectedTimestamp)
+            .setPositiveButton(R.string.action_create) { _, _ ->
+                val nameText = edtName.text.toString().trim()
+                if (nameText.isNotEmpty()) {
+                    onSessionCreated(nameText, selectedTimestamp)
+                } else {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.error_empty_name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .showWithSmartNfcReading()
     }
 
@@ -271,23 +278,23 @@ object DialogFactory {
             setPadding(50, 40, 50, 10)
         }
         val nameInput = EditText(context).apply {
-            hint = "Student Name"
+            hint = context.getString(R.string.student_name)
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
         }
         val emailInput = EditText(context).apply {
-            hint = "student@university.edu"
+            hint = context.getString(R.string.student_email)
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         }
         layout.addView(nameInput)
         layout.addView(emailInput)
 
         val dialog = AlertDialog.Builder(context)
-            .setTitle("Manual Registration")
-            .setMessage("Tag ID: $rfid")
+            .setTitle(R.string.title_manual_attendance)
+            .setMessage(context.getString(R.string.label_tag_id, rfid))
             .setView(layout)
-            .setPositiveButton("Save", null)
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(R.string.action_save, null)
+            .setNegativeButton(R.string.action_cancel, null)
             .showWithSmartNfcReading()
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -295,11 +302,12 @@ object DialogFactory {
             val email = emailInput.text.toString().trim()
 
             if (name.isEmpty()) {
-                nameInput.error = "Name is required"
+                nameInput.error = context.getString(R.string.error_empty_name)
             } else if (email.isEmpty() || !android.util.Patterns.EMAIL_ADDRESS.matcher(email)
                     .matches()
             ) {
-                emailInput.error = "Enter a valid email"
+                // Resolved using custom localized email structural validation key reference
+                emailInput.error = context.getString(R.string.error_invalid_email)
             } else {
                 onStudentSaved(name, email, dialog)
             }

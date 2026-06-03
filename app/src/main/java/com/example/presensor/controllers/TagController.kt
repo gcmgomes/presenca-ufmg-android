@@ -57,18 +57,28 @@ class TagController(
 
     private fun showOverwriteConfirmation(existingStudent: Student, newRfid: String) {
         AlertDialog.Builder(context)
-            .setTitle("Tag Already Registered")
-            .setMessage("This tag is currently assigned to ${existingStudent.name} (${existingStudent.email}).\n\nDo you want to unbind this tag so it can be reassigned?")
-            .setPositiveButton("Yes") { _, _ ->
+            .setTitle(context.getString(R.string.dialog_tag_registered_title))
+            .setMessage(
+                context.getString(
+                    R.string.dialog_tag_registered_message,
+                    existingStudent.name,
+                    existingStudent.email
+                )
+            )
+            .setPositiveButton(context.getString(R.string.action_yes)) { _, _ ->
                 scope.launch {
                     db.dao().bindTagToStudent(null, existingStudent.email)
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Tag unbound", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.toast_tag_unbound),
+                            Toast.LENGTH_SHORT
+                        ).show()
                         showBindingDialog(newRfid)
                     }
                 }
             }
-            .setNegativeButton("No", null)
+            .setNegativeButton(context.getString(R.string.action_no), null)
             .create()
             .apply {
                 setOnShowListener { onDialogStateChanged(true) }
@@ -97,8 +107,17 @@ class TagController(
                         val hasTag = !student.rfid.isNullOrEmpty()
                         val row = TextView(context).apply {
                             text =
-                                if (hasTag) "${student.name} - ${student.email} - [${student.rfid}]"
-                                else "${student.name} - ${student.email} - [No tag]"
+                                if (hasTag) context.getString(
+                                    R.string.label_student_row_with_tag,
+                                    student.name,
+                                    student.email,
+                                    student.rfid
+                                )
+                                else context.getString(
+                                    R.string.label_student_row_no_tag,
+                                    student.name,
+                                    student.email
+                                )
                             textSize = 16f
                             setPadding(30, 30, 30, 30)
                             alpha = if (hasTag) 0.6f else 1.0f
@@ -129,10 +148,10 @@ class TagController(
                 refreshList("")
 
                 bindingDialog = AlertDialog.Builder(context)
-                    .setTitle("Assign Tag: $newRfid")
+                    .setTitle(context.getString(R.string.title_assign_tag, newRfid))
                     .setView(dialogView)
-                    .setNegativeButton("Cancel", null)
-                    .setNeutralButton("Manual Entry") { _, _ ->
+                    .setNegativeButton(context.getString(R.string.action_cancel), null)
+                    .setNeutralButton(context.getString(R.string.title_manual_attendance)) { _, _ ->
                         showRegistrationDialog(newRfid)
                     }
                     .create()
@@ -148,13 +167,20 @@ class TagController(
 
     private fun showReassignConfirmation(student: Student, rfid: String, onComplete: () -> Unit) {
         AlertDialog.Builder(context)
-            .setTitle("Overwrite Tag?")
-            .setMessage("${student.name} is already linked to tag ${student.rfid}.\n\nDo you want to replace it with the new tag $rfid?")
-            .setPositiveButton("Replace") { _, _ ->
+            .setTitle(context.getString(R.string.dialog_overwrite_tag_title))
+            .setMessage(
+                context.getString(
+                    R.string.dialog_overwrite_tag_message,
+                    student.name,
+                    student.rfid,
+                    rfid
+                )
+            )
+            .setPositiveButton(context.getString(R.string.action_replace)) { _, _ ->
                 bindTag(rfid, student.email)
                 onComplete()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(context.getString(R.string.action_cancel), null)
             .create()
             .apply {
                 setOnShowListener { onDialogStateChanged(true) }
@@ -167,7 +193,11 @@ class TagController(
         scope.launch {
             withContext(Dispatchers.IO) { db.dao().clearAndBind(rfid, email) }
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Tag successfully assigned!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_tag_assigned_success),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -181,7 +211,11 @@ class TagController(
                     db.dao()
                         .insertStudents(listOf(Student(email = email, name = name, rfid = rfid)))
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Registered $name", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.toast_student_registered_success, name),
+                            Toast.LENGTH_SHORT
+                        ).show()
                         dialog.dismiss()
                     }
                 }

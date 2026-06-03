@@ -4,8 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?android:attr/windowBackground"
-    >
+    android:background="?android:attr/windowBackground">
 
     <include
         layout="@layout/item_detailed_course_card"
@@ -30,7 +29,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:iconifiedByDefault="false"
-            app:queryHint="Search student name or email..."
+            app:queryHint="@string/hint_search_student"
             app:queryBackground="@android:color/transparent" />
     </com.google.android.material.card.MaterialCardView>
 

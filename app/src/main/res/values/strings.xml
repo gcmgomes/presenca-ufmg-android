@@ -1,3 +1,103 @@
-<resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="app_name">Presensor</string>
+
+    <string name="action_text">Action</string>
+    <string name="hint_search_course">Search courses by name…</string>
+    <string name="current_semester_head_text">Current semester</string>
+    <string name="previous_semester_head_text">Previous semesters</string>
+    <string name="upcoming_semester_head_text">Upcoming semesters</string>
+    <string name="semester_display_format">%1$d - %2$s Semester</string>
+    <string name="semester_ordinal_1st">1st</string>
+    <string name="semester_ordinal_2nd">2nd</string>
+
+    <string name="title_new_course">New Course</string>
+    <string name="title_edit_course">Edit Course Details</string>
+    <string name="hint_course_name">Course Name</string>
+    <string name="hint_course_semester">Course semester</string>
+    <string name="label_year">Year</string>
+    <string name="label_semester">Semester</string>
+    <string name="select_year">Select Year</string>
+    <string name="select_semester">Select Semester</string>
+    <string name="menu_title_course_management">Course Management</string>
+    <string name="menu_course_statistics">Course Statistics</string>
+    <string name="menu_course_import">Import schedule</string>
+    <string name="menu_course_export">Export attendance (csv)</string>
+
+    <string name="session_text">Session</string>
+    <string name="title_new_session">New Session</string>
+    <string name="title_edit_session">Edit Session Details</string>
+    <string name="hint_session_name">Session Name</string>
+    <string name="hint_session_date">Session Date</string>
+    <string name="select_session_date">Select Session Date</string>
+    <string name="session_date_display_format">EEEE, MMMM dd</string>
+
+    <string name="title_attendance_list">Attendance List</string>
+    <string name="title_manual_attendance">Manual Attendance</string>
+    <string name="hint_search_student">Search student by name or email…</string>
+    <string name="student_name">Student name</string>
+    <string name="student_email">student@email.com</string>
+    <string name="stats_students">Students</string>
+    <string name="stats_sessions">Sessions</string>
+    <string name="stats_attendance">Attendance</string>
+
+    <string name="label_tag_id">Tag ID: %1$s</string>
+    <string name="title_assign_tag">Assign Tag: %1$s</string>
+    <string name="label_student_row_with_tag">%1$s\n- %2$s\n- [%3$s]</string>
+    <string name="label_student_row_no_tag">%1$s\n- %2$s\n- [No tag]</string>
+    <string name="dialog_tag_registered_title">Tag Already Registered</string>
+    <string name="dialog_tag_registered_message">This tag is currently assigned to %1$s (%2$s).\n\nDo you want to unbind this tag so it can be reassigned?</string>
+    <string name="dialog_overwrite_tag_title">Overwrite Tag?</string>
+    <string name="dialog_overwrite_tag_message">%1$s is already linked to tag %2$s.\n\nDo you want to replace it with the new tag %3$s?</string>
+
+    <string name="dialog_import_sessions">Review importing schedule</string>
+    <string name="dialog_import_sessions_hint">Found %1$d sessions. Please verify the dates.</string>
+    <string name="dialog_import_sessions_button_text">Import sessions</string>
+    <string name="dialog_import_students">Review importing student roster</string>
+    <string name="dialog_import_students_hint">Found %1$d students. Please verify their information.</string>
+    <string name="dialog_import_students_button_text">Import students</string>
+    <string name="csv_header_student_identity">Student Name,Email,Tag</string>
+    <string name="filename_attendance_fallback">Attendance</string>
+    <string name="label_not_applicable">N/A</string>
+
+    <string name="dialog_unlock_title">Unlock Session %1$s</string>
+    <string name="dialog_unlock_message">Enter the session name:</string>
+    <string name="msg_session_locked">Session Locked</string>
+    <string name="msg_session_unlocked">Session Unlocked</string>
+
+    <string name="action_create">Create</string>
+    <string name="action_save">Save Changes</string>
+    <string name="action_unlock">Unlock</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_yes">Yes</string>
+    <string name="action_no">No</string>
+    <string name="action_replace">Replace</string>
+
+    <string name="dialog_delete_course_title">Final Confirmation</string>
+    <string name="dialog_delete_course_message">You are about to delete \'%1$s\'. This action is permanent. Please type DELETE below:</string>
+    <string name="dialog_delete_session_title">Final Confirmation</string>
+    <string name="dialog_delete_session_message">You are about to delete \'%1$s\'. This action is permanent. Please type DELETE below:</string>
+    <string name="hint_delete_confirm">Type \'DELETE\' to confirm</string>
+
+    <string name="error_empty_name">Name cannot be empty</string>
+    <string name="error_invalid_email">Enter a valid email</string>
+    <string name="error_incorrect_password">Incorrect Password</string>
+    <string name="error_delete_confirmation_mismatch">Text must match exactly</string>
+    <string name="msg_no_students_found">No matching students found</string>
+    <string name="toast_course_updated">Course updated successfully</string>
+    <string name="toast_course_deleted_success">Course permanently removed</string>
+    <string name="toast_session_properties_modified">Session properties modified</string>
+    <string name="toast_imported_sessions">Imported %1$d sessions</string>
+    <string name="toast_tag_not_registered">Tag not registered</string>
+    <string name="toast_tag_unbound">Tag unbound</string>
+    <string name="toast_tag_assigned_success">Tag successfully assigned!</string>
+    <string name="toast_student_registered_success">Registered %1$s</string>
+    <string name="toast_export_success">Roster exported!</string>
+    <string name="toast_export_failed">Export failed</string>
+    <string name="date_picker_display_format">MMM dd, yyyy</string>
+
+    <string-array name="semesters_array">
+        <item>1</item>
+        <item>2</item>
+    </string-array>
 </resources>
