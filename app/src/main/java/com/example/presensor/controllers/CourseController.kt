@@ -165,7 +165,8 @@ class CourseController(
             refreshSessionsList(db.getCourseCache().allSessions)
             val cache = db.getCourseCache()
             val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
-            fillCourseDetailedCardStatistics(
+            CourseUtilities.fillCourseDetailedCardStatistics(
+                activity,
                 layoutCourseView,
                 selectedCourse!!,
                 cache.sessionIds,
@@ -173,44 +174,6 @@ class CourseController(
                 cache.allAttendance
             )
         }
-    }
-
-    fun fillCourseDetailedCardStatistics(
-        card: View,
-        course: Course,
-        sessionIds: Set<Long>,
-        studentEmails: Set<String>,
-        courseAttendances: List<AttendanceRecord>
-    ) {
-        card.findViewById<TextView>(R.id.txtDetailCourseName).text = course.name
-
-        // Dynamic localized layout ordinal mapping integration ("1st Semester" vs "1º Semestre")
-        val semesterOrdinal = if (course.semester == 1) {
-            activity.getString(R.string.semester_ordinal_1st)
-        } else {
-            activity.getString(R.string.semester_ordinal_2nd)
-        }
-        card.findViewById<TextView>(R.id.txtDetailCourseSemester).text =
-            activity.getString(R.string.semester_display_format, course.year, semesterOrdinal)
-
-        card.findViewById<View>(R.id.viewCourseDetailAccent)
-            .setBackgroundColor(getColorForAccent(course.name))
-
-        val studentCount = studentEmails.size
-        val sessionCount = sessionIds.size
-
-        val avgAttendance = if (studentCount > 0 && sessionCount > 0) {
-            val totalPossible = studentCount * sessionCount
-            val actualLogs =
-                courseAttendances.map { it.sessionId to it.studentEmail }.distinct().size
-            (actualLogs.toFloat() / totalPossible.toFloat() * 100).toInt()
-        } else {
-            0
-        }
-
-        card.findViewById<TextView>(R.id.txtStatStudentCount).text = studentCount.toString()
-        card.findViewById<TextView>(R.id.txtStatSessionCount).text = sessionCount.toString()
-        card.findViewById<TextView>(R.id.txtStatAvgAttendance).text = "$avgAttendance%"
     }
 
     private fun refreshSessionsList(sessions: List<Session>) {
@@ -234,15 +197,15 @@ class CourseController(
 
         // Localized structural header elements matching layout boundaries cleanly
         addSessionsToCourseView(
-            activity.getString(R.string.current_semester_head_text),
+            activity.getString(R.string.current_week_session_head_text),
             thisWeekSessions
         )
         addSessionsToCourseView(
-            activity.getString(R.string.upcoming_semester_head_text),
+            activity.getString(R.string.upcoming_sessions_head_text) ,
             upcomingSessions
         )
         addSessionsToCourseView(
-            activity.getString(R.string.previous_semester_head_text),
+            activity.getString(R.string.previous_sessions_head_text),
             pastSessions
         )
     }
@@ -281,7 +244,12 @@ class CourseController(
 
         val imgLock = itemView.findViewById<ImageView>(R.id.imgSessionLockOnSessionView)
         itemView.findViewById<View>(R.id.viewSessionAccent)
-            .setBackgroundColor(getColorForAccent(session.name))
+            .setBackgroundColor(
+                CourseUtilities.getColorForAccent(
+                    session.name,
+                    activity.resources.obtainTypedArray(R.array.chalk_colors_list)
+                )
+            )
         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
         itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
             CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)
@@ -329,16 +297,6 @@ class CourseController(
                 arrowIcon.animate().rotation(0f).setDuration(animationDuration).start()
             }
         }
-    }
-
-    private fun getColorForAccent(courseName: String): Int {
-        val typedArray = activity.resources.obtainTypedArray(R.array.chalk_colors_list)
-        val colors = IntArray(typedArray.length())
-        for (i in 0 until typedArray.length()) {
-            colors[i] = typedArray.getColor(i, 0)
-        }
-        typedArray.recycle()
-        return colors[abs(courseName.hashCode()) % colors.size]
     }
 
     private fun showImportPreview(sessions: List<Session>) {

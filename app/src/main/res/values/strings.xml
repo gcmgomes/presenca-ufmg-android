@@ -11,6 +11,11 @@
     <string name="semester_ordinal_1st">1st</string>
     <string name="semester_ordinal_2nd">2nd</string>
 
+
+    <string name="current_week_session_head_text">Current week</string>
+    <string name="previous_sessions_head_text">Past sessions</string>
+    <string name="upcoming_sessions_head_text">Upcoming sessions</string>
+
     <string name="title_new_course">New Course</string>
     <string name="title_edit_course">Edit Course Details</string>
     <string name="hint_course_name">Course Name</string>

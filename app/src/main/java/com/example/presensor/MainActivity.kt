@@ -51,6 +51,7 @@ import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.adapters.StudentStatsAdapter
 import com.example.presensor.controllers.DashboardController
 import com.example.presensor.controllers.CourseController
+import com.example.presensor.controllers.DetailedCourseController
 import com.example.presensor.controllers.SessionController
 import com.example.presensor.controllers.TagController
 import com.example.presensor.data.entities.Session
@@ -68,6 +69,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var db: AppDatabase
     private lateinit var dashboardController: DashboardController
     private lateinit var courseController: CourseController
+    private lateinit var detailedCourseController: DetailedCourseController
     private lateinit var sessionController: SessionController
     private lateinit var tagController: TagController
 
@@ -195,6 +197,14 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             onOpenStatistics = { openCourseStatistics() }
         )
 
+        detailedCourseController = DetailedCourseController(
+            activity = this,
+            lifecycleOwner = this,
+            db = db,
+            courseController = courseController,
+            getColorFromAttr = { attr -> getColorFromAttr(attr) }
+        )
+
         findViewById<FloatingActionButton>(R.id.btnAddSession).setOnClickListener { courseController.showCreateSessionDialog() }
 
         // Bind the manual entry click interaction directly to your extracted controller layer
@@ -222,6 +232,7 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
                     }
 
                     AppState.COURSE_STATS -> {
+                        detailedCourseController.clear()
                         currentState = AppState.COURSE
                         toggleAllViews(layoutCourseView = true)
                         courseController.refreshCourseUI()
@@ -299,89 +310,24 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         return typedValue.data
     }
 
-    private fun loadDetailedCourseData() {
-        val course = courseController.getSelectedCourse() ?: return
-        lifecycleScope.launch(Dispatchers.IO) {
-            val nowMillis =
-                LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-
-            val sessionsDeferred = async(Dispatchers.IO) { db.dao().getSessionsByCourse(course.id) }
-            val allSessions = sessionsDeferred.await().filter { it.date <= nowMillis }
-            val sessionIds = allSessions.map { it.id }.toSet()
-
-            val attendanceDeferred = async(Dispatchers.IO) {
-                db.dao().getAllAttendanceForCourse(course.id)
-            }
-            val allAttendance = attendanceDeferred.await()
-
-            val attendeeEmails = allAttendance.map { it.studentEmail }.distinct()
-            val activeStudents = db.dao().getAllStudents().filter { it.email in attendeeEmails }
-
-            db.getCourseCache().courseId = course.id
-            db.getCourseCache().activeStudents = activeStudents
-            db.getCourseCache().activeStudentEmails = attendeeEmails.toSet()
-            db.getCourseCache().allSessions = allSessions
-            db.getCourseCache().allAttendance = allAttendance
-            db.getCourseCache().sessionIds = sessionIds
-        }
-    }
-
-    private fun setupDetailedCourseView(statsView: View) {
-        val course = courseController.getSelectedCourse() ?: return
-        currentStatsView = statsView
-
-        val detailedCourseSearchView =
-            statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
-        detailedCourseSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean = false
-            override fun onQueryTextChange(newText: String?): Boolean {
-                refreshCourseAttendanceList(newText ?: "")
-                return true
-            }
-        })
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
-                val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
-                rv.layoutManager = LinearLayoutManager(this@MainActivity)
-
-                rv.adapter = StudentStatsAdapter(
-                    db.getCourseCache().activeStudents,
-                    db.getCourseCache().allSessions,
-                    db.getCourseCache().allAttendance,
-                    db.getCourseCache().sessionIds,
-                    getColorFromAttr = { attr -> getColorFromAttr(attr) },
-                    makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter(this@MainActivity) },
-                    fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) })
-            }
-        }
-    }
-
-    private fun refreshCourseAttendanceList(filter: String = "") {
-        val statsView = currentStatsView ?: return
-        val filteredStudents = db.getCourseCache().getFilteredStudents(filter)
-        val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
-        (rv.adapter as? StudentStatsAdapter)?.updateData(filteredStudents)
-    }
 
     private fun openCourseStatistics() {
-        val course = courseController.getSelectedCourse() ?: return
+        if (courseController.getSelectedCourse() == null) return
         currentState = AppState.COURSE_STATS
+
         val container = findViewById<LinearLayout>(R.id.layoutCourseStatisticsView)
         container.removeAllViews()
-        toggleAllViews()
+        toggleAllViews() // Clears visible UI spaces
 
-        val statsView = layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
+        // Delegate both creation/inflation and configuration to the controller
+        val statsView = detailedCourseController.inflateAndSetupStatsView(container)
+
+        // Add the fully-configured view back into the layout tree
         container.addView(statsView)
-        setupDetailedCourseView(statsView)
-        refreshCourseAttendanceList()
-        courseController.fillCourseDetailedCardStatistics(
-            statsView,
-            course,
-            db.getCourseCache().sessionIds,
-            db.getCourseCache().activeStudents.map { it.email }.toSet(),
-            db.getCourseCache().allAttendance
-        )
+
+        // Initial data sync for the student row filtering states
+        detailedCourseController.refreshDetailedCourseUI()
+
         toggleAllViews(layoutCourseStatisticsView = true)
     }
 

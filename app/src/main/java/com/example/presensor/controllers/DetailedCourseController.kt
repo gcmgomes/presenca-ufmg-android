@@ -1,7 +1,9 @@
 package com.example.presensor.controllers
 
+import android.app.Dialog
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
@@ -9,123 +11,104 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.CourseUtilities
 import com.example.presensor.R
+import com.example.presensor.CourseUtilities
+import com.example.presensor.DialogFactory
 import com.example.presensor.adapters.StudentStatsAdapter
 import com.example.presensor.data.AppDatabase
-import com.example.presensor.data.entities.Course
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.ZoneId
 
 class DetailedCourseController(
     private val activity: AppCompatActivity,
     private val lifecycleOwner: LifecycleOwner,
     private val db: AppDatabase,
-    private val layoutInflater: LayoutInflater,
-    private val container: LinearLayout,
     private val courseController: CourseController,
     private val getColorFromAttr: (Int) -> Int,
-    private val onToggleViewsRequested: (
-        layoutDashboardView: Boolean,
-        layoutCourseView: Boolean,
-        layoutSessionView: Boolean,
-        layoutCourseStatisticsView: Boolean
-    ) -> Unit
 ) {
+    private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
+    private lateinit var btnEditCourse: ImageView
     private var currentStatsView: View? = null
 
-    fun openCourseStatistics() {
-        val course = courseController.getSelectedCourse() ?: return
+    /**
+     * Inflates the statistics view hierarchy, configures internal components,
+     * fills metrics, and returns the view ready to be displayed.
+     */
+    fun inflateAndSetupStatsView(container: LinearLayout): View {
+        val course = courseController.getSelectedCourse() ?: throw IllegalStateException("No course selected")
 
-        container.removeAllViews()
-        onToggleViewsRequested(false, false, false, false)
-
+        // Inflate the view inside the controller context
         val statsView = layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
-        container.addView(statsView)
-
-        setupDetailedCourseView(statsView)
-        refreshCourseAttendanceList()
-
-        courseController.fillCourseDetailedCardStatistics(
-            statsView,
-            course,
-            db.getCourseCache().sessionIds,
-            db.getCourseCache().activeStudents.map { it.email }.toSet(),
-            db.getCourseCache().allAttendance
-        )
-
-        onToggleViewsRequested(false, false, false, true)
-    }
-
-    private fun setupDetailedCourseView(statsView: View) {
         currentStatsView = statsView
 
-        val detailedCourseSearchView =
-            statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
+        btnEditCourse = statsView.findViewById<ImageView>(R.id.btnEditCourse)
+
+        btnEditCourse.setOnClickListener {
+            courseController.showEditCourseDialog(course) {
+                refreshDetailedCourseUI()
+            }
+        }
+
+        // 1. Setup SearchView Listeners
+        val detailedCourseSearchView = statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
         detailedCourseSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean = false
             override fun onQueryTextChange(newText: String?): Boolean {
-                refreshCourseAttendanceList(newText ?: "")
+                refreshDetailedCourseUI(newText ?: "")
                 return true
             }
         })
 
+
+        // 2. Async Load and Bind RecyclerView Data
         lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val cache = db.getCourseCache()
             withContext(Dispatchers.Main) {
                 val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
                 rv.layoutManager = LinearLayoutManager(activity)
 
                 rv.adapter = StudentStatsAdapter(
-                    db.getCourseCache().activeStudents,
-                    db.getCourseCache().allSessions,
-                    db.getCourseCache().allAttendance,
-                    db.getCourseCache().sessionIds,
+                    cache.activeStudents,
+                    cache.allSessions,
+                    cache.allAttendance,
+                    cache.sessionIds,
                     getColorFromAttr = { attr -> getColorFromAttr(attr) },
                     makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter(activity) },
-                    fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) })
+                    fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) }
+                )
             }
         }
+
+        return statsView
     }
 
-    fun refreshCourseAttendanceList(filter: String = "") {
+    /**
+     * Filters the student roster list view dynamically as the instructor types.
+     */
+    fun refreshDetailedCourseUI(filter: String = "") {
         val statsView = currentStatsView ?: return
+
+
+        // 3. Bind the Summary Card Data metrics fields
+        val cache = db.getCourseCache()
+        CourseUtilities.fillCourseDetailedCardStatistics(
+            activity,
+            statsView,
+            courseController.getSelectedCourse()!!,
+            cache.sessionIds,
+            cache.activeStudents.map { it.email }.toSet(),
+            cache.allAttendance
+        )
         val filteredStudents = db.getCourseCache().getFilteredStudents(filter)
         val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
         (rv.adapter as? StudentStatsAdapter)?.updateData(filteredStudents)
     }
 
-    fun loadDetailedCourseData() {
-        val course = courseController.getSelectedCourse() ?: return
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            val nowMillis =
-                LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-
-            val sessionsDeferred = async(Dispatchers.IO) { db.dao().getSessionsByCourse(course.id) }
-            val allSessions = sessionsDeferred.await().filter { it.date <= nowMillis }
-            val sessionIds = allSessions.map { it.id }.toSet()
-
-            val attendanceDeferred = async(Dispatchers.IO) {
-                db.dao().getAllAttendanceForCourse(course.id)
-            }
-            val allAttendance = attendanceDeferred.await()
-
-            val attendeeEmails = allAttendance.map { it.studentEmail }.distinct()
-            val activeStudents = db.dao().getAllStudents().filter { it.email in attendeeEmails }
-
-            db.getCourseCache().courseId = course.id
-            db.getCourseCache().activeStudents = activeStudents
-            db.getCourseCache().activeStudentEmails = attendeeEmails.toSet()
-            db.getCourseCache().allSessions = allSessions
-            db.getCourseCache().allAttendance = allAttendance
-            db.getCourseCache().sessionIds = sessionIds
-        }
-    }
-
+    /**
+     * Releases view references safely when navigating away to prevent memory leaks.
+     */
     fun clear() {
         currentStatsView = null
     }

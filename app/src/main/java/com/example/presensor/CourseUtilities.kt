@@ -4,7 +4,10 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.res.TypedArray
 import android.net.Uri
+import android.view.View
 import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -269,5 +272,50 @@ object CourseUtilities {
         }
         colorArray.recycle()
         return colors[Math.abs(courseName.hashCode()) % colors.size]
+    }
+
+
+    fun fillCourseDetailedCardStatistics(
+        activity: AppCompatActivity,
+        card: View,
+        course: Course,
+        sessionIds: Set<Long>,
+        studentEmails: Set<String>,
+        courseAttendances: List<AttendanceRecord>
+    ) {
+        card.findViewById<TextView>(R.id.txtDetailCourseName).text = course.name
+
+        // Dynamic localized layout ordinal mapping integration ("1st Semester" vs "1º Semestre")
+        val semesterOrdinal = if (course.semester == 1) {
+            activity.getString(R.string.semester_ordinal_1st)
+        } else {
+            activity.getString(R.string.semester_ordinal_2nd)
+        }
+        card.findViewById<TextView>(R.id.txtDetailCourseSemester).text =
+            activity.getString(R.string.semester_display_format, course.year, semesterOrdinal)
+
+        card.findViewById<View>(R.id.viewCourseDetailAccent)
+            .setBackgroundColor(
+                getColorForAccent(
+                    course.name,
+                    activity.resources.obtainTypedArray(R.array.chalk_colors_list)
+                )
+            )
+
+        val studentCount = studentEmails.size
+        val sessionCount = sessionIds.size
+
+        val avgAttendance = if (studentCount > 0 && sessionCount > 0) {
+            val totalPossible = studentCount * sessionCount
+            val actualLogs =
+                courseAttendances.map { it.sessionId to it.studentEmail }.distinct().size
+            (actualLogs.toFloat() / totalPossible.toFloat() * 100).toInt()
+        } else {
+            0
+        }
+
+        card.findViewById<TextView>(R.id.txtStatStudentCount).text = studentCount.toString()
+        card.findViewById<TextView>(R.id.txtStatSessionCount).text = sessionCount.toString()
+        card.findViewById<TextView>(R.id.txtStatAvgAttendance).text = "$avgAttendance%"
     }
 }
