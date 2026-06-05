@@ -16,7 +16,7 @@
 
         <include
             android:id="@+id/layoutCourseView"
-            layout="@layout/layout_course_detail"
+            layout="@layout/layout_course"
             android:visibility="gone" />
 
         <include

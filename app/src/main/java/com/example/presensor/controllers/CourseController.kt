@@ -65,6 +65,8 @@ class CourseController(
     private val btnCourseStats: Button = activity.findViewById(R.id.btnCourseStats)
     private val btnImportSchedule: MaterialButton = activity.findViewById(R.id.btnImportSchedule)
 
+    private val btnMassDateChange: MaterialButton = activity.findViewById(R.id.btnMassDateChange)
+
     private val btnEditCourse: ImageView = activity.findViewById<ImageView>(R.id.btnEditCourse)
 
     private val importSessionLauncher =
@@ -145,6 +147,7 @@ class CourseController(
             val fileName = "Attendance_${courseName.replace(" ", "_")}.csv"
             exportLauncher.launch(fileName)
         }
+        btnMassDateChange.setOnClickListener { showMassDateChangeDialog() }
     }
 
     private fun txtDetailCourseNameText(): String {
@@ -214,6 +217,88 @@ class CourseController(
         if (sessions.isNotEmpty()) {
             MainUiBinder.addSectionHeader(sessionContainer, title)
             sessions.forEach { addSessionCardToContainer(it) }
+        }
+    }
+
+    fun showMassDateChangeDialog() {
+        val context = activity
+        val currentCourse = selectedCourse ?: return
+        val dialogView = layoutInflater.inflate(R.layout.dialog_date_change_sessions, null)
+
+        val edtThresholdDate = dialogView.findViewById<EditText>(R.id.edtThresholdDate)
+        val edtNewStartDate = dialogView.findViewById<EditText>(R.id.edtNewStartDate)
+
+        var thresholdTimestamp: Long? = null
+        var newStartTimestamp: Long? = null
+
+        val dateFormatter = CourseUtilities.makeSessionTimeFormatter(activity)
+
+        // Helper to launch standard Material Date Picker natively
+        val attachDatePicker = { editText: EditText, onDateSelected: (Long) -> Unit ->
+            editText.setOnClickListener {
+                val builder = com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
+                builder.setTitleText(editText.hint)
+                val picker = builder.build()
+                picker.addOnPositiveButtonClickListener { selection ->
+                    onDateSelected(selection)
+                    editText.setText(CourseUtilities.fromMillisToLocalDate(selection).format(dateFormatter))
+                }
+                picker.show(activity.supportFragmentManager, "MASS_DATE_PICKER")
+            }
+        }
+
+        attachDatePicker(edtThresholdDate) { thresholdTimestamp = it }
+        attachDatePicker(edtNewStartDate) { newStartTimestamp = it }
+
+        val dialog = AlertDialog.Builder(context)
+            .setTitle(context.getString(R.string.menu_course_postpone))
+            .setView(dialogView)
+            .setPositiveButton(context.getString(R.string.action_save), null)
+            .setNegativeButton(context.getString(R.string.action_cancel), null)
+            .create()
+
+        dialog.show()
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val currentThreshold = thresholdTimestamp
+            val currentNewStart = newStartTimestamp
+
+            if (currentThreshold == null) {
+                edtThresholdDate.error = context.getString(R.string.error_empty_date)
+                return@setOnClickListener
+            }
+            if (currentNewStart == null) {
+                edtNewStartDate.error = context.getString(R.string.error_empty_date)
+                return@setOnClickListener
+            }
+
+            lifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    // 1. Fetch all course sessions matching criteria ordered by timeline execution sequence
+                    val targetedSessions = db.getCourseCache().allSessions
+                        .filter { it.date >= currentThreshold }
+                        .sortedBy { it.date }
+
+                    if (targetedSessions.isNotEmpty()) {
+                        // 2. Compute timeline displacement delta using milliseconds interval length differences
+                        val originalBaseDate = targetedSessions.first().date
+                        val deltaOffset = currentNewStart - originalBaseDate
+
+                        // 3. Mutate timeline states sequentially shifting each matched course session item
+                        targetedSessions.forEach { session ->
+                            val updatedSession = session.copy(
+                                date = session.date + deltaOffset
+                            )
+                            db.updateSession(updatedSession)
+                        }
+                    }
+                }
+
+                // 4. Update view architecture tree indicators immediately back in the foreground main execution block
+                refreshCourseUI()
+                Toast.makeText(context, context.getString(R.string.toast_sessions_updated_success), Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
         }
     }
 

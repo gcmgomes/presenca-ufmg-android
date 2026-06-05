@@ -119,6 +119,21 @@
                         android:textColor="?attr/actionItemColor"
                         app:tint="?attr/actionItemColor" />
 
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMassDateChange"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/menu_course_postpone"
+                        android:textAlignment="viewStart"
+                        android:paddingStart="12dp"
+                        app:icon="@drawable/ic_postpone"
+                        app:iconPadding="16dp"
+                        android:textColor="?attr/actionItemColor"
+                        app:tint="?attr/actionItemColor" />
+
+
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

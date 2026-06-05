@@ -28,6 +28,7 @@
     <string name="menu_course_statistics">Estatísticas do curso</string>
     <string name="menu_course_import">Importar cronograma</string>
     <string name="menu_course_export">Exportar presenças (csv)</string>
+    <string name="menu_course_postpone">Alterar datas</string>
 
     <string name="session_text">Aula</string>
     <string name="title_new_session">Nova Aula</string>
@@ -64,6 +65,13 @@
     <string name="csv_header_student_identity">Nome do Aluno,Email,Tag</string>
     <string name="filename_attendance_fallback">Presenca</string>
     <string name="label_not_applicable">N/A</string>
+
+
+    <string name="dialog_mass_date_change_description">Alteração de datas</string>
+    <string name="dialog_label_sessions_after_date">Data inicial atual</string>
+    <string name="dialog_label_new_start_date">Nova data inicial</string>
+    <string name="error_empty_date">Por favor faça uma seleção válida</string>
+    <string name="toast_sessions_updated_success">Alteração de datas concluída com sucesso</string>
 
     <string name="dialog_unlock_title">Desbloquear Aula %1$s</string>
     <string name="dialog_unlock_message">Digite o nome da aula:</string>

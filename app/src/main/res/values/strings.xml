@@ -28,6 +28,7 @@
     <string name="menu_course_statistics">Course Statistics</string>
     <string name="menu_course_import">Import schedule</string>
     <string name="menu_course_export">Export attendance (csv)</string>
+    <string name="menu_course_postpone">Change session dates</string>
 
     <string name="session_text">Session</string>
     <string name="title_new_session">New Session</string>
@@ -64,6 +65,12 @@
     <string name="csv_header_student_identity">Student Name,Email,Tag</string>
     <string name="filename_attendance_fallback">Attendance</string>
     <string name="label_not_applicable">N/A</string>
+
+    <string name="dialog_mass_date_change_description">Mass session date change</string>
+    <string name="dialog_label_sessions_after_date">Current starting date</string>
+    <string name="dialog_label_new_start_date">New starting date</string>
+    <string name="error_empty_date">Please provide a valid selection</string>
+    <string name="toast_sessions_updated_success">All targeted sessions shifted successfully</string>
 
     <string name="dialog_unlock_title">Unlock Session %1$s</string>
     <string name="dialog_unlock_message">Enter the session name:</string>
