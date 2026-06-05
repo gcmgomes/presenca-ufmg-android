@@ -136,6 +136,7 @@ class CourseController(
         }
     }
 
+
     private fun setupOnClickListeners() {
         btnCourseStats.setOnClickListener { onOpenStatistics() }
         btnImportSchedule.setOnClickListener { triggerImportSessionPicker() }
