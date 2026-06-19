@@ -6,5 +6,5 @@ import androidx.room.Entity
 data class Student(
     val email: String,
     val name: String,
-    val rfid: String? = null // Nullable until bound
+    var rfid: String? = null // Nullable until bound
 )

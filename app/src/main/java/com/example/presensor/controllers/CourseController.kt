@@ -204,7 +204,7 @@ class CourseController(
             thisWeekSessions
         )
         addSessionsToCourseView(
-            activity.getString(R.string.upcoming_sessions_head_text) ,
+            activity.getString(R.string.upcoming_sessions_head_text),
             upcomingSessions
         )
         addSessionsToCourseView(
@@ -236,12 +236,15 @@ class CourseController(
         // Helper to launch standard Material Date Picker natively
         val attachDatePicker = { editText: EditText, onDateSelected: (Long) -> Unit ->
             editText.setOnClickListener {
-                val builder = com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
+                val builder =
+                    com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
                 builder.setTitleText(editText.hint)
                 val picker = builder.build()
                 picker.addOnPositiveButtonClickListener { selection ->
                     onDateSelected(selection)
-                    editText.setText(CourseUtilities.fromMillisToLocalDate(selection).format(dateFormatter))
+                    editText.setText(
+                        CourseUtilities.fromMillisToLocalDate(selection).format(dateFormatter)
+                    )
                 }
                 picker.show(activity.supportFragmentManager, "MASS_DATE_PICKER")
             }
@@ -296,7 +299,11 @@ class CourseController(
 
                 // 4. Update view architecture tree indicators immediately back in the foreground main execution block
                 refreshCourseUI()
-                Toast.makeText(context, context.getString(R.string.toast_sessions_updated_success), Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_sessions_updated_success),
+                    Toast.LENGTH_SHORT
+                ).show()
                 dialog.dismiss()
             }
         }
@@ -467,7 +474,7 @@ class CourseController(
                         year = parsedYear,
                         semester = selectedSemester
                     )
-                    db.dao().insertCourse(newCourse)
+                    db.insertCourse(newCourse)
                 }
                 onCourseCreated()
                 dialog.dismiss()
@@ -533,7 +540,7 @@ class CourseController(
                         year = updatedYear,
                         semester = selectedSemester
                     )
-                    db.dao().updateCourse(updatedCourse)
+                    db.updateCourse(updatedCourse)
                     if (selectedCourse != null && updatedCourse.id == selectedCourse!!.id) {
                         selectedCourse = updatedCourse
                     }
@@ -584,15 +591,15 @@ class CourseController(
     private fun performExport(uri: Uri) {
         val course = selectedCourse ?: return
         activity.lifecycleScope.launch(Dispatchers.IO) {
-            val sessions = db.dao().getSessionsByCourse(course.id).sortedBy { it.date }
+            val sessions = db.getSessionsByCourse(course.id).sortedBy { it.date }
             val sessionIds = sessions.map { it.id }
             val allAttendance = mutableListOf<AttendanceRecord>()
             sessionIds.forEach { sid ->
                 allAttendance.addAll(
-                    db.dao().getAttendanceRecordsForSession(sid)
+                    db.getAttendanceRecordsForSession(sid)
                 )
             }
-            val allStudents = db.dao().getAllStudents()
+            val allStudents = db.getAllStudents()
 
             val csvData =
                 CourseUtilities.generateCsvString(

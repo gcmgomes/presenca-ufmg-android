@@ -91,7 +91,7 @@ class DashboardController(
 
         btnConfirm.setOnClickListener {
             activity.lifecycleScope.launch {
-                withContext(Dispatchers.IO) { db.dao().insertStudents(students) }
+                withContext(Dispatchers.IO) { db.insertStudents(students) }
                 bottomSheet.dismiss()
 
                 // Maps to: "%1$d aulas importadas" or customizable toast parameters safely
@@ -170,6 +170,16 @@ class DashboardController(
             }
         }
 
+    private val databaseExportLauncher =
+        activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+            uri?.let { handleDumpUriSelected(it) }
+        }
+
+
+    private val databaseImportLauncher =
+        activity.registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let { handleImportUriSelected(it) }
+        }
 
     private fun triggerStudentImportPicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -183,10 +193,84 @@ class DashboardController(
         importStudentLauncher.launch(intent)
     }
 
+    private fun triggerDatabaseExportPicker() {
+        val timestamp = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        val fileName = "Presensor_Backup_$timestamp.csv"
+
+        // Exact match to your standard open/create document picker pattern
+        databaseExportLauncher.launch(fileName)
+    }
+
+
+    private fun handleDumpUriSelected(uri: Uri) {
+        activity.lifecycleScope.launch {
+            // Open the stream context via ContentResolver safely on a background worker thread
+            val success = withContext(Dispatchers.IO) {
+                val outputStream = activity.contentResolver.openOutputStream(uri)
+                if (outputStream != null) {
+                    db.performFullDatabaseDump(outputStream)
+                } else {
+                    false
+                }
+            }
+
+            // Deliver foreground UI notifications based on operation success status
+            if (success) {
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.toast_database_export_success),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.toast_database_export_failed),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private fun triggerDatabaseImportPicker() {
+        // Limits the picker visibility to CSV files cleanly
+        databaseImportLauncher.launch("text/comma-separated-values")
+    }
+
+    private fun handleImportUriSelected(uri: Uri) {
+        activity.lifecycleScope.launch {
+            val success = withContext(Dispatchers.IO) {
+                val inputStream = activity.contentResolver.openInputStream(uri)
+                if (inputStream != null) {
+                    db.importFullDatabaseDump(inputStream)
+                } else {
+                    false
+                }
+            }
+
+            if (success) {
+                Toast.makeText(activity, "Database restored successfully!", Toast.LENGTH_SHORT)
+                    .show()
+                // Optional callback function hook to notify layout to refresh dashboard states
+                refreshDashboard()
+            } else {
+                Toast.makeText(
+                    activity,
+                    "Failed to parse or restore backup file",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
     fun setupOnClickListeners() {
 
         activity.findViewById<Button>(R.id.btnImportStudents)
             .setOnClickListener { triggerStudentImportPicker() }
+        activity.findViewById<Button>(R.id.btnExportDatabase)
+            .setOnClickListener { triggerDatabaseExportPicker() }
+        activity.findViewById<Button>(R.id.btnImportDatabase)
+            .setOnClickListener { triggerDatabaseImportPicker() }
         activity.findViewById<FloatingActionButton>(R.id.btnCreateCourse)
             .setOnClickListener {
                 onCourseCreateRequested {
@@ -210,7 +294,7 @@ class DashboardController(
             activity.getString(R.string.semester_display_format, curYear, semesterString)
 
         scope.launch {
-            var allCourses = db.dao().getAllCourses()
+            var allCourses = db.getAllCourses()
             if (filter.isNotEmpty()) {
                 allCourses = allCourses.filter { it.name.contains(filter, ignoreCase = true) }
             }

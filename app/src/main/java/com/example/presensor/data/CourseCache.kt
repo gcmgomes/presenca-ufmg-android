@@ -16,6 +16,8 @@ class CourseCache {
     var allAttendance: List<AttendanceRecord> = emptyList()
     var sessionIds: Set<Long> = emptySet()
 
+    var allStudents: List<Student> = emptyList()
+
     /**
      * Filters the cached student roster list based on the user's search query string match constraints.
      * Runs instantly in memory with zero database transaction overhead.

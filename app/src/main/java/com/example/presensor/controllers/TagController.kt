@@ -37,7 +37,7 @@ class TagController(
         if (isDialogShowingCheck() || DialogFactory.isAnyDialogOpen()) return
 
         scope.launch {
-            val student = db.dao().getStudentByRfid(rfid)
+            val student = db.getStudentByRfid(rfid)
 
             // Context switch to the foreground thread to safely manifest UI workflows
             withContext(Dispatchers.Main) {
@@ -67,7 +67,7 @@ class TagController(
             )
             .setPositiveButton(context.getString(R.string.action_yes)) { _, _ ->
                 scope.launch {
-                    db.dao().bindTagToStudent(null, existingStudent.email)
+                    db.bindTagToStudent(null, existingStudent.email)
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             context,
@@ -89,7 +89,7 @@ class TagController(
 
     private fun showBindingDialog(newRfid: String) {
         scope.launch {
-            val allStudents = db.dao().getAllStudents().sortedBy { it.name }
+            val allStudents = db.getAllStudents().sortedBy { it.name }
 
             withContext(Dispatchers.Main) {
                 val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
@@ -191,7 +191,7 @@ class TagController(
 
     private fun bindTag(rfid: String, email: String) {
         scope.launch {
-            withContext(Dispatchers.IO) { db.dao().clearAndBind(rfid, email) }
+            withContext(Dispatchers.IO) { db.clearAndBind(rfid, email) }
             withContext(Dispatchers.Main) {
                 Toast.makeText(
                     context,
@@ -208,8 +208,7 @@ class TagController(
             rfid = rfid,
             onStudentSaved = { name, email, dialog ->
                 scope.launch {
-                    db.dao()
-                        .insertStudents(listOf(Student(email = email, name = name, rfid = rfid)))
+                    db.insertStudents(listOf(Student(email = email, name = name, rfid = rfid)))
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             context,

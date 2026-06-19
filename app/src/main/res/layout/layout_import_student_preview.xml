@@ -11,7 +11,7 @@
         android:id="@+id/txtImportStudentTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Review Student Roster"
+        android:text="@string/dialog_import_students"
         android:textSize="20sp"
         android:textStyle="bold" />
 
@@ -20,7 +20,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
-        android:text="Found 0 students in CSV."
+        android:text="@string/dialog_import_students_hint"
         android:textColor="?attr/descriptiveTextColor" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -33,6 +33,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Import All Students"
+        android:text="@string/dialog_import_students_button_text"
         app:cornerRadius="8dp" />
 </LinearLayout>

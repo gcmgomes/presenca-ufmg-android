@@ -86,7 +86,7 @@ class SessionController(
     fun loadAttendanceList() {
         val currentSessionId = activeSession?.id ?: return
         lifecycleOwner.lifecycleScope.launch {
-            val records = db.dao().getAttendanceRecordsForSession(currentSessionId)
+            val records = db.getAttendanceRecordsForSession(currentSessionId)
             attendanceContainer.removeAllViews()
             val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
 
@@ -228,8 +228,8 @@ class SessionController(
         val currentSession = activeSession ?: return
 
         lifecycleOwner.lifecycleScope.launch {
-            val allStudents = db.dao().getAllStudents().sortedBy { it.name }
-            val currentAttendance = db.dao().getAttendanceRecordsForSession(currentSession.id)
+            val allStudents = db.getAllStudents().sortedBy { it.name }
+            val currentAttendance = db.getAttendanceRecordsForSession(currentSession.id)
 
             val presentEmails = currentAttendance.map { it.studentEmail }.toSet()
             val absentStudents = allStudents.filter { it.email !in presentEmails }

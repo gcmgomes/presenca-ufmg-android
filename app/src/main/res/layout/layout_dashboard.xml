@@ -85,9 +85,29 @@
                         style="@style/Widget.MaterialComponents.Button.TextButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Import Students (CSV)"
+                        android:text="@string/menu_student_import"
+                        android:textAlignment="viewStart"
+                        app:icon="@drawable/ic_person" />
+
+                    <Button
+                        android:id="@+id/btnImportDatabase"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/menu_database_import"
                         android:textAlignment="viewStart"
                         app:icon="@drawable/ic_import" />
+
+                    <Button
+                        android:id="@+id/btnExportDatabase"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/menu_database_export"
+                        android:textAlignment="viewStart"
+                        app:icon="@drawable/ic_export" />
+
+
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

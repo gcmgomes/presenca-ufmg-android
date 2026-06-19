@@ -29,6 +29,9 @@
     <string name="menu_course_import">Import schedule</string>
     <string name="menu_course_export">Export attendance (csv)</string>
     <string name="menu_course_postpone">Change session dates</string>
+    <string name="menu_student_import">Import students (csv)</string>
+    <string name="menu_database_import">Import database (csv)</string>
+    <string name="menu_database_export">Export database (csv)</string>
 
     <string name="session_text">Session</string>
     <string name="title_new_session">New Session</string>
@@ -107,6 +110,10 @@
     <string name="toast_export_success">Roster exported!</string>
     <string name="toast_export_failed">Export failed</string>
     <string name="date_picker_display_format">MMM dd, yyyy</string>
+
+
+    <string name="toast_database_export_success">Database exported successfully</string>
+    <string name="toast_database_export_failed">Failed to export database</string>
 
     <string-array name="semesters_array">
         <item>1</item>

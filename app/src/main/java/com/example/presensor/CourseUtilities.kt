@@ -234,15 +234,6 @@ object CourseUtilities {
         return DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
     }
 
-    fun formatYearSemester(context: Context, year: Int, semester: Int): String {
-        val semesterString = if (semester == 1) {
-            context.getString(R.string.semester_ordinal_1st)
-        } else {
-            context.getString(R.string.semester_ordinal_2nd)
-        }
-        return context.getString(R.string.semester_display_format, year, semesterString)
-    }
-
     fun updateLockIconUI(isLocked: Boolean, lockIcon: ImageView) {
         if (isLocked) {
             lockIcon.setImageResource(R.drawable.status_lock)

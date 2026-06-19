@@ -81,8 +81,6 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var layoutCourseView: View
     private lateinit var layoutSessionView: View
 
-    private var currentStatsView: View? = null
-
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +98,9 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "presensor-db")
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
+
+        lifecycleScope.launch { db.preloadStudents() }
+
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
@@ -286,12 +287,12 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             onConfirmed = {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
-                        val sessions = db.dao().getSessionsByCourse(course.id)
+                        val sessions = db.getSessionsByCourse(course.id)
                         sessions.forEach {
-                            db.dao().deleteAttendancesBySessionId(it.id)
-                            db.dao().deleteSession(it)
+                            db.deleteAttendancesBySessionId(it.id)
+                            db.deleteSession(it)
                         }
-                        db.dao().deleteCourse(course)
+                        db.deleteCourse(course)
                     }
                     dashboardController.refreshDashboard()
                     Toast.makeText(
@@ -333,7 +334,19 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     override fun onResume() {
         super.onResume()
-        nfcAdapter?.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A, null)
+        val options = Bundle().apply {
+            // Drastically shorten the continuous polling presence check loop
+            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 50)
+        }
+
+        nfcAdapter?.enableReaderMode(
+            this,
+            this,
+            NfcAdapter.FLAG_READER_NFC_A or             // Limit hardware spectrum strictly to basic ISO 14443-3A
+//                    NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS or
+                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,   // Bypasses the expensive NDEF application payload detection
+            options
+        )
     }
 
     override fun onTagDiscovered(tag: Tag) {

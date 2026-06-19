@@ -29,6 +29,9 @@
     <string name="menu_course_import">Importar cronograma</string>
     <string name="menu_course_export">Exportar presenças (csv)</string>
     <string name="menu_course_postpone">Alterar datas</string>
+    <string name="menu_student_import">Importar alunos (csv)</string>
+    <string name="menu_database_import">Importar banco de dados (csv)</string>
+    <string name="menu_database_export">Exportar banco de dados (csv)</string>
 
     <string name="session_text">Aula</string>
     <string name="title_new_session">Nova Aula</string>
@@ -108,6 +111,9 @@
     <string name="toast_export_success">Lista de presença exportada!</string>
     <string name="toast_export_failed">Falha na exportação</string>
     <string name="date_picker_display_format">dd \'de\' MMM \'de\' yyyy</string>
+
+    <string name="toast_database_export_success">Banco de dados exportado com sucesso</string>
+    <string name="toast_database_export_failed">Falha ao exportar banco de dados</string>
 
     <string-array name="semesters_array">
         <item>1</item>
