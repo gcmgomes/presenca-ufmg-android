@@ -60,7 +60,7 @@ import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Attendance
 import com.example.presensor.data.entities.AttendanceRecord
 
-class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
+class MainActivity : AppCompatActivity() {
 
     private enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS }
 
@@ -73,8 +73,6 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var sessionController: SessionController
     private lateinit var tagController: TagController
 
-    private var isDialogOpen = false
-    private var nfcAdapter: NfcAdapter? = null
 
     private lateinit var currentBackCallback: OnBackPressedCallback
     private lateinit var dashboardView: View
@@ -100,9 +98,6 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
 
         lifecycleScope.launch { db.preloadStudents() }
-
-
-        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
         val mainRoot = findViewById<LinearLayout>(R.id.layoutUniversalContainer)
         val statusBarBg = findViewById<View>(R.id.statusBarBackground)
@@ -174,14 +169,14 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         // Initialize Tag Controller
         tagController = TagController(
-            context = this,
+            activity = this,
             db = db,
             scope = lifecycleScope,
             layoutInflater = layoutInflater,
             sessionController = sessionController,
-            isDialogShowingCheck = { isDialogOpen },
-            onDialogStateChanged = { isOpen -> isDialogOpen = isOpen }
+            isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() }
         )
+        DialogFactory.tagController = tagController
 
         // Initialize Course Controller
         courseController = CourseController(
@@ -332,27 +327,29 @@ class MainActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         toggleAllViews(layoutCourseStatisticsView = true)
     }
 
+
+
+
     override fun onResume() {
         super.onResume()
         val options = Bundle().apply {
-            // Drastically shorten the continuous polling presence check loop
-            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 50)
+            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 500)
         }
 
-        nfcAdapter?.enableReaderMode(
+        // Determine the hardware reader flags dynamically
+        var readerFlags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
+
+        // If your custom property says the sound shouldn't play (or a dialog is locking it),
+        // we tell Android to silence the platform beep. Otherwise, leave it out so it beeps naturally!
+        if (DialogFactory.isAnyDialogOpen()) { // Replace with your exact DialogFactory boolean variable
+            readerFlags = readerFlags or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
+        }
+
+        tagController.getNfcAdapter().enableReaderMode(
             this,
-            this,
-            NfcAdapter.FLAG_READER_NFC_A or             // Limit hardware spectrum strictly to basic ISO 14443-3A
-//                    NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS or
-                    NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,   // Bypasses the expensive NDEF application payload detection
+            tagController,
+            readerFlags,
             options
         )
-    }
-
-    override fun onTagDiscovered(tag: Tag) {
-        val rfid = tag.id.joinToString(":") { "%02X".format(it) }
-        val time = System.currentTimeMillis()
-
-        tagController.handleTagDiscovered(rfid, time)
     }
 }

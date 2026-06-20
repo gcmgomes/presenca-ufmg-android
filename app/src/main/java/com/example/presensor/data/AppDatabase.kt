@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.presensor.CourseUtilities
 import com.example.presensor.data.entities.Course
@@ -32,6 +33,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     private val courseCache = CourseCache()
 
+    private var useCourseCache: Boolean = true
+
     fun getCourseCache(): CourseCache {
         return courseCache
     }
@@ -46,16 +49,12 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun updateCourse(course: Course) = withContext(Dispatchers.IO) {
         dao().updateCourse(course)
-        // If the updated course matches the currently loaded active session scope data, clear context to enforce reload
-        if (courseCache.courseId == course.id) {
-            courseCache.clear()
-        }
     }
 
     suspend fun deleteCourse(course: Course) = withContext(Dispatchers.IO) {
         dao().deleteCourse(course)
-        // If deleting the active course, invalidate cache maps entirely
-        if (courseCache.courseId == course.id) {
+        // Only invalidate cache if caching is enabled
+        if (useCourseCache && courseCache.courseId == course.id) {
             courseCache.clear()
         }
     }
@@ -73,7 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
             val session = Session(courseId = courseId, name = sessionName, date = date)
             val newSessionId = dao().insertSession(session)
 
-            if (courseCache.courseId == courseId) {
+            if (useCourseCache && courseCache.courseId == courseId) {
                 courseCache.sessionIds += newSessionId
                 courseCache.allSessions += session.copy(id = newSessionId)
             }
@@ -82,7 +81,7 @@ abstract class AppDatabase : RoomDatabase() {
     suspend fun insertSessions(sessions: List<Session>) = withContext(Dispatchers.IO) {
         val newIds = dao().insertSessions(sessions)
         sessions.zip(newIds).forEach { (session, id) ->
-            if (courseCache.courseId == session.courseId) {
+            if (useCourseCache && courseCache.courseId == session.courseId) {
                 courseCache.sessionIds += id
                 courseCache.allSessions += session.copy(id = id)
             }
@@ -92,14 +91,14 @@ abstract class AppDatabase : RoomDatabase() {
     suspend fun deleteSession(session: Session) = withContext(Dispatchers.IO) {
         dao().deleteAttendancesBySessionId(session.id)
         dao().deleteSession(session)
-        if (courseCache.courseId == session.courseId) {
+        if (useCourseCache && courseCache.courseId == session.courseId) {
             courseCache.deleteSession(session)
         }
     }
 
     suspend fun deleteSessionsByCourseId(courseId: Long) = withContext(Dispatchers.IO) {
         dao().deleteSessionsByCourseId(courseId)
-        if (courseCache.courseId == courseId) {
+        if (useCourseCache && courseCache.courseId == courseId) {
             courseCache.allSessions = emptyList()
             courseCache.sessionIds = emptySet()
             courseCache.allAttendance = emptyList()
@@ -110,20 +109,28 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun updateSessionLock(sessionId: Long, locked: Boolean) = withContext(Dispatchers.IO) {
         dao().updateSessionLock(sessionId, locked)
-        courseCache.updateSessionLock(sessionId, locked)
+        if (useCourseCache) {
+            courseCache.updateSessionLock(sessionId, locked)
+        }
     }
 
     suspend fun updateSession(session: Session) = withContext(Dispatchers.IO) {
         dao().updateSession(session)
-        courseCache.updateSession(session)
+        if (useCourseCache) {
+            courseCache.updateSession(session)
+        }
     }
 
     suspend fun getSessionsByCourse(courseId: Long): List<Session> = withContext(Dispatchers.IO) {
-        dao().getSessionsByCourse(courseId)
+        if (useCourseCache && courseCache.courseId != null && courseId == courseCache.courseId) {
+            courseCache.allSessions
+        } else {
+            dao().getSessionsByCourse(courseId)
+        }
     }
 
     suspend fun loadSessionsForCourse(course: Course) = withContext(Dispatchers.IO) {
-        if (course.id == courseCache.courseId) {
+        if (useCourseCache && course.id == courseCache.courseId) {
             return@withContext
         }
 
@@ -144,26 +151,43 @@ abstract class AppDatabase : RoomDatabase() {
     // ==========================================
 
     suspend fun preloadStudents() = withContext(Dispatchers.IO) {
-        courseCache.allStudents = dao().getAllStudents()
+        if (useCourseCache) {
+            courseCache.allStudents = dao().getAllStudents()
+        }
     }
 
     suspend fun insertStudents(students: List<Student>) = withContext(Dispatchers.IO) {
-        val knownEmails = courseCache.allStudents.map { it.email }.toSet()
+        val knownEmails = if (useCourseCache) courseCache.allStudents.map { it.email }.toSet() else emptySet()
         dao().insertStudents(students)
 
-        // Update master student listing
-        courseCache.allStudents += students.filter { it.email !in knownEmails }
+        if (useCourseCache) {
+            courseCache.allStudents += students.filter { it.email !in knownEmails }
+        }
     }
 
     suspend fun getAllStudents(): List<Student> = withContext(Dispatchers.IO) {
+        if(useCourseCache) {
+            courseCache.allStudents
+        }
         dao().getAllStudents()
     }
 
     suspend fun getUnboundStudents(): List<Student> = withContext(Dispatchers.IO) {
+        if(useCourseCache) {
+            courseCache.allStudents.filter { it.rfid == null }
+        }
         dao().getUnboundStudents()
     }
 
     suspend fun getStudentByRfid(rfid: String): Student? = withContext(Dispatchers.IO) {
+        if(useCourseCache) {
+            val tempStudents = courseCache.allStudents.filter { it.rfid == rfid }
+            if(tempStudents.isNotEmpty()) {
+                tempStudents[0]
+            } else {
+                null
+            }
+        }
         dao().getStudentByRfid(rfid)
     }
 
@@ -174,28 +198,31 @@ abstract class AppDatabase : RoomDatabase() {
     suspend fun clearTagFromOthers(rfid: String) = withContext(Dispatchers.IO) {
         dao().clearTagFromOthers(rfid)
 
-        // Modify local instances where this RFID assignment used to exist
-        courseCache.allStudents.find { it.rfid == rfid }?.rfid = null
-        courseCache.activeStudents.find { it.rfid == rfid }?.rfid = null
+        if (useCourseCache) {
+            courseCache.allStudents.find { it.rfid == rfid }?.rfid = null
+            courseCache.activeStudents.find { it.rfid == rfid }?.rfid = null
+        }
     }
 
     suspend fun bindTagToStudent(rfid: String?, email: String) = withContext(Dispatchers.IO) {
         dao().bindTagToStudent(rfid, email)
 
-        // Synchronize in-memory structures to reflect the newly updated card assignments
-        courseCache.allStudents.find { it.email == email }?.rfid = rfid
-        courseCache.activeStudents.find { it.email == email }?.rfid = rfid
+        if (useCourseCache) {
+            courseCache.allStudents.find { it.email == email }?.rfid = rfid
+            courseCache.activeStudents.find { it.email == email }?.rfid = rfid
+        }
     }
 
     suspend fun clearAndBind(rfid: String, email: String) = withContext(Dispatchers.IO) {
         dao().clearAndBind(rfid, email)
 
-        // Cascade changes safely throughout the in-memory lists
-        courseCache.allStudents.find { it.rfid == rfid }?.rfid = null
-        courseCache.activeStudents.find { it.rfid == rfid }?.rfid = null
+        if (useCourseCache) {
+            courseCache.allStudents.find { it.rfid == rfid }?.rfid = null
+            courseCache.activeStudents.find { it.rfid == rfid }?.rfid = null
 
-        courseCache.allStudents.find { it.email == email }?.rfid = rfid
-        courseCache.activeStudents.find { it.email == email }?.rfid = rfid
+            courseCache.allStudents.find { it.email == email }?.rfid = rfid
+            courseCache.activeStudents.find { it.email == email }?.rfid = rfid
+        }
     }
 
     // ==========================================
@@ -212,31 +239,40 @@ abstract class AppDatabase : RoomDatabase() {
                     timestamp = timestamp
                 )
             )
-            val attendanceRecord = AttendanceRecord(
-                timestamp,
-                student.name,
-                student.rfid,
-                student.email,
-                session.name,
-                session.id
-            )
-            courseCache.addAttendance(student, session, attendanceRecord)
+            if (useCourseCache) {
+                val attendanceRecord = AttendanceRecord(
+                    timestamp,
+                    student.name,
+                    student.rfid,
+                    student.email,
+                    session.name,
+                    session.id
+                )
+                courseCache.addAttendance(student, session, attendanceRecord)
+            }
         }
+
 
 
     suspend fun getAttendanceRecordsForSession(sid: Long): List<AttendanceRecord> =
         withContext(Dispatchers.IO) {
+            if(useCourseCache) {
+                courseCache.allAttendance.filter {it.sessionId == sid}
+            }
             dao().getAttendanceRecordsForSession(sid)
         }
 
     suspend fun getAllAttendanceForCourse(courseId: Long): List<AttendanceRecord> =
         withContext(Dispatchers.IO) {
+            if(useCourseCache && courseCache.courseId == courseId) {
+                courseCache.allAttendance
+            }
             dao().getAllAttendanceForCourse(courseId)
         }
 
     suspend fun deleteAttendancesBySessionId(sessionId: Long) = withContext(Dispatchers.IO) {
         dao().deleteAttendancesBySessionId(sessionId)
-        if (courseCache.sessionIds.contains(sessionId)) {
+        if (useCourseCache && courseCache.sessionIds.contains(sessionId)) {
             courseCache.allAttendance =
                 courseCache.allAttendance.filter { it.sessionId != sessionId }
         }
@@ -455,10 +491,12 @@ abstract class AppDatabase : RoomDatabase() {
                 }
 
                 // Database transaction insertion block executed entirely on background thread
-                runInTransaction {
-                    runBlocking {
+                try {
+                    withTransaction {
                         // Bulk insert structures back into the underlying tables
-                        coursesToInsert.forEach { insertCourse(it) }
+                        coursesToInsert.forEach {
+                            Log.d("importFullDatabase", "inserting course: $it")
+                            insertCourse(it) }
                         insertSessions(sessionsToInsert)
                         insertStudents(studentsToInsert)
                         attendanceToInsert.forEach { attendance ->
@@ -473,7 +511,11 @@ abstract class AppDatabase : RoomDatabase() {
                             )
                         }
                     }
+                } catch (dbException: Exception) {
+                    Log.e("AppDatabase", "Transaction failed during CSV insertion", dbException)
+                    return@withContext false
                 }
+
 
                 // Wipe local in-memory cache models clean to force immediate reload
                 courseCache.clear()

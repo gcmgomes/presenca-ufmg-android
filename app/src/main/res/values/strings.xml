@@ -3,6 +3,7 @@
     <string name="app_name">Presensor</string>
 
     <string name="action_text">Action</string>
+    <string name="delete_action_text">Delete</string>
     <string name="hint_search_course">Search courses by name…</string>
     <string name="current_semester_head_text">Current semester</string>
     <string name="previous_semester_head_text">Previous semesters</string>

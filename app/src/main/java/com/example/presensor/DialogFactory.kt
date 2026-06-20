@@ -9,6 +9,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.example.presensor.controllers.TagController
 import com.example.presensor.data.entities.Session
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
@@ -26,17 +27,25 @@ object DialogFactory {
 
     private var isDialogOpen = false
 
+    var tagController: TagController? = null
+
+
+
     /**
      * Public getter to let MainActivity or other controllers check if a
      * DialogFactory dialog is currently active before handling an NFC tag swipe.
      */
     fun isAnyDialogOpen(): Boolean = isDialogOpen
 
+
+
     // Private helper extension that manages the state tracker centrally
-    private fun AlertDialog.Builder.showWithSmartNfcReading(): AlertDialog {
+    fun AlertDialog.Builder.showWithSmartNfcReading(): AlertDialog {
         val dialog = this.create()
-        dialog.setOnShowListener { isDialogOpen = true }
-        dialog.setOnDismissListener { isDialogOpen = false }
+        dialog.setOnShowListener { isDialogOpen = true
+            tagController?.pauseNfcScanning()}
+        dialog.setOnDismissListener { isDialogOpen = false
+        tagController?.resumeNfcScanning()}
         dialog.show()
         return dialog
     }
@@ -61,7 +70,7 @@ object DialogFactory {
             .setTitle(title)
             .setMessage(message)
             .setView(container)
-            .setPositiveButton(R.string.action_text, null)
+            .setPositiveButton(R.string.delete_action_text, null)
             .setNegativeButton(R.string.action_cancel, null)
             .showWithSmartNfcReading()
 
@@ -75,79 +84,7 @@ object DialogFactory {
         }
     }
 
-    fun showCreateCourseDialog(
-        context: Context,
-        layoutInflater: LayoutInflater,
-        onCourseCreated: (name: String, year: Int, semester: Int) -> Unit
-    ) {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_create_course, null)
-        val edtCourseName = dialogView.findViewById<TextInputEditText>(R.id.edtCourseName)
-        val edtCourseYear = dialogView.findViewById<TextInputEditText>(R.id.edtCourseYear)
-        val edtCourseSemester = dialogView.findViewById<TextInputEditText>(R.id.edtCourseSemester)
 
-        val calendar = Calendar.getInstance()
-        val currentYear = calendar.get(Calendar.YEAR)
-        val currentSemester = if (calendar.get(Calendar.MONTH) < 6) 1 else 2
-
-        var selectedYear = currentYear
-        var selectedSemester = currentSemester
-
-        edtCourseYear.setText(selectedYear.toString())
-        edtCourseSemester.setText(selectedSemester.toString())
-
-        val yearsArray = ((currentYear - 5)..(currentYear + 1)).map { it.toString() }.toTypedArray()
-        edtCourseYear.setOnClickListener {
-            AlertDialog.Builder(context)
-                .setTitle(R.string.select_year)
-                .setItems(yearsArray) { _, which ->
-                    selectedYear = yearsArray[which].toInt()
-                    edtCourseYear.setText(selectedYear.toString())
-                }
-                .show()
-        }
-
-        // Extracted local semester array definition to resources xml
-        val semestersArray = context.resources.getStringArray(R.array.semesters_array)
-        edtCourseSemester.setOnClickListener {
-            AlertDialog.Builder(context)
-                .setTitle(R.string.select_semester)
-                .setItems(semestersArray) { _, which ->
-                    selectedSemester = semestersArray[which].toInt()
-                    edtCourseSemester.setText(selectedSemester.toString())
-                }
-                .show()
-        }
-
-        edtCourseName.setOnEditorActionListener { v, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                val imm =
-                    v.context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(v.windowToken, 0)
-                v.clearFocus()
-                true
-            } else {
-                false
-            }
-        }
-
-        AlertDialog.Builder(context)
-            .setTitle(R.string.title_new_course)
-            .setView(dialogView)
-            .setPositiveButton(R.string.action_create) { _, _ ->
-                val name = edtCourseName.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    onCourseCreated(name, selectedYear, selectedSemester)
-                } else {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.error_empty_name),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .showWithSmartNfcReading()
-    }
 
     fun showEditSessionDialog(
         context: Context,

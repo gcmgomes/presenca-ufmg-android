@@ -1,6 +1,7 @@
 package com.example.presensor.controllers
 
 import android.app.Activity.RESULT_OK
+import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -42,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
@@ -118,7 +120,7 @@ class CourseController(
     fun showCreateSessionDialog() {
         val courseId = getSelectedCourse()!!.id
         lifecycleOwner.lifecycleScope.launch {
-            val count = db.getCourseCache().allSessions.size + 1
+            val count = db.getSessionsByCourse(courseId).size + 1
             withContext(Dispatchers.Main) {
                 // Resolved using layout string formatting token parameters securely
                 val sessionPlaceholder = activity.getString(R.string.session_text) + " $count"
@@ -165,16 +167,21 @@ class CourseController(
 
     fun refreshCourseUI() {
         selectedCourse?.let {
-            refreshSessionsList(db.getCourseCache().allSessions)
-            val cache = db.getCourseCache()
+            val sessionList = runBlocking {
+                db.getSessionsByCourse(selectedCourse!!.id)
+            }
+            val attendanceList = runBlocking {
+                db.getAllAttendanceForCourse(selectedCourse!!.id)
+            }
+            refreshSessionsList(sessionList)
             val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
             CourseUtilities.fillCourseDetailedCardStatistics(
                 activity,
                 layoutCourseView,
                 selectedCourse!!,
-                cache.sessionIds,
-                cache.activeStudentEmails,
-                cache.allAttendance
+                sessionList.map { it.id }.toSet(),
+                attendanceList.map{it.studentEmail}.toSet(),
+                attendanceList
             )
         }
     }
@@ -222,7 +229,6 @@ class CourseController(
 
     fun showMassDateChangeDialog() {
         val context = activity
-        val currentCourse = selectedCourse ?: return
         val dialogView = layoutInflater.inflate(R.layout.dialog_date_change_sessions, null)
 
         val edtThresholdDate = dialogView.findViewById<EditText>(R.id.edtThresholdDate)
@@ -252,59 +258,59 @@ class CourseController(
 
         attachDatePicker(edtThresholdDate) { thresholdTimestamp = it }
         attachDatePicker(edtNewStartDate) { newStartTimestamp = it }
+        with(DialogFactory) {
+            val dialog = AlertDialog.Builder(context)
+                .setTitle(context.getString(R.string.menu_course_postpone))
+                .setView(dialogView)
+                .setPositiveButton(context.getString(R.string.action_save), null)
+                .setNegativeButton(context.getString(R.string.action_cancel), null)
+                .showWithSmartNfcReading()
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle(context.getString(R.string.menu_course_postpone))
-            .setView(dialogView)
-            .setPositiveButton(context.getString(R.string.action_save), null)
-            .setNegativeButton(context.getString(R.string.action_cancel), null)
-            .create()
 
-        dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val currentThreshold = thresholdTimestamp
+                val currentNewStart = newStartTimestamp
 
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val currentThreshold = thresholdTimestamp
-            val currentNewStart = newStartTimestamp
-
-            if (currentThreshold == null) {
-                edtThresholdDate.error = context.getString(R.string.error_empty_date)
-                return@setOnClickListener
-            }
-            if (currentNewStart == null) {
-                edtNewStartDate.error = context.getString(R.string.error_empty_date)
-                return@setOnClickListener
-            }
-
-            lifecycleOwner.lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    // 1. Fetch all course sessions matching criteria ordered by timeline execution sequence
-                    val targetedSessions = db.getCourseCache().allSessions
-                        .filter { it.date >= currentThreshold }
-                        .sortedBy { it.date }
-
-                    if (targetedSessions.isNotEmpty()) {
-                        // 2. Compute timeline displacement delta using milliseconds interval length differences
-                        val originalBaseDate = targetedSessions.first().date
-                        val deltaOffset = currentNewStart - originalBaseDate
-
-                        // 3. Mutate timeline states sequentially shifting each matched course session item
-                        targetedSessions.forEach { session ->
-                            val updatedSession = session.copy(
-                                date = session.date + deltaOffset
-                            )
-                            db.updateSession(updatedSession)
-                        }
-                    }
+                if (currentThreshold == null) {
+                    edtThresholdDate.error = context.getString(R.string.error_empty_date)
+                    return@setOnClickListener
+                }
+                if (currentNewStart == null) {
+                    edtNewStartDate.error = context.getString(R.string.error_empty_date)
+                    return@setOnClickListener
                 }
 
-                // 4. Update view architecture tree indicators immediately back in the foreground main execution block
-                refreshCourseUI()
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.toast_sessions_updated_success),
-                    Toast.LENGTH_SHORT
-                ).show()
-                dialog.dismiss()
+                lifecycleOwner.lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        // 1. Fetch all course sessions matching criteria ordered by timeline execution sequence
+                        val targetedSessions = db.getSessionsByCourse(selectedCourse!!.id)
+                            .filter { it.date >= currentThreshold }
+                            .sortedBy { it.date }
+
+                        if (targetedSessions.isNotEmpty()) {
+                            // 2. Compute timeline displacement delta using milliseconds interval length differences
+                            val originalBaseDate = targetedSessions.first().date
+                            val deltaOffset = currentNewStart - originalBaseDate
+
+                            // 3. Mutate timeline states sequentially shifting each matched course session item
+                            targetedSessions.forEach { session ->
+                                val updatedSession = session.copy(
+                                    date = session.date + deltaOffset
+                                )
+                                db.updateSession(updatedSession)
+                            }
+                        }
+                    }
+
+                    // 4. Update view architecture tree indicators immediately back in the foreground main execution block
+                    refreshCourseUI()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_sessions_updated_success),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    dialog.dismiss()
+                }
             }
         }
     }
@@ -435,49 +441,50 @@ class CourseController(
         val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         edtYear.setText(currentYear.toString())
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle(context.getString(R.string.title_new_course))
-            .setView(dialogView)
-            .setPositiveButton(
-                context.getString(R.string.action_create),
-                null
-            ) // Set null to manually override closure behaviour for validation checks
-            .setNegativeButton(context.getString(R.string.action_cancel), null)
-            .create()
+        with(DialogFactory) {
+            val dialog = AlertDialog.Builder(context)
+                .setTitle(context.getString(R.string.title_new_course))
+                .setView(dialogView)
+                .setPositiveButton(
+                    context.getString(R.string.action_create),
+                    null
+                ) // Set null to manually override closure behaviour for validation checks
+                .setNegativeButton(context.getString(R.string.action_cancel), null)
+                .showWithSmartNfcReading()
 
-        dialog.show()
 
-        // Override the Positive Button click directly to handle field data validations
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val courseName = edtName.text.toString().trim()
-            val yearRaw = edtYear.text.toString().trim()
+            // Override the Positive Button click directly to handle field data validations
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val courseName = edtName.text.toString().trim()
+                val yearRaw = edtYear.text.toString().trim()
 
-            // Safely extract selection directly out of the matched localized resource items string array
-            val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
+                // Safely extract selection directly out of the matched localized resource items string array
+                val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
 
-            if (courseName.isEmpty()) {
-                edtName.error = context.getString(R.string.error_empty_name)
-                return@setOnClickListener
-            }
-
-            val parsedYear = yearRaw.toIntOrNull()
-            if (parsedYear == null || yearRaw.isEmpty()) {
-                edtYear.error = context.getString(R.string.label_year)
-                return@setOnClickListener
-            }
-
-            // Run insertion logic on background coroutine worker pool thread safely
-            lifecycleOwner.lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    val newCourse = Course(
-                        name = courseName,
-                        year = parsedYear,
-                        semester = selectedSemester
-                    )
-                    db.insertCourse(newCourse)
+                if (courseName.isEmpty()) {
+                    edtName.error = context.getString(R.string.error_empty_name)
+                    return@setOnClickListener
                 }
-                onCourseCreated()
-                dialog.dismiss()
+
+                val parsedYear = yearRaw.toIntOrNull()
+                if (parsedYear == null || yearRaw.isEmpty()) {
+                    edtYear.error = context.getString(R.string.label_year)
+                    return@setOnClickListener
+                }
+
+                // Run insertion logic on background coroutine worker pool thread safely
+                lifecycleOwner.lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        val newCourse = Course(
+                            name = courseName,
+                            year = parsedYear,
+                            semester = selectedSemester
+                        )
+                        db.insertCourse(newCourse)
+                    }
+                    onCourseCreated()
+                    dialog.dismiss()
+                }
             }
         }
     }
@@ -500,61 +507,62 @@ class CourseController(
         spinnerSemester.setSelection(semesterIndex)
 
         // 2. Build and display the Material / AlertDialog template
-        val dialog = AlertDialog.Builder(context)
-            .setTitle(context.getString(R.string.title_edit_course))
-            .setView(dialogView)
-            .setPositiveButton(
-                context.getString(R.string.action_save),
-                null
-            ) // Set null here to prevent auto-closing on invalid validation
-            .setNegativeButton(context.getString(R.string.action_cancel), null)
-            .create()
+        with(DialogFactory) {
+            val dialog = AlertDialog.Builder(context)
+                .setTitle(context.getString(R.string.title_edit_course))
+                .setView(dialogView)
+                .setPositiveButton(
+                    context.getString(R.string.action_save),
+                    null
+                ) // Set null here to prevent auto-closing on invalid validation
+                .setNegativeButton(context.getString(R.string.action_cancel), null)
+                .showWithSmartNfcReading()
 
-        dialog.show()
 
-        // 3. Override the positive button click listener to enforce text validation rules
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val updatedName = edtName.text.toString().trim()
-            val yearRaw = edtYear.text.toString().trim()
+            // 3. Override the positive button click listener to enforce text validation rules
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val updatedName = edtName.text.toString().trim()
+                val yearRaw = edtYear.text.toString().trim()
 
-            // Fetch selected integer value out of the configured string array map
-            val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
+                // Fetch selected integer value out of the configured string array map
+                val selectedSemester = spinnerSemester.selectedItem.toString().toIntOrNull() ?: 1
 
-            if (updatedName.isEmpty()) {
-                edtName.error = context.getString(R.string.error_empty_name)
-                return@setOnClickListener
-            }
-
-            val updatedYear = yearRaw.toIntOrNull()
-            if (updatedYear == null || yearRaw.isEmpty()) {
-                edtYear.error =
-                    context.getString(R.string.label_year) // Or a specific invalid year error
-                return@setOnClickListener
-            }
-
-            // 4. Input validated; mutate state tree safely inside your Coroutine Dispatcher context
-            lifecycleOwner.lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    val updatedCourse = course.copy(
-                        name = updatedName,
-                        year = updatedYear,
-                        semester = selectedSemester
-                    )
-                    db.updateCourse(updatedCourse)
-                    if (selectedCourse != null && updatedCourse.id == selectedCourse!!.id) {
-                        selectedCourse = updatedCourse
-                    }
+                if (updatedName.isEmpty()) {
+                    edtName.error = context.getString(R.string.error_empty_name)
+                    return@setOnClickListener
                 }
 
-                // 5. Provide UI success indicators and refresh foreground layouts
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.toast_course_updated),
-                    Toast.LENGTH_SHORT
-                ).show()
+                val updatedYear = yearRaw.toIntOrNull()
+                if (updatedYear == null || yearRaw.isEmpty()) {
+                    edtYear.error =
+                        context.getString(R.string.label_year) // Or a specific invalid year error
+                    return@setOnClickListener
+                }
 
-                onCourseEdited()
-                dialog.dismiss()
+                // 4. Input validated; mutate state tree safely inside your Coroutine Dispatcher context
+                lifecycleOwner.lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        val updatedCourse = course.copy(
+                            name = updatedName,
+                            year = updatedYear,
+                            semester = selectedSemester
+                        )
+                        db.updateCourse(updatedCourse)
+                        if (selectedCourse != null && updatedCourse.id == selectedCourse!!.id) {
+                            selectedCourse = updatedCourse
+                        }
+                    }
+
+                    // 5. Provide UI success indicators and refresh foreground layouts
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_course_updated),
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    onCourseEdited()
+                    dialog.dismiss()
+                }
             }
         }
     }
