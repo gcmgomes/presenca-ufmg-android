@@ -8,13 +8,18 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.RelativeLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import androidx.core.view.isGone
@@ -28,6 +33,7 @@ import androidx.transition.TransitionManager
 import androidx.transition.TransitionSet
 import com.example.presensor.R
 import com.example.presensor.MainUiBinder
+import com.example.presensor.MainActivity
 import com.example.presensor.CourseUtilities
 import com.example.presensor.DialogFactory
 import com.example.presensor.MainActivity.AppState
@@ -45,19 +51,20 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 class DashboardController(
-    private val activity: AppCompatActivity,
+    private val activity: MainActivity,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
     private val onCourseSelected: (Course) -> Unit,
     private val onCourseLongClicked: (Course) -> Unit,
     private val onCourseCreateRequested: (() -> Unit) -> Unit,
-    private val onCourseEditRequested: (Course) -> Unit // Add this new callback token
+    private val onCourseEditRequested: (Course) -> Unit,
 ) {
     // Safely look up views directly from the Activity context to prevent null reference crashes
     private val container: LinearLayout = activity.findViewById(R.id.currentCoursesContainer)
     private val txtCurrentTerm: TextView = activity.findViewById(R.id.txtCurrentTerm)
     private val searchView: SearchView = activity.findViewById(R.id.courseSearchView)
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
+    private var loadingOverlay: View = activity.findViewById(R.id.loadingOverlay)
 
     init {
         setupSearchView()
@@ -263,6 +270,79 @@ class DashboardController(
         }
     }
 
+    private fun toggleLoadingOverlay(show: Boolean) {
+        loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    fun triggerCustomImportFlow() {
+        val action = {
+            // 1. Instantly turn on the dimmed overlay and spinning wheel layout
+            // BEFORE making the network call. This gives immediate visual feedback.
+            toggleLoadingOverlay(true)
+
+            // 2. Query Google Drive for the files in the background
+            activity.cloudSyncController.fetchAvailableBackups { files ->
+                // 3. Keep the overlay visible or drop it based on data arrival,
+                // but introduce a tiny post delay to let the overlay settle before drawing the dialog
+                activity.window.decorView.post {
+                    toggleLoadingOverlay(false)
+
+                    if (files.isEmpty()) {
+                        with(DialogFactory) {
+                            AlertDialog.Builder(activity)
+                                .setTitle("No Backups Found")
+                                .setMessage("No valid database backups were discovered on your Google Drive account.")
+                                .setPositiveButton("OK", null)
+                                .showWithSmartNfcReading()
+                        }
+                        return@post
+                    }
+
+                    // 4. Inflate and show your custom dialog_cloud_import layout
+                    val dialogView = layoutInflater.inflate(R.layout.dialog_cloud_import, null)
+                    val listView = dialogView.findViewById<ListView>(R.id.backupListView)
+
+                    val fileNames = files.map { it.name }
+                    val adapter =
+                        ArrayAdapter(activity, android.R.layout.simple_list_item_1, fileNames)
+                    listView.adapter = adapter
+
+                    with(DialogFactory) {
+
+                        val importDialog = AlertDialog.Builder(activity)
+                            .setTitle(R.string.dialog_cloud_import_title)
+                            .setView(dialogView)
+                            .setNegativeButton(R.string.action_cancel, null)
+                            .showWithSmartNfcReading()
+
+                        listView.setOnItemClickListener { _, _, position, _ ->
+                            val selectedFile = files[position]
+                            importDialog.dismiss()
+
+                            // Handle download sync restoration
+                            activity.cloudSyncController.downloadAndRestoreBackup(
+                                selectedFile.id,
+                                onLoadingToggle = { isLoading -> toggleLoadingOverlay(isLoading) },
+                                onComplete = { success ->
+                                    if (success) {
+                                        refreshDashboard()
+                                    }
+                                }
+                            )
+                        }
+
+                    }
+                }
+            }
+        }
+
+        activity.setPendingAction(action)
+        activity.cloudSyncController.runWithCloudAuthentication(
+            activity.cloudSignInLauncher,
+            action
+        )
+    }
+
     fun setupOnClickListeners() {
 
         activity.findViewById<Button>(R.id.btnImportStudents)
@@ -277,6 +357,159 @@ class DashboardController(
                     refreshDashboard()
                 }
             }
+
+        activity.findViewById<Button>(R.id.btnDriveImportStudents).setOnClickListener {
+            // 1. Immediately overlay to keep user animations stable
+            toggleLoadingOverlay(true)
+
+            val action = {
+                activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
+                    toggleLoadingOverlay(false)
+
+                    if (spreadsheets.isEmpty()) {
+                        Toast.makeText(
+                            activity,
+                            activity.getString(R.string.toast_cloud_sheets_empty),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@fetchAvailableSpreadsheets
+                    }
+
+                    // Show Spreadsheet selection dialog using layout_cloud_import
+                    val dialogView = layoutInflater.inflate(R.layout.dialog_cloud_import, null)
+                    val subTitle = dialogView.findViewById<TextView>(R.id.dialogSubtitle)
+                    val listView = dialogView.findViewById<ListView>(R.id.backupListView)
+
+                    subTitle.text = activity.getString(R.string.dialog_cloud_import_sheets_subtitle)
+                    listView.adapter = ArrayAdapter(
+                        activity,
+                        android.R.layout.simple_list_item_1,
+                        spreadsheets.map { it.name })
+
+                    val spreadsheetDialog = AlertDialog.Builder(activity)
+                        .setTitle(activity.getString(R.string.dialog_cloud_import_sheets_title))
+                        .setView(dialogView)
+                        .setNegativeButton(activity.getString(R.string.action_cancel), null)
+                        .create()
+
+                    listView.setOnItemClickListener { _, _, position, _ ->
+                        val selectedSpreadsheet = spreadsheets[position]
+                        spreadsheetDialog.dismiss()
+
+                        // Chain 2: Fetch tab segments from inside that workbook
+                        toggleLoadingOverlay(true)
+                        activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
+                            toggleLoadingOverlay(false)
+
+                            if (tabs.isEmpty()) {
+                                Toast.makeText(
+                                    activity,
+                                    activity.getString(R.string.toast_cloud_sheet_tabs_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                return@fetchSpreadsheetTabs
+                            }
+
+                            // Show tab selection dialog frame
+                            val tabsView =
+                                layoutInflater.inflate(R.layout.dialog_cloud_import_tabs, null)
+                            val tabsListView = tabsView.findViewById<ListView>(R.id.tabsListView)
+                            tabsListView.adapter =
+                                ArrayAdapter(activity, android.R.layout.simple_list_item_1, tabs)
+
+                            val tabsDialog = AlertDialog.Builder(activity)
+                                .setTitle(activity.getString(R.string.dialog_cloud_select_tab_title))
+                                .setView(tabsView)
+                                .setNegativeButton(activity.getString(R.string.action_cancel), null)
+                                .create()
+
+                            tabsListView.setOnItemClickListener { _, _, tabPos, _ ->
+                                val selectedTab = tabs[tabPos]
+                                tabsDialog.dismiss()
+
+                                // Chain 3: Pull rows data values down securely
+                                toggleLoadingOverlay(true)
+                                activity.cloudSyncController.importStudentsFromSheet(
+                                    selectedSpreadsheet.id,
+                                    selectedTab
+                                ) { resultCount ->
+                                    toggleLoadingOverlay(false)
+                                    when {
+                                        resultCount > 0 -> Toast.makeText(
+                                            activity,
+                                            activity.getString(
+                                                R.string.toast_cloud_student_import_success,
+                                                resultCount
+                                            ),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+
+                                        resultCount == 0 -> Toast.makeText(
+                                            activity,
+                                            activity.getString(R.string.toast_cloud_student_import_empty),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+
+                                        else -> Toast.makeText(
+                                            activity,
+                                            activity.getString(R.string.toast_cloud_sheets_fetch_failed),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                            tabsDialog.show()
+                        }
+                    }
+                    spreadsheetDialog.show()
+                }
+            }
+
+            activity.setPendingAction(action)
+            activity.cloudSyncController.runWithCloudAuthentication(
+                activity.cloudSignInLauncher,
+                action
+            )
+        }
+
+        activity.findViewById<Button>(R.id.btnDriveExportDatabase).setOnClickListener {
+            val dialogView = layoutInflater.inflate(R.layout.dialog_cloud_export, null)
+            val suffixInput = dialogView.findViewById<EditText>(R.id.editExportSuffix)
+
+            with(DialogFactory) {
+                // 2. Build the interactive container before authorizing to match workflow steps
+                AlertDialog.Builder(activity)
+                    .setTitle(R.string.dialog_cloud_export_title)
+                    .setView(dialogView)
+                    .setPositiveButton(R.string.action_export) { _, _ ->
+                        val inputSuffix = suffixInput.text.toString()
+
+                        // 3. Lock layout screens smoothly to prevent interaction flickering rules
+                        toggleLoadingOverlay(true)
+
+                        val action = {
+                            // Run the synchronized cloud task passing the customized suffix label
+                            activity.cloudSyncController.uploadBackupToDrive(inputSuffix) { isLoading ->
+                                toggleLoadingOverlay(isLoading)
+                            }
+                        }
+
+                        activity.setPendingAction(action)
+                        activity.cloudSyncController.runWithCloudAuthentication(
+                            activity.cloudSignInLauncher,
+                            action
+                        )
+                    }
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .showWithSmartNfcReading()
+            }
+        }
+
+
+        activity.findViewById<Button>(R.id.btnDriveImportDatabase).setOnClickListener {
+            toggleLoadingOverlay(true)
+            triggerCustomImportFlow()
+        }
     }
 
     fun refreshDashboard(filter: String = "") {

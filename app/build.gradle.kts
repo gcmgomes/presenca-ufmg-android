@@ -38,6 +38,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    packaging {
+        resources {
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/index.list"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/NOTICE"
+        }
+    }
 }
 
 dependencies {
@@ -49,7 +58,7 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
-    val roomVersion = "2.7.0"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion") // Use ksp here
@@ -64,4 +73,18 @@ dependencies {
 
     // Android support for Coroutines (Provides Dispatchers.Main, lifecycleScope, etc.)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // 1. Authentication
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    // 2. Google Drive Client SDK
+    implementation("com.google.api-client:google-api-client-android:2.6.0")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20240521-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+
+    // 3. Google Sheets Client SDK
+    implementation("com.google.apis:google-api-services-sheets:v4-rev20240416-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
 }

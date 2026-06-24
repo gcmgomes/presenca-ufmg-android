@@ -49,6 +49,7 @@ import com.example.presensor.data.AppDatabase
 import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.adapters.StudentStatsAdapter
+import com.example.presensor.controllers.CloudSyncController
 import com.example.presensor.controllers.DashboardController
 import com.example.presensor.controllers.CourseController
 import com.example.presensor.controllers.DetailedCourseController
@@ -59,6 +60,7 @@ import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Attendance
 import com.example.presensor.data.entities.AttendanceRecord
+import kotlinx.coroutines.delay
 
 class MainActivity : AppCompatActivity() {
 
@@ -73,11 +75,65 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sessionController: SessionController
     private lateinit var tagController: TagController
 
+    lateinit var cloudSyncController: CloudSyncController
+
+    // Keeps track of the user's intended action if they need to complete a sign-in flow first
+    var pendingCloudAction: (() -> Unit)? = null
+
 
     private lateinit var currentBackCallback: OnBackPressedCallback
     private lateinit var dashboardView: View
     private lateinit var layoutCourseView: View
     private lateinit var layoutSessionView: View
+
+    lateinit var loadingOverlay: View
+
+    // Flag to orchestrate the focus lock state safely
+    private var isWaitingForFocus = false
+    val cloudSignInLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                cloudSyncController.handleSignInResult(result.data) {
+                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT)
+                        .show()
+
+                    if (hasWindowFocus()) {
+                        executePendingActionWithTransitionBreather()
+                    } else {
+                        isWaitingForFocus = true
+                    }
+                }
+            } else {
+                pendingCloudAction = null
+            }
+        }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && isWaitingForFocus) {
+            isWaitingForFocus = false
+            executePendingActionWithTransitionBreather()
+        }
+    }
+
+    /**
+     * Introduces an explicit hardware rendering delay. This guarantees the
+     * Google Sign-In sheet is 100% gone before your layout modifies its views.
+     */
+    private fun executePendingActionWithTransitionBreather() {
+        // Post to the next animation frame, then let the system breathe for 150ms
+        window.decorView.postOnAnimation {
+            lifecycleScope.launch(Dispatchers.Main) {
+                delay(150) // The perfect window transition buffer duration
+                pendingCloudAction?.invoke()
+                pendingCloudAction = null
+            }
+        }
+    }
+
+    fun setPendingAction(action: () -> Unit) {
+        this.pendingCloudAction = action
+    }
 
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +149,8 @@ class MainActivity : AppCompatActivity() {
                 db.execSQL("PRAGMA optimize;")
             }
         }
+
+        loadingOverlay = findViewById(R.id.loadingOverlay)
 
         db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "presensor-db")
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
@@ -117,6 +175,9 @@ class MainActivity : AppCompatActivity() {
         dashboardView = findViewById(R.id.layoutDashboardView)
         layoutCourseView = findViewById(R.id.layoutCourseView)
         layoutSessionView = findViewById(R.id.layoutSessionView)
+
+
+        cloudSyncController = CloudSyncController(this, this, db)
 
         // Initialize Dashboard Controller
         dashboardController = DashboardController(
@@ -200,6 +261,7 @@ class MainActivity : AppCompatActivity() {
             courseController = courseController,
             getColorFromAttr = { attr -> getColorFromAttr(attr) }
         )
+
 
         findViewById<FloatingActionButton>(R.id.btnAddSession).setOnClickListener { courseController.showCreateSessionDialog() }
 
@@ -328,8 +390,6 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
-
     override fun onResume() {
         super.onResume()
         val options = Bundle().apply {
@@ -352,4 +412,6 @@ class MainActivity : AppCompatActivity() {
             options
         )
     }
+
+
 }

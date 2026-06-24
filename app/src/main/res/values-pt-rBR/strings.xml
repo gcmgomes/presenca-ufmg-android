@@ -35,6 +35,45 @@
     <string name="menu_database_import">Importar banco de dados (csv)</string>
     <string name="menu_database_export">Exportar banco de dados (csv)</string>
 
+    <string name="dialog_cloud_import_sheets_title">Selecionar Planilha</string>
+    <string name="dialog_cloud_import_sheets_subtitle">Escolha uma planilha do seu Google Drive para importar os alunos:</string>
+    <string name="dialog_cloud_select_tab_title">Selecionar Aba da Planilha</string>
+    <string name="dialog_cloud_select_tab_subtitle">Escolha a aba específica que contém os registros dos alunos:</string>
+    <string name="toast_cloud_sheets_empty">Nenhuma Planilha do Google encontrada no seu Google Drive.</string>
+    <string name="toast_cloud_sheets_fetch_failed">Falha ao ler as planilhas do Google Drive</string>
+    <string name="toast_cloud_sheet_tabs_failed">Falha ao carregar as abas da planilha</string>
+    <string name="toast_cloud_student_import_success">%1$d alunos importados com sucesso!</string>
+    <string name="toast_cloud_student_import_empty">Nenhuma linha válida de alunos encontrada na aba selecionada.</string>
+
+    <string name="menu_cloud_student_import">Importar alunos (Drive)</string>
+    <string name="menu_cloud_database_import">Importar banco de dados (Drive)</string>
+    <string name="menu_cloud_database_export">Exportar banco de dados (Drive)</string>
+
+    <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
+    <string name="toast_cloud_auth_pre_fetch_failed">Falha ao autorizar sessão na nuvem</string>
+    <string name="toast_cloud_auth_failed">Falha na autenticação da nuvem</string>
+    <string name="toast_cloud_service_not_initialized">Serviço do Google Drive não inicializado</string>
+    <string name="toast_cloud_upload_success">Backup do banco de dados enviado para o Google Drive!</string>
+    <string name="toast_cloud_upload_failed">Falha na sincronização do backup</string>
+    <string name="toast_cloud_restore_success">Banco de dados restaurado com sucesso da nuvem!</string>
+    <string name="toast_cloud_restore_failed_parse">Falha ao analisar o arquivo de backup</string>
+    <string name="toast_cloud_download_failed">Falha no download da nuvem</string>
+    <string name="dialog_cloud_import_title">Restaurar Backup do Banco de Dados</string>
+    <string name="dialog_cloud_import_subtitle">Selecione uma cópia abaixo para restaurar completamente as configurações locais do banco de dados:</string>
+    <string name="dialog_cloud_import_no_backups_title">Nenhum Backup Encontrado</string>
+    <string name="dialog_cloud_import_no_backups_message">Nenhum backup válido do banco de dados foi encontrado na sua conta do Google Drive.</string>
+
+    <string name="dialog_cloud_export_title">Exportar Backup do Banco de Dados</string>
+    <string name="dialog_cloud_export_prefix_preview">Prefixo:</string>
+    <string name="dialog_cloud_export_suffix_hint">ex: versao_final, 2026_parcial</string>
+    <string name="dialog_cloud_export_hint">O texto digitado será adicionado diretamente após o prefixo e antes da extensão .csv.</string>
+
+    <string name="action_export">Exportar</string>
+    <string name="action_ok">OK</string>
+    <string name="toast_login_success">Login realizado com sucesso</string>
+    <string name="toast_sign_in_canceled">Login cancelado</string>
+
+
     <string name="session_text">Aula</string>
     <string name="title_new_session">Nova Aula</string>
     <string name="title_edit_session">Editar Detalhes da Aula</string>

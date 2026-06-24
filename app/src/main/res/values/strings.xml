@@ -34,6 +34,43 @@
     <string name="menu_database_import">Import database (csv)</string>
     <string name="menu_database_export">Export database (csv)</string>
 
+    <string name="dialog_cloud_import_sheets_title">Select Spreadsheet</string>
+    <string name="dialog_cloud_import_sheets_subtitle">Choose a workbook from your Google Drive account to import students from:</string>
+    <string name="dialog_cloud_select_tab_title">Select Sheet Tab</string>
+    <string name="dialog_cloud_select_tab_subtitle">Choose the specific tab/sheet containing the student records:</string>
+    <string name="toast_cloud_sheets_empty">No Google Sheets found in your Drive account.</string>
+    <string name="toast_cloud_sheets_fetch_failed">Failed to read spreadsheet records from Drive</string>
+    <string name="toast_cloud_sheet_tabs_failed">Failed to parse sheet tabs</string>
+    <string name="toast_cloud_student_import_success">Imported %1$d students successfully!</string>
+    <string name="toast_cloud_student_import_empty">No valid student rows found in the selected sheet.</string>
+
+    <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
+    <string name="toast_cloud_auth_pre_fetch_failed">Failed to authorize cloud session</string>
+    <string name="toast_cloud_auth_failed">Cloud authentication failed</string>
+    <string name="toast_cloud_service_not_initialized">Drive service not initialized</string>
+    <string name="toast_cloud_upload_success">Database backup uploaded to Google Drive!</string>
+    <string name="toast_cloud_upload_failed">Drive backup sync failed</string>
+    <string name="toast_cloud_restore_success">Database successfully restored from cloud!</string>
+    <string name="toast_cloud_restore_failed_parse">Failed to parse backup file</string>
+    <string name="toast_cloud_download_failed">Cloud download failed</string>
+    <string name="menu_cloud_student_import">Import students (Drive)</string>
+    <string name="menu_cloud_database_import">Import database (Drive)</string>
+    <string name="menu_cloud_database_export">Export database (Drive)</string>
+    <string name="dialog_cloud_import_title">Restore Database Backup</string>
+    <string name="dialog_cloud_import_subtitle">Select a timestamped snapshot below to completely restore your local database state configuration:</string>
+    <string name="dialog_cloud_import_no_backups_title">No Backups Found</string>
+    <string name="dialog_cloud_import_no_backups_message">No valid database backups were discovered on your Google Drive account.</string>
+
+    <string name="dialog_cloud_export_title">Export Database Backup</string>
+    <string name="dialog_cloud_export_prefix_preview">Prefix:</string>
+    <string name="dialog_cloud_export_suffix_hint">e.g., final_version, 2026_midterm</string>
+    <string name="dialog_cloud_export_hint">Your text will be appended directly after the prefix before the .csv extension.</string>
+
+    <string name="action_export">Export</string>
+    <string name="action_ok">OK</string>
+    <string name="toast_login_success">Logged in successfully</string>
+    <string name="toast_sign_in_canceled">Sign-in canceled</string>
+
     <string name="session_text">Session</string>
     <string name="title_new_session">New Session</string>
     <string name="title_edit_session">Edit Session Details</string>
