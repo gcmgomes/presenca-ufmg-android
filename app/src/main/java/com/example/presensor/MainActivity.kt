@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     private var currentState = AppState.DASHBOARD
 
     private lateinit var db: AppDatabase
+    fun getDb(): AppDatabase = db
     private lateinit var dashboardController: DashboardController
     private lateinit var courseController: CourseController
     private lateinit var detailedCourseController: DetailedCourseController
@@ -88,10 +89,14 @@ class MainActivity : AppCompatActivity() {
 
     lateinit var loadingOverlay: View
 
+    fun toggleLoadingOverlay(show: Boolean) {
+        loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     // Flag to orchestrate the focus lock state safely
     private var isWaitingForFocus = false
     val cloudSignInLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 cloudSyncController.handleSignInResult(result.data) {
                     Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT)
@@ -105,6 +110,8 @@ class MainActivity : AppCompatActivity() {
                 }
             } else {
                 pendingCloudAction = null
+                // Optional: Toggle your loading overlay off here since the user canceled/failed the picker
+                toggleLoadingOverlay(false)
             }
         }
 

@@ -64,7 +64,6 @@ class DashboardController(
     private val txtCurrentTerm: TextView = activity.findViewById(R.id.txtCurrentTerm)
     private val searchView: SearchView = activity.findViewById(R.id.courseSearchView)
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
-    private var loadingOverlay: View = activity.findViewById(R.id.loadingOverlay)
 
     init {
         setupSearchView()
@@ -81,62 +80,8 @@ class DashboardController(
         })
     }
 
-    private fun showStudentImportPreview(students: List<Student>) {
-        val bottomSheet = BottomSheetDialog(activity)
-        val view = layoutInflater.inflate(R.layout.layout_import_student_preview, null)
-        bottomSheet.setContentView(view)
-
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportStudentPreview)
-        val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmStudentImport)
-
-        // Maps to: "Found %1$d students. Please verify their information." / "Foram encontrados %1$d alunos..."
-        view.findViewById<TextView>(R.id.txtImportStudentCount).text =
-            activity.getString(R.string.dialog_import_students_hint, students.size)
-
-        recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportStudentAdapter(students)
-
-        btnConfirm.setOnClickListener {
-            activity.lifecycleScope.launch {
-                withContext(Dispatchers.IO) { db.insertStudents(students) }
-                bottomSheet.dismiss()
-
-                // Maps to: "%1$d aulas importadas" or customizable toast parameters safely
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.toast_imported_sessions, students.size),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-        bottomSheet.show()
-    }
 
     private fun parseStudentCsv(uri: Uri) {
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val students = CourseUtilities.parseStudentsFromCsv(activity.contentResolver, uri)
-                withContext(Dispatchers.Main) {
-                    if (students.isNotEmpty()) {
-                        showStudentImportPreview(students)
-                    } else {
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.msg_no_students_found),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        activity,
-                        activity.getString(R.string.toast_export_failed),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        }
     }
 
 
@@ -173,7 +118,12 @@ class DashboardController(
     private val importStudentLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
-                result.data?.data?.let { uri -> parseStudentCsv(uri) }
+                result.data?.data?.let { uri ->
+                    ImportStudentController.importFromLocal(
+                        activity,
+                        uri
+                    )
+                }
             }
         }
 
@@ -270,22 +220,19 @@ class DashboardController(
         }
     }
 
-    private fun toggleLoadingOverlay(show: Boolean) {
-        loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
-    }
 
     fun triggerCustomImportFlow() {
         val action = {
             // 1. Instantly turn on the dimmed overlay and spinning wheel layout
             // BEFORE making the network call. This gives immediate visual feedback.
-            toggleLoadingOverlay(true)
+            activity.toggleLoadingOverlay(true)
 
             // 2. Query Google Drive for the files in the background
             activity.cloudSyncController.fetchAvailableBackups { files ->
                 // 3. Keep the overlay visible or drop it based on data arrival,
                 // but introduce a tiny post delay to let the overlay settle before drawing the dialog
                 activity.window.decorView.post {
-                    toggleLoadingOverlay(false)
+                    activity.toggleLoadingOverlay(false)
 
                     if (files.isEmpty()) {
                         with(DialogFactory) {
@@ -322,7 +269,11 @@ class DashboardController(
                             // Handle download sync restoration
                             activity.cloudSyncController.downloadAndRestoreBackup(
                                 selectedFile.id,
-                                onLoadingToggle = { isLoading -> toggleLoadingOverlay(isLoading) },
+                                onLoadingToggle = { isLoading ->
+                                    activity.toggleLoadingOverlay(
+                                        isLoading
+                                    )
+                                },
                                 onComplete = { success ->
                                     if (success) {
                                         refreshDashboard()
@@ -360,11 +311,11 @@ class DashboardController(
 
         activity.findViewById<Button>(R.id.btnDriveImportStudents).setOnClickListener {
             // 1. Immediately overlay to keep user animations stable
-            toggleLoadingOverlay(true)
+            activity.toggleLoadingOverlay(true)
 
             val action = {
                 activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
-                    toggleLoadingOverlay(false)
+                    activity.toggleLoadingOverlay(false)
 
                     if (spreadsheets.isEmpty()) {
                         Toast.makeText(
@@ -397,9 +348,9 @@ class DashboardController(
                         spreadsheetDialog.dismiss()
 
                         // Chain 2: Fetch tab segments from inside that workbook
-                        toggleLoadingOverlay(true)
+                        activity.toggleLoadingOverlay(true)
                         activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
-                            toggleLoadingOverlay(false)
+                            activity.toggleLoadingOverlay(false)
 
                             if (tabs.isEmpty()) {
                                 Toast.makeText(
@@ -428,35 +379,13 @@ class DashboardController(
                                 tabsDialog.dismiss()
 
                                 // Chain 3: Pull rows data values down securely
-                                toggleLoadingOverlay(true)
-                                activity.cloudSyncController.importStudentsFromSheet(
+                                activity.toggleLoadingOverlay(true)
+                                ImportStudentController.importFromCloud(
+                                    activity,
+                                    activity.cloudSyncController.getSheetsService(),
                                     selectedSpreadsheet.id,
                                     selectedTab
-                                ) { resultCount ->
-                                    toggleLoadingOverlay(false)
-                                    when {
-                                        resultCount > 0 -> Toast.makeText(
-                                            activity,
-                                            activity.getString(
-                                                R.string.toast_cloud_student_import_success,
-                                                resultCount
-                                            ),
-                                            Toast.LENGTH_LONG
-                                        ).show()
-
-                                        resultCount == 0 -> Toast.makeText(
-                                            activity,
-                                            activity.getString(R.string.toast_cloud_student_import_empty),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-
-                                        else -> Toast.makeText(
-                                            activity,
-                                            activity.getString(R.string.toast_cloud_sheets_fetch_failed),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
+                                )
                             }
                             tabsDialog.show()
                         }
@@ -485,12 +414,12 @@ class DashboardController(
                         val inputSuffix = suffixInput.text.toString()
 
                         // 3. Lock layout screens smoothly to prevent interaction flickering rules
-                        toggleLoadingOverlay(true)
+                        activity.toggleLoadingOverlay(true)
 
                         val action = {
                             // Run the synchronized cloud task passing the customized suffix label
                             activity.cloudSyncController.uploadBackupToDrive(inputSuffix) { isLoading ->
-                                toggleLoadingOverlay(isLoading)
+                                activity.toggleLoadingOverlay(isLoading)
                             }
                         }
 
@@ -507,7 +436,7 @@ class DashboardController(
 
 
         activity.findViewById<Button>(R.id.btnDriveImportDatabase).setOnClickListener {
-            toggleLoadingOverlay(true)
+            activity.toggleLoadingOverlay(true)
             triggerCustomImportFlow()
         }
     }

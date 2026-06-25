@@ -4,22 +4,24 @@ import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.http.InputStreamContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.FileList
+import com.google.api.services.sheets.v4.Sheets
+import com.google.api.services.sheets.v4.SheetsScopes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,7 +29,6 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Collections
 
 class CloudSyncController(
     private val activity: AppCompatActivity,
@@ -35,71 +36,67 @@ class CloudSyncController(
     private val db: AppDatabase
 ) {
     private var driveService: Drive? = null
-    private var credential: GoogleAccountCredential? = null
+    private var sheetsService: Sheets? = null
 
-    private val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-//        .requestScopes(Scope(DriveScopes.DRIVE_FILE))
-        .requestScopes(Scope("https://www.googleapis.com/auth/drive.metadata.readonly"))
-        .requestEmail()
-        .build()
+    // Cache the active access token for token pre-fetching or validation validations if needed
+    private var currentAccessToken: String? = null
 
-    private val googleSignInClient = GoogleSignIn.getClient(activity, gso)
+    // Bundle all required OAuth permissions using standard modern Scope objects
+    private val requestedScopes = listOf(
+        Scope("https://www.googleapis.com/auth/drive.metadata.readonly"),
+        Scope(DriveScopes.DRIVE_FILE),
+        Scope(SheetsScopes.SPREADSHEETS_READONLY)
+    )
 
-    // Add this property declaration near your driveService field
-    private var sheetsService: com.google.api.services.sheets.v4.Sheets? = null
+    fun getSheetsService(): Sheets? = sheetsService
 
-// Inside initializeCloudServices, add this builder line right below driveService assignment:
-
-
+    /**
+     * Checks for permissions and prompts login via modern IntentSender resolutions if needed.
+     */
     fun runWithCloudAuthentication(
-        signInLauncher: ActivityResultLauncher<Intent>,
+        signInLauncher: ActivityResultLauncher<IntentSenderRequest>,
         onAuthSuccess: () -> Unit
     ) {
-        val lastAccount = GoogleSignIn.getLastSignedInAccount(activity)
-        if (lastAccount != null && GoogleSignIn.hasPermissions(
-                lastAccount,
-                Scope(DriveScopes.DRIVE_FILE)
-            )
-        ) {
-            initializeCloudServices(lastAccount)
-            onAuthSuccess()
-        } else {
-            signInLauncher.launch(googleSignInClient.signInIntent)
-        }
+        val authorizationClient = Identity.getAuthorizationClient(activity)
+        val authorizationRequest = AuthorizationRequest.builder()
+            .setRequestedScopes(requestedScopes)
+            .build()
+
+        authorizationClient.authorize(authorizationRequest)
+            .addOnSuccessListener { result ->
+                if (result.hasResolution()) {
+                    // Authorization needed: trigger modern UI flow resolution account picker
+                    val pendingIntent = result.pendingIntent!!
+                    signInLauncher.launch(IntentSenderRequest.Builder(pendingIntent).build())
+                } else {
+                    // Already authorized: tokens are immediately available in the result
+                    initializeCloudServices(result.accessToken)
+                    onAuthSuccess()
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("CloudSync", "Authorization request validation failed", e)
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.toast_cloud_auth_failed),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
     }
 
+    /**
+     * Handles the callback when returning from the Identity account picker window.
+     */
     fun handleSignInResult(data: Intent?, onAuthSuccess: () -> Unit) {
         try {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-            val account = task.getResult(Exception::class.java)
-            if (account != null) {
-                initializeCloudServices(account)
+            val authorizationClient = Identity.getAuthorizationClient(activity)
+            val result = authorizationClient.getAuthorizationResultFromIntent(data)
 
-                // Warm up the token in the background right now to avoid the first-click race condition
-                lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        // Forcing the credential to fetch the token from Play Services *before* running our API action
-                        credential?.token
+            initializeCloudServices(result.accessToken)
+            onAuthSuccess()
 
-                        withContext(Dispatchers.Main) {
-                            onAuthSuccess()
-                        }
-                    } catch (e: Exception) {
-                        Log.e("CloudSync", "Failed to pre-fetch OAuth token", e)
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                activity,
-                                activity.getString(R.string.toast_cloud_auth_pre_fetch_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                }
-            } else {
-                throw IllegalStateException("Google account returned null")
-            }
         } catch (e: Exception) {
-            Log.e("CloudSync", "Google accounts integration auth failure", e)
+            Log.e("CloudSync", "Google Identity authorization token processing failure", e)
             Toast.makeText(
                 activity,
                 activity.getString(R.string.toast_cloud_auth_failed),
@@ -108,24 +105,25 @@ class CloudSyncController(
         }
     }
 
-    private fun initializeCloudServices(account: GoogleSignInAccount) {
-        credential = GoogleAccountCredential.usingOAuth2(
-            activity,
-            Collections.singletonList("https://www.googleapis.com/auth/drive.metadata.readonly")
-        ).apply {
-            selectedAccount = account.account
+    private fun initializeCloudServices(accessToken: String?) {
+        if (accessToken == null) return
+        currentAccessToken = accessToken
+
+        // Injects the OAuth2 bearer access token seamlessly into HTTP headers
+        val requestInitializer = HttpRequestInitializer { request ->
+            request.headers.authorization = "Bearer $accessToken"
         }
 
         val transport = NetHttpTransport()
         val jsonFactory = GsonFactory.getDefaultInstance()
 
-        driveService = Drive.Builder(transport, jsonFactory, credential)
+        driveService = Drive.Builder(transport, jsonFactory, requestInitializer)
             .setApplicationName("Presensor")
             .build()
-        sheetsService =
-            com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, credential)
-                .setApplicationName("Presensor")
-                .build()
+
+        sheetsService = Sheets.Builder(transport, jsonFactory, requestInitializer)
+            .setApplicationName("Presensor")
+            .build()
     }
 
     fun uploadBackupToDrive(customSuffix: String, onLoadingToggle: (Boolean) -> Unit) {
@@ -265,7 +263,7 @@ class CloudSyncController(
                 val result: FileList = service.files().list()
                     .setQ("mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false")
                     .setSpaces("drive")
-                    .setCorpora("user") // Explicitly read across everything shared with or owned by this user
+                    .setCorpora("user")
                     .setFields("files(id, name)")
                     .execute()
 
@@ -295,55 +293,6 @@ class CloudSyncController(
             } catch (e: Exception) {
                 Log.e("CloudSync", "Failed to retrieve sheet tabs metadata", e)
                 withContext(Dispatchers.Main) { onResult(emptyList()) }
-            }
-        }
-    }
-
-    /**
-     * Downloads cell matrix rows from a given sheet tab and saves them to the DB.
-     * Assumes column structure: Column A = Name, Column B = Email (Adjust to match your structure)
-     */
-    fun importStudentsFromSheet(
-        spreadsheetId: String,
-        tabTitle: String,
-        onComplete: (Int) -> Unit
-    ) {
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val service = sheetsService ?: return@launch
-                // Query columns A to C to pull structural content data arrays
-                val range = "'$tabTitle'!A1:C500"
-                val response = service.spreadsheets().values().get(spreadsheetId, range).execute()
-                val rows = response.getValues() ?: emptyList()
-
-                if (rows.isEmpty()) {
-                    withContext(Dispatchers.Main) { onComplete(0) }
-                    return@launch
-                }
-
-                var importedCount = 0
-
-                // Loop data rows safely (Skipping index 0 if your spreadsheet has headers)
-                for (i in 1 until rows.size) {
-                    val row = rows[i]
-                    if (row.size >= 2) {
-                        val studentName = row[0].toString().trim()
-                        val studentEmail = row[1].toString().trim()
-
-                        if (studentName.isNotEmpty() && studentEmail.isNotEmpty()) {
-                            // TODO: Map to your custom DB entity insertions here!
-                            // e.g., db.studentDao().insert(Student(name = studentName, email = studentEmail))
-                            importedCount++
-                        }
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    onComplete(importedCount)
-                }
-            } catch (e: Exception) {
-                Log.e("CloudSync", "Failed to read rows within selected sheet layout bounds", e)
-                withContext(Dispatchers.Main) { onComplete(-1) }
             }
         }
     }
