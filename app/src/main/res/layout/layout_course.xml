@@ -70,7 +70,6 @@
                         android:src="@drawable/ic_add"
                         app:tint="?attr/actionItemColor" />
                 </RelativeLayout>
-
                 <LinearLayout
                     android:id="@+id/layoutUtilsContent"
                     android:layout_width="match_parent"
@@ -78,62 +77,23 @@
                     android:orientation="vertical"
                     android:visibility="gone"
                     android:paddingTop="4dp"
-                    android:paddingBottom="8dp">
+                    android:paddingBottom="4dp">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCourseStats"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                    <androidx.viewpager2.widget.ViewPager2
+                        android:id="@+id/utilsViewPager"
+                        android:layout_width="match_parent"
+                        android:layout_height="135dp" />
+
+                    <com.google.android.material.tabs.TabLayout
+                        android:id="@+id/utilsPageIndicator"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/menu_course_statistics"
-                        android:textAlignment="viewStart"
-                        android:paddingStart="12dp"
-                        app:icon="@drawable/ic_view"
-                        app:iconPadding="16dp"
-                        android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnImportSchedule"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_course_import"
-                        android:textAlignment="viewStart"
-                        android:paddingStart="12dp"
-                        app:icon="@drawable/ic_import"
-                        app:iconPadding="16dp"
-                        android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnExportCourse"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_course_export"
-                        android:textAlignment="viewStart"
-                        android:paddingStart="12dp"
-                        app:icon="@drawable/ic_export"
-                        app:iconPadding="16dp"
-                        android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor" />
-
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnMassDateChange"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_course_postpone"
-                        android:textAlignment="viewStart"
-                        android:paddingStart="12dp"
-                        app:icon="@drawable/ic_postpone"
-                        app:iconPadding="16dp"
-                        android:textColor="?attr/actionItemColor"
-                        app:tint="?attr/actionItemColor" />
-
-
+                        android:background="@android:color/transparent"
+                        app:tabGravity="center"
+                        app:tabIndicatorHeight="0dp"
+                        app:tabMinWidth="10dp"
+                        app:tabMaxWidth="10dp"
+                        app:tabRippleColor="@android:color/transparent" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

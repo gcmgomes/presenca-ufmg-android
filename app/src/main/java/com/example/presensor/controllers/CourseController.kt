@@ -31,6 +31,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
 import com.example.presensor.CourseUtilities
 import com.example.presensor.DialogFactory
+import com.example.presensor.MainActivity
 import com.example.presensor.MainUiBinder
 import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.data.AppDatabase
@@ -50,7 +51,7 @@ import java.time.ZoneId
 import kotlin.math.abs
 
 class CourseController(
-    private val activity: AppCompatActivity,
+    private val activity: MainActivity,
     private val lifecycleOwner: LifecycleOwner,
     private var selectedCourse: Course?,
     private val db: AppDatabase,
@@ -63,11 +64,12 @@ class CourseController(
 
     // Layout view boundaries inside layoutCourseView
     private val sessionContainer: LinearLayout = activity.findViewById(R.id.sessionContainer)
-    private val btnExportCourse: Button = activity.findViewById(R.id.btnExportCourse)
-    private val btnCourseStats: Button = activity.findViewById(R.id.btnCourseStats)
-    private val btnImportSchedule: MaterialButton = activity.findViewById(R.id.btnImportSchedule)
-
-    private val btnMassDateChange: MaterialButton = activity.findViewById(R.id.btnMassDateChange)
+    private val utilsViewPager: androidx.viewpager2.widget.ViewPager2 = activity.findViewById(R.id.utilsViewPager)
+    private val utilsPageIndicator: com.google.android.material.tabs.TabLayout = activity.findViewById(R.id.utilsPageIndicator)
+    private val btnCourseStats: View? = null // Safely delete or decouple raw button reference tracking lines
+    private val btnImportSchedule: View? = null
+    private val btnExportCourse: View? = null
+    private val btnMassDateChange: View? = null
 
     private val btnEditCourse: ImageView = activity.findViewById<ImageView>(R.id.btnEditCourse)
 
@@ -142,14 +144,49 @@ class CourseController(
 
 
     private fun setupOnClickListeners() {
-        btnCourseStats.setOnClickListener { onOpenStatistics() }
-        btnImportSchedule.setOnClickListener { triggerImportSessionPicker() }
-        btnExportCourse.setOnClickListener {
-            val courseName = txtDetailCourseNameText()
-            val fileName = "Attendance_${courseName.replace(" ", "_")}.csv"
-            exportLauncher.launch(fileName)
-        }
-        btnMassDateChange.setOnClickListener { showMassDateChangeDialog() }
+        // A single sequential list containing all 5 operations distributed in pairs
+        val allActions = listOf(
+            // PAGE 1 Items
+            com.example.presensor.adapters.CourseUtilActionItem(
+                text = activity.getString(R.string.menu_course_statistics),
+                iconResId = R.drawable.ic_view,
+                onClick = { onOpenStatistics() }
+            ),
+            com.example.presensor.adapters.CourseUtilActionItem(
+                text = activity.getString(R.string.menu_course_import),
+                iconResId = R.drawable.ic_import,
+                onClick = { triggerImportSessionPicker() }
+            ),
+
+            // PAGE 2 Items
+            com.example.presensor.adapters.CourseUtilActionItem(
+                text = "Save Attendance as Local CSV",
+                iconResId = R.drawable.ic_export,
+                onClick = {
+                    val courseName = txtDetailCourseNameText()
+                    val fileName = "Attendance_${courseName.replace(" ", "_")}.csv"
+                    exportLauncher.launch(fileName)
+                }
+            ),
+            com.example.presensor.adapters.CourseUtilActionItem(
+                text = "Sync Matrix to Google Sheet",
+                iconResId = R.drawable.ic_export, // or your cloud icon
+                onClick = { triggerCloudAttendanceExport() }
+            ),
+
+            // PAGE 3 Items
+            com.example.presensor.adapters.CourseUtilActionItem(
+                text = activity.getString(R.string.menu_course_postpone),
+                iconResId = R.drawable.ic_postpone,
+                onClick = { showMassDateChangeDialog() }
+            )
+        )
+
+        // Bind your actions to the updated adapter
+        utilsViewPager.adapter = com.example.presensor.adapters.CourseUtilsPagerAdapter(allActions)
+
+        // Re-attach mediator to seamlessly update the 3 dots indicator
+        com.google.android.material.tabs.TabLayoutMediator(utilsPageIndicator, utilsViewPager) { _, _ -> }.attach()
     }
 
     private fun txtDetailCourseNameText(): String {
@@ -637,5 +674,208 @@ class CourseController(
                 }
             }
         }
+    }
+    /**
+     * Initiates the authentication and sheet selection flow for updating attendance matrices.
+     */
+    fun triggerCloudAttendanceExport() {
+        val course = selectedCourse ?: return
+        activity.toggleLoadingOverlay(true)
+
+        val action = {
+            activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
+                activity.toggleLoadingOverlay(false)
+
+                if (spreadsheets.isEmpty()) {
+                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_sheets_empty), Toast.LENGTH_SHORT).show()
+                    return@fetchAvailableSpreadsheets
+                }
+
+                // Show file dialog matching the correct Drive File type signature
+                showCloudFileDialog(
+                    title = "Select Sheet to Export Attendance",
+                    subtitle = "Choose the Google Spreadsheet to update with current session records:",
+                    driveItems = spreadsheets,
+                    getName = { it.name }
+                ) { selectedSpreadsheet ->
+
+                    activity.toggleLoadingOverlay(true)
+
+                    // Fetch sheets/tabs inside workbook
+                    activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
+                        activity.toggleLoadingOverlay(false)
+
+                        if (tabs.isEmpty()) {
+                            Toast.makeText(activity, activity.getString(R.string.toast_cloud_sheet_tabs_failed), Toast.LENGTH_SHORT).show()
+                            return@fetchSpreadsheetTabs
+                        }
+
+                        // Select target tab using the exact same dialog container mapped to Strings
+                        showCloudFileDialog(
+                            title = "Select Target Sheet Tab",
+                            subtitle = "Choose the worksheet tab to merge attendance matrix columns:",
+                            driveItems = tabs,
+                            getName = { it }
+                        ) { selectedTab ->
+                            // Execute grid operations on background workers safely
+                            performCloudSpreadsheetMatrixSync(selectedSpreadsheet.id, selectedTab)
+                        }
+                    }
+                }
+            }
+        }
+
+        activity.setPendingAction(action)
+        activity.cloudSyncController.runWithCloudAuthentication(activity.cloudSignInLauncher, action)
+    }
+
+    /**
+     * Downloads the chosen spreadsheet matrix, joins missing students/sessions, and updates cells.
+     */
+    private fun performCloudSpreadsheetMatrixSync(spreadsheetId: String, tabName: String) {
+        val course = selectedCourse ?: return
+        activity.toggleLoadingOverlay(true)
+
+        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val sheetsService = activity.cloudSyncController.getSheetsService()
+                    ?: throw IllegalStateException("Sheets service was not initialized properly")
+
+                val dateFormat = CourseUtilities.makeSessionTimeFormatter(activity)
+
+                // 1. Query Local Room DB State Trees
+                val localSessions = db.getSessionsByCourse(course.id).sortedBy { it.date }
+                val localStudents = db.getStudentsForCourse(course.id).sortedBy { it.email }
+                val localAttendanceMap = db.getAllAttendanceForCourse(course.id)
+                    .groupBy { it.studentEmail to it.sessionId }
+
+                // 2. Fetch Existing Cloud Layout Bounds
+                val response = sheetsService.spreadsheets().values()
+                    .get(spreadsheetId, "'$tabName'!A1:Z1000")
+                    .execute()
+
+                val currentGrid: MutableList<MutableList<Any>> = response.getValues()?.map {
+                    it.map { cell -> cell ?: "" }.toMutableList()
+                }?.toMutableList() ?: mutableListOf()
+
+                // Initialize structural headers if sheet tab is completely pristine
+                if (currentGrid.isEmpty()) {
+                    currentGrid.add(mutableListOf("Student Email", "Student Name"))
+                }
+
+                val headerRow = currentGrid[0]
+
+                // 3. Coordinate Columns Alignment (Sessions)
+                val sessionToColumnIdx = mutableMapOf<Long, Int>()
+                localSessions.forEach { session ->
+                    val formattedHeader = "${session.name} (${CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)})"
+                    var matchIndex = headerRow.indexOfFirst { it.toString().equals(formattedHeader, ignoreCase = true) }
+                    if (matchIndex == -1) {
+                        headerRow.add(formattedHeader)
+                        matchIndex = headerRow.lastIndex
+                    }
+                    sessionToColumnIdx[session.id] = matchIndex
+                }
+
+                // 4. Coordinate Rows Alignment (Students)
+                val studentToRowIdx = mutableMapOf<String, Int>()
+                for (i in 1 until currentGrid.size) {
+                    val emailCell = currentGrid[i].getOrNull(0)?.toString()?.trim() ?: ""
+                    if (emailCell.isNotEmpty()) {
+                        studentToRowIdx[emailCell] = i
+                    }
+                }
+
+                localStudents.forEach { student ->
+                    if (!studentToRowIdx.containsKey(student.email)) {
+                        val newRow = mutableListOf<Any>(student.email, student.name)
+                        currentGrid.add(newRow)
+                        studentToRowIdx[student.email] = currentGrid.lastIndex
+                    }
+                }
+
+                // 5. Fill and Update Intersections (Attendance Matrix Joining)
+                localStudents.forEach { student ->
+                    val rowIdx = studentToRowIdx[student.email] ?: return@forEach
+                    val rowData = currentGrid[rowIdx]
+
+                    // Pad list elements out to match expansion columns size safely
+                    while (rowData.size < headerRow.size) {
+                        rowData.add("")
+                    }
+
+                    localSessions.forEach { session ->
+                        val colIdx = sessionToColumnIdx[session.id] ?: return@forEach
+                        val key = student.email to session.id
+                        val wasPresent = localAttendanceMap.containsKey(key)
+
+                        // Assign "P" for Present and "A" for Absent
+                        rowData[colIdx] = if (wasPresent) "P" else "A"
+                    }
+                }
+
+                // 6. Save Matched Matrix State back to Google Drive Context
+                val updateBody = com.google.api.services.sheets.v4.model.ValueRange().setValues(currentGrid as List<List<Any>>?)
+                sheetsService.spreadsheets().values()
+                    .update(spreadsheetId, "'$tabName'!A1", updateBody)
+                    .setValueInputOption("USER_ENTERED")
+                    .execute()
+
+                withContext(Dispatchers.Main) {
+                    activity.toggleLoadingOverlay(false)
+                    Toast.makeText(activity, "Attendance synced successfully to Cloud!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("CourseController", "Cloud spreadsheet matching sync execution crash", e)
+                withContext(Dispatchers.Main) {
+                    activity.toggleLoadingOverlay(false)
+                    Toast.makeText(activity, "Cloud sync failed. Check connectivity configurations.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * A perfectly generic helper layout to handle both raw String lists and Google Drive File collections.
+     */
+    private fun <T> showCloudFileDialog(
+        title: String,
+        subtitle: String,
+        driveItems: List<T>,
+        getName: (T) -> String,
+        onItemSelected: (T) -> Unit
+    ) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_cloud_import, null)
+        dialogView.findViewById<TextView>(R.id.dialogSubtitle).text = subtitle
+        val listView = dialogView.findViewById<android.widget.ListView>(R.id.backupListView)
+        val searchView = dialogView.findViewById<androidx.appcompat.widget.SearchView>(R.id.dialogSearchView)
+
+        val itemMap = driveItems.associateBy { getName(it) }
+        val itemNames = driveItems.map { getName(it) }
+
+        val adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_list_item_1, itemNames)
+        listView.adapter = adapter
+
+        searchView.setOnQueryTextListener(object : androidx.appcompat.widget.SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean = false
+            override fun onQueryTextChange(newText: String?): Boolean {
+                adapter.filter.filter(newText)
+                return true
+            }
+        })
+
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(title)
+            .setView(dialogView)
+            .setNegativeButton(activity.getString(R.string.action_cancel), null)
+            .create()
+
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val selectedName = adapter.getItem(position) ?: return@setOnItemClickListener
+            val selectedItem = itemMap[selectedName] ?: return@setOnItemClickListener
+            dialog.dismiss()
+            onItemSelected(selectedItem)
+        }
+        dialog.show()
     }
 }

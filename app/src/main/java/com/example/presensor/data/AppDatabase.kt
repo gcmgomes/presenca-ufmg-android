@@ -165,6 +165,16 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
+
+    suspend fun getStudentsForCourse(courseId: Long): List<Student> =
+        withContext(Dispatchers.IO) {
+            if(useCourseCache && courseCache.courseId == courseId) {
+                courseCache.activeStudents
+            }
+            val studentEmails = dao().getAllAttendanceForCourse(courseId).map {it.studentEmail}.toSet()
+            getAllStudents().filter {it.email in studentEmails}
+        }
+
     suspend fun getAllStudents(): List<Student> = withContext(Dispatchers.IO) {
         if(useCourseCache) {
             courseCache.allStudents
@@ -261,6 +271,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
             dao().getAttendanceRecordsForSession(sid)
         }
+
+
 
     suspend fun getAllAttendanceForCourse(courseId: Long): List<AttendanceRecord> =
         withContext(Dispatchers.IO) {

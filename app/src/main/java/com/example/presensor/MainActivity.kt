@@ -95,30 +95,42 @@ class MainActivity : AppCompatActivity() {
 
     // Flag to orchestrate the focus lock state safely
     private var isWaitingForFocus = false
+    private var isCloudAuthSuccessPendingRun = false
     val cloudSignInLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 cloudSyncController.handleSignInResult(result.data) {
-                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT)
-                        .show()
+                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT).show()
 
-                    if (hasWindowFocus()) {
-                        executePendingActionWithTransitionBreather()
-                    } else {
-                        isWaitingForFocus = true
-                    }
+                    // Mark that authentication is fully completed and ready to run
+                    isCloudAuthSuccessPendingRun = true
+
+                    // Attempt execution immediately if focus is already here
+                    checkAndRunPendingCloudAction()
                 }
             } else {
                 pendingCloudAction = null
-                // Optional: Toggle your loading overlay off here since the user canceled/failed the picker
+                isCloudAuthSuccessPendingRun = false
                 toggleLoadingOverlay(false)
             }
         }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && isWaitingForFocus) {
-            isWaitingForFocus = false
+        if (hasFocus) {
+            // Attempt execution if the window regained focus last
+            checkAndRunPendingCloudAction()
+        }
+    }
+
+    /**
+     * Gatekeeper method ensuring BOTH layout window focus and token handshakes are verified
+     */
+    private fun checkAndRunPendingCloudAction() {
+        if (hasWindowFocus() && isCloudAuthSuccessPendingRun) {
+            // Reset state flags before executing to prevent accidental double-triggers
+            isCloudAuthSuccessPendingRun = false
+
             executePendingActionWithTransitionBreather()
         }
     }

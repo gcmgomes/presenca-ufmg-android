@@ -50,7 +50,7 @@ class CloudSyncController(
     private val requestedScopes = listOf(
         Scope("https://www.googleapis.com/auth/drive.metadata.readonly"),
         Scope(DriveScopes.DRIVE_FILE),
-        Scope(SheetsScopes.SPREADSHEETS_READONLY)
+        Scope(SheetsScopes.SPREADSHEETS)
     )
 
     fun getSheetsService(): Sheets? = sheetsService
@@ -67,10 +67,13 @@ class CloudSyncController(
             .setRequestedScopes(requestedScopes)
             .build()
 
+
         authorizationClient.authorize(authorizationRequest)
             .addOnSuccessListener { result ->
+
                 if (result.hasResolution()) {
                     // Authorization needed: trigger modern UI flow resolution account picker
+                    Log.d("runWithCloudAuthentication", "success!")
                     val pendingIntent = result.pendingIntent!!
                     signInLauncher.launch(IntentSenderRequest.Builder(pendingIntent).build())
                 } else {
@@ -97,16 +100,17 @@ class CloudSyncController(
             val authorizationClient = Identity.getAuthorizationClient(activity)
             val result = authorizationClient.getAuthorizationResultFromIntent(data)
 
+            Log.d("CloudSync", "Token successfully fetched: ${result.accessToken?.take(10)}...")
             initializeCloudServices(result.accessToken)
             onAuthSuccess()
 
+        } catch (e: com.google.android.gms.common.api.ApiException) {
+            // Log the explicit Play Services error code (e.g., 10, 16, etc.)
+            Log.e("CloudSync", "Google Play Services Authorization failed! Status Code: ${e.statusCode}", e)
+            Toast.makeText(activity, "Auth Failed Code: ${e.statusCode}", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Log.e("CloudSync", "Google Identity authorization token processing failure", e)
-            Toast.makeText(
-                activity,
-                activity.getString(R.string.toast_cloud_auth_failed),
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(activity, activity.getString(R.string.toast_cloud_auth_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -186,8 +190,10 @@ class CloudSyncController(
     }
 
     fun fetchAvailableBackups(onResult: (List<com.google.api.services.drive.model.File>) -> Unit) {
+        Log.d("fetchAvailableBackups", "here")
         lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
+
                 val service = driveService ?: return@launch
                 val prefix = activity.getString(R.string.dialog_cloud_backup_prefix)
                 val result: FileList = service.files().list()
