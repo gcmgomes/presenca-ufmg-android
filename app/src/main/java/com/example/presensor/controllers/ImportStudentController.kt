@@ -28,8 +28,8 @@ object ImportStudentController {
     ) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Query columns A to C to pull structural content data arrays
-                val range = "'$tabTitle'!A1:C500"
+                // Query columns A to D to pull structural content data arrays
+                val range = "'$tabTitle'!A1:D500"
                 val response =
                     sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
                 val rows = response.getValues() ?: emptyList()
@@ -41,13 +41,18 @@ object ImportStudentController {
                         if (row.size >= 2) {
                             val studentName = row[0].toString().trim()
                             val studentEmail = row[1].toString().trim()
+                            val studentRfid: String? = if (row.size >= 3) {
+                                row[2].toString().trim()
+                            } else {
+                                null
+                            }
 
                             // Break check loop sequence rule safely
                             if (studentName.isEmpty() || studentEmail.isEmpty()) {
                                 break
                             }
 
-                            students += Student(studentEmail, studentName, null)
+                            students += Student(studentEmail, studentName, studentRfid)
                         }
                     }
                 }
@@ -162,7 +167,7 @@ object ImportStudentController {
         // This catches ALL dismiss events (sliding away, tapping outside, back button)
         bottomSheet.setOnDismissListener {
             if (!importConfirmed) {
-                // The user cancelled the preview, hide the loading wheel immediately
+                // The user canceled the preview, hide the loading wheel immediately
                 activity.toggleLoadingOverlay(false)
             }
         }

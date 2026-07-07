@@ -13,6 +13,7 @@ android {
 
     buildFeatures {
         viewBinding = false
+        dataBinding = true
     }
 
     defaultConfig {

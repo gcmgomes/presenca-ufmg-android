@@ -30,9 +30,9 @@
     <string name="menu_course_import">Import schedule</string>
     <string name="menu_course_export">Export attendance (csv)</string>
     <string name="menu_course_postpone">Change session dates</string>
-    <string name="menu_student_import">Import students (csv)</string>
-    <string name="menu_database_import">Import database (csv)</string>
-    <string name="menu_database_export">Export database (csv)</string>
+    <string name="menu_student_import">Import students</string>
+    <string name="menu_database_import">Import database</string>
+    <string name="menu_database_export">Export database</string>
 
     <string name="dialog_cloud_import_sheets_title">Select Spreadsheet</string>
     <string name="dialog_cloud_import_sheets_subtitle">Choose a workbook from your Google Drive account to import students from:</string>
@@ -53,16 +53,16 @@
     <string name="toast_cloud_restore_success">Database successfully restored from cloud!</string>
     <string name="toast_cloud_restore_failed_parse">Failed to parse backup file</string>
     <string name="toast_cloud_download_failed">Cloud download failed</string>
-    <string name="menu_cloud_student_import">Import students (Drive)</string>
-    <string name="menu_cloud_database_import">Import database (Drive)</string>
-    <string name="menu_cloud_database_export">Export database (Drive)</string>
+    <string name="menu_cloud_student_import">Import students</string>
+    <string name="menu_cloud_database_import">Import database</string>
+    <string name="menu_cloud_database_export">Export database</string>
     <string name="dialog_cloud_import_title">Restore Database Backup</string>
     <string name="dialog_cloud_import_subtitle">Select a timestamped snapshot below to completely restore your local database state configuration:</string>
     <string name="dialog_cloud_import_no_backups_title">No Backups Found</string>
     <string name="dialog_cloud_import_no_backups_message">No valid database backups were discovered on your Google Drive account.</string>
 
     <string name="dialog_cloud_export_title">Export Database Backup</string>
-    <string name="dialog_cloud_export_prefix_preview">Prefix:</string>
+    <string name="dialog_cloud_export_prefix_preview">Prefix: </string>
     <string name="dialog_cloud_export_suffix_hint">e.g., final_version, 2026_midterm</string>
     <string name="dialog_cloud_export_hint">Your text will be appended directly after the prefix before the .csv extension.</string>
 
@@ -152,9 +152,13 @@
 
     <string name="toast_database_export_success">Database exported successfully</string>
     <string name="toast_database_export_failed">Failed to export database</string>
+    <string name="category_local_operations">Local CSV</string>
+    <string name="category_cloud_operations">Drive Sheet</string>
 
     <string-array name="semesters_array">
         <item>1</item>
         <item>2</item>
     </string-array>
+
+    <string name="dialog_cloud_import_full_prefix">%1$s %2$s!</string>
 </resources>

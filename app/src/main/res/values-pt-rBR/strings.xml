@@ -45,9 +45,9 @@
     <string name="toast_cloud_student_import_success">%1$d alunos importados com sucesso!</string>
     <string name="toast_cloud_student_import_empty">Nenhuma linha válida de alunos encontrada na aba selecionada.</string>
 
-    <string name="menu_cloud_student_import">Importar alunos (Drive)</string>
-    <string name="menu_cloud_database_import">Importar banco de dados (Drive)</string>
-    <string name="menu_cloud_database_export">Exportar banco de dados (Drive)</string>
+    <string name="menu_cloud_student_import">Importar alunos</string>
+    <string name="menu_cloud_database_import">Importar banco de dados</string>
+    <string name="menu_cloud_database_export">Exportar banco de dados</string>
 
     <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
     <string name="toast_cloud_auth_pre_fetch_failed">Falha ao autorizar sessão na nuvem</string>
@@ -155,9 +155,14 @@
 
     <string name="toast_database_export_success">Banco de dados exportado com sucesso</string>
     <string name="toast_database_export_failed">Falha ao exportar banco de dados</string>
+    <string name="category_local_operations">CSV - Dispositivo</string>
+    <string name="category_cloud_operations">Planilha - Google Drive</string>
 
     <string-array name="semesters_array">
         <item>1</item>
         <item>2</item>
     </string-array>
+
+
+    <string name="dialog_cloud_import_full_prefix">%1$s %2$s!</string>
 </resources>

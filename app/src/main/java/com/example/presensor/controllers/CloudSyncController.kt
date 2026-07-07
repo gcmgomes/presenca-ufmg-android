@@ -2,12 +2,17 @@ package com.example.presensor.controllers
 
 import android.content.Intent
 import android.util.Log
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.example.presensor.DialogFactory
 import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
@@ -284,7 +289,12 @@ class CloudSyncController(
         lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val service = sheetsService ?: return@launch
-                val spreadsheet = service.spreadsheets().get(spreadsheetId).execute()
+
+                // OPTIMIZATION: Only ask for sheets.properties.title
+                val spreadsheet = service.spreadsheets().get(spreadsheetId)
+                    .setFields("sheets.properties.title")
+                    .execute()
+
                 val sheetNames = spreadsheet.sheets?.map { it.properties.title } ?: emptyList()
 
                 withContext(Dispatchers.Main) {
@@ -293,6 +303,56 @@ class CloudSyncController(
             } catch (e: Exception) {
                 Log.e("CloudSync", "Failed to retrieve sheet tabs metadata", e)
                 withContext(Dispatchers.Main) { onResult(emptyList()) }
+            }
+        }
+    }
+
+    /**
+     * A unified helper to display a searchable dialog for any collection of Google Drive file structures.
+     */
+    fun <T> showCloudFileDialog(
+        title: String,
+        subtitle: String,
+        driveItems: List<T>,
+        getName: (T) -> String,
+        onItemSelected: (T) -> Unit
+    ) {
+        val dialogView = activity.layoutInflater.inflate(R.layout.dialog_cloud_import, null)
+        val txtSubtitle = dialogView.findViewById<TextView>(R.id.dialogSubtitle)
+        val listView = dialogView.findViewById<ListView>(R.id.backupListView)
+        val searchView =
+            dialogView.findViewById<androidx.appcompat.widget.SearchView>(R.id.dialogSearchView)
+
+        txtSubtitle.text = subtitle
+
+        // Create a robust string map so we can retrieve the full generic object when filtered
+        val itemMap = driveItems.associateBy { getName(it) }
+        val itemNames = driveItems.map { getName(it) }
+
+        val adapter = ArrayAdapter(activity, android.R.layout.simple_list_item_1, itemNames)
+        listView.adapter = adapter
+
+        searchView.setOnQueryTextListener(object :
+            androidx.appcompat.widget.SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean = false
+            override fun onQueryTextChange(newText: String?): Boolean {
+                adapter.filter.filter(newText)
+                return true
+            }
+        })
+
+        with(DialogFactory) {
+            val dialog = AlertDialog.Builder(activity)
+                .setTitle(title)
+                .setView(dialogView)
+                .setNegativeButton(activity.getString(R.string.action_cancel), null)
+                .showWithSmartNfcReading()
+
+            listView.setOnItemClickListener { _, _, position, _ ->
+                val selectedName = adapter.getItem(position) ?: return@setOnItemClickListener
+                val selectedItem = itemMap[selectedName] ?: return@setOnItemClickListener
+                dialog.dismiss()
+                onItemSelected(selectedItem)
             }
         }
     }

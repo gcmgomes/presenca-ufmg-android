@@ -80,61 +80,23 @@
                     android:visibility="gone"
                     android:paddingTop="8dp">
 
-                    <Button
-                        android:id="@+id/btnImportStudents"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                    <androidx.viewpager2.widget.ViewPager2
+                        android:id="@+id/actionsViewPager"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <com.google.android.material.tabs.TabLayout
+                        android:id="@+id/actionsPageIndicator"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/menu_student_import"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_person" />
-
-                    <Button
-                        android:id="@+id/btnImportDatabase"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_database_import"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_import" />
-
-                    <Button
-                        android:id="@+id/btnExportDatabase"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_database_export"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_export" />
-
-
-                    <Button
-                        android:id="@+id/btnDriveImportStudents"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_cloud_student_import"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_person" />
-
-                    <Button
-                        android:id="@+id/btnDriveImportDatabase"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_cloud_database_import"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_import" />
-
-                    <Button
-                        android:id="@+id/btnDriveExportDatabase"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/menu_cloud_database_export"
-                        android:textAlignment="viewStart"
-                        app:icon="@drawable/ic_export" />
-
+                        android:layout_marginTop="4dp"
+                        android:background="@android:color/transparent"
+                        app:tabBackground="@drawable/selector_page_indicator_dot"
+                        app:tabGravity="center"
+                        app:tabIndicatorHeight="0dp"
+                        app:tabMinWidth="12dp"
+                        app:tabMaxWidth="12dp"
+                        app:tabRippleColor="@android:color/transparent" />
 
                 </LinearLayout>
             </LinearLayout>
@@ -168,7 +130,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingBottom="100dp">
-
 
                 <LinearLayout
                     android:id="@+id/currentCoursesContainer"
