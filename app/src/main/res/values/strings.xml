@@ -28,7 +28,7 @@
     <string name="menu_title_course_management">Course Management</string>
     <string name="menu_course_statistics">Course Statistics</string>
     <string name="menu_course_import">Import schedule</string>
-    <string name="menu_course_export">Export attendance (csv)</string>
+    <string name="menu_course_export">Export attendance</string>
     <string name="menu_course_postpone">Change session dates</string>
     <string name="menu_student_import">Import students</string>
     <string name="menu_database_import">Import database</string>

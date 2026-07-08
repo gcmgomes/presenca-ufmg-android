@@ -29,11 +29,11 @@
     <string name="menu_title_course_management">Gerenciar curso</string>
     <string name="menu_course_statistics">Estatísticas do curso</string>
     <string name="menu_course_import">Importar cronograma</string>
-    <string name="menu_course_export">Exportar presenças (csv)</string>
+    <string name="menu_course_export">Exportar presenças</string>
     <string name="menu_course_postpone">Alterar datas</string>
-    <string name="menu_student_import">Importar alunos (csv)</string>
-    <string name="menu_database_import">Importar banco de dados (csv)</string>
-    <string name="menu_database_export">Exportar banco de dados (csv)</string>
+    <string name="menu_student_import">Importar alunos</string>
+    <string name="menu_database_import">Importar banco de dados</string>
+    <string name="menu_database_export">Exportar banco de dados</string>
 
     <string name="dialog_cloud_import_sheets_title">Selecionar Planilha</string>
     <string name="dialog_cloud_import_sheets_subtitle">Escolha uma planilha do seu Google Drive para importar os alunos:</string>
