@@ -38,8 +38,8 @@ import com.example.presensor.MainActivity
 import com.example.presensor.CourseUtilities
 import com.example.presensor.DialogFactory
 import com.example.presensor.MainActivity.AppState
-import com.example.presensor.adapters.DashboardActionItem
-import com.example.presensor.adapters.DashboardActionsPagerAdapter
+import com.example.presensor.adapters.ActionItem
+import com.example.presensor.adapters.ActionsPageAdapter
 import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
@@ -211,19 +211,19 @@ class DashboardController(
 
         val actionItems = listOf(
             // Page 1 Elements
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_student_import),
                 R.drawable.ic_person
             ) {
                 triggerStudentImportPicker()
             },
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_database_import),
                 R.drawable.ic_import
             ) {
                 triggerDatabaseImportPicker()
             },
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_database_export),
                 R.drawable.ic_export
             ) {
@@ -231,19 +231,19 @@ class DashboardController(
             },
 
             // Page 2 Elements
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_cloud_student_import),
                 R.drawable.ic_person
             ) {
                 triggerStudentImportCloudPicker()
             },
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_cloud_database_import),
                 R.drawable.ic_import
             ) {
                 triggerDatabaseImportCloudPicker()
             },
-            DashboardActionItem(
+            ActionItem(
                 activity.getString(R.string.menu_cloud_database_export),
                 R.drawable.ic_export
             ) {
@@ -251,7 +251,18 @@ class DashboardController(
             }
         )
 
-        viewPager.adapter = DashboardActionsPagerAdapter(actionItems)
+        val pageTitles = listOf(
+            activity.getString(R.string.category_local_operations),
+            activity.getString(R.string.category_cloud_operations)
+        )
+
+        viewPager.adapter = ActionsPageAdapter(
+            actionItems = actionItems,
+            pageTitles = pageTitles,
+            itemsPerPage = 3,
+            layoutResId = R.layout.item_dashboard_actions_page,
+            buttonIds = listOf(R.id.btnRow1, R.id.btnRow2, R.id.btnRow3)
+        )
 
         // Bind the indicators to scroll along with viewpager context
         TabLayoutMediator(tabLayout, viewPager) { _, _ -> }.attach()

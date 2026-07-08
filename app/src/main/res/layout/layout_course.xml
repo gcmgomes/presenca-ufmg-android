@@ -53,7 +53,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_marginStart="12dp"
-                        android:text="@string/menu_title_course_management"
+                        android:text="@string/action_text"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:textAllCaps="true"
@@ -89,10 +89,11 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@android:color/transparent"
+                        app:tabBackground="@drawable/selector_page_indicator_dot"
                         app:tabGravity="center"
                         app:tabIndicatorHeight="0dp"
-                        app:tabMinWidth="10dp"
-                        app:tabMaxWidth="10dp"
+                        app:tabMinWidth="12dp"
+                        app:tabMaxWidth="12dp"
                         app:tabRippleColor="@android:color/transparent" />
                 </LinearLayout>
             </LinearLayout>
