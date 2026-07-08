@@ -7,9 +7,13 @@ import androidx.lifecycle.lifecycleScope
 import com.example.presensor.CourseUtilities
 import com.example.presensor.MainActivity
 import com.example.presensor.R
+import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.data.AppDatabase
+import com.example.presensor.data.DataTransceiver
+import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
+import com.google.api.services.sheets.v4.model.ValueRange
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,7 +26,7 @@ class CourseCloudActions(
     private val lifecycleOwner: LifecycleOwner,
     private val db: AppDatabase,
     private val getSelectedCourse: () -> Course?,
-    private val showImportPreview: (List<Session>) -> Unit
+    private val onImportComplete: () -> Unit
 ) {
 
     /**
@@ -68,7 +72,14 @@ class CourseCloudActions(
                             getName = { it }
                         ) { selectedTab ->
                             // 4. Trigger background parsing matching local structural rules
-                            performCloudScheduleImport(selectedSpreadsheet.id, selectedTab)
+                            ImportSessionController.importFromCloud(
+                                activity = activity,
+                                sheetsService = activity.cloudSyncController.getSheetsService(),
+                                spreadsheetId = selectedSpreadsheet.id,
+                                tabTitle = selectedTab,
+                                courseId = getSelectedCourse()?.id ?: -1,
+                                onImportComplete = onImportComplete
+                            )
                         }
                     }
                 }
@@ -77,76 +88,6 @@ class CourseCloudActions(
 
         activity.setPendingAction(action)
         activity.cloudSyncController.runWithCloudAuthentication(activity.cloudSignInLauncher, action)
-    }
-
-    /**
-     * Downloads spreadsheet rows from Drive, parses them into Session entities,
-     * and hands them off to the preview pane. Empty topics are skipped.
-     */
-    private fun performCloudScheduleImport(spreadsheetId: String, tabName: String) {
-        val course = getSelectedCourse() ?: return
-        activity.toggleLoadingOverlay(true)
-
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val sheetsService = activity.cloudSyncController.getSheetsService()
-                    ?: throw IllegalStateException("Sheets service was not initialized properly")
-
-                // Pull down columns A and B (A = Data, B = Tópicos) up to 100 rows
-                val response = sheetsService.spreadsheets().values()
-                    .get(spreadsheetId, "'$tabName'!A1:B100")
-                    .execute()
-
-                val rows = response.getValues() ?: emptyList<List<Any>>()
-                val sessionsToInsert = mutableListOf<Session>()
-
-                // Explicitly handles the "dd/MM/yyyy" date format from your schedule sheets
-                val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-
-                for (row in rows) {
-                    val rawDateStr = row.getOrNull(0)?.toString()?.trim() ?: ""
-                    val sessionName = row.getOrNull(1)?.toString()?.trim() ?: ""
-
-                    // Strict validation: Skip headers, completely blank lines, or rows missing a topic title
-                    if (rawDateStr.isEmpty() || sessionName.isEmpty() || rawDateStr.equals("Data", ignoreCase = true)) {
-                        continue
-                    }
-
-                    try {
-                        // Parse the date safely from Column A
-                        val parsedLocalDate = LocalDate.parse(rawDateStr, dateFormatter)
-                        val epochMillis = parsedLocalDate.atStartOfDay(ZoneId.systemDefault())
-                            .toInstant().toEpochMilli()
-
-                        val session = Session(
-                            courseId = course.id,
-                            name = sessionName,
-                            date = epochMillis,
-                            isLocked = false
-                        )
-                        sessionsToInsert.add(session)
-                    } catch (dateEx: Exception) {
-                        Log.w("CourseCloudActions", "Skipping malformed calendar row date string: $rawDateStr", dateEx)
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    if (sessionsToInsert.isNotEmpty()) {
-                        // Match the structural presentation logic perfectly, passing to bottom sheet preview
-                        showImportPreview(sessionsToInsert)
-                    } else {
-                        Toast.makeText(activity, "No valid structural schedule entries found.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("CourseCloudActions", "Google Sheets schedule parser crash", e)
-                withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(activity, "Cloud schedule import failed.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
     }
 
     /**
@@ -224,16 +165,17 @@ class CourseCloudActions(
                     .groupBy { it.studentEmail to it.sessionId }
 
                 // 2. Fetch Existing Cloud Layout Bounds
-                val response = sheetsService.spreadsheets().values()
-                    .get(spreadsheetId, "'$tabName'!A1:Z1000")
-                    .execute()
+                val table = DataTransceiver.ingestFromGoogleSheets(
+                    sheetsService,
+                    spreadsheetId,
+                    "'$tabName'!A1:Z1000"
+                )
 
-                val currentGrid: MutableList<MutableList<Any>> = response.getValues()?.map {
-                    it.map { cell -> cell ?: "" }.toMutableList()
-                }?.toMutableList() ?: mutableListOf()
+                val currentGrid: MutableList<MutableList<String>> = table.toFullGrid().map { it.toMutableList() }.toMutableList()
 
                 // Initialize structural headers if sheet tab is completely pristine
-                if (currentGrid.isEmpty()) {
+                if (currentGrid.size <= 1 && table.headers.isEmpty()) {
+                    currentGrid.clear()
                     currentGrid.add(mutableListOf("Student Email", "Student Name"))
                 }
 
@@ -243,7 +185,7 @@ class CourseCloudActions(
                 val sessionToColumnIdx = mutableMapOf<Long, Int>()
                 localSessions.forEach { session ->
                     val formattedHeader = "${session.name} (${CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)})"
-                    var matchIndex = headerRow.indexOfFirst { it.toString().equals(formattedHeader, ignoreCase = true) }
+                    var matchIndex = headerRow.indexOfFirst { it.equals(formattedHeader, ignoreCase = true) }
                     if (matchIndex == -1) {
                         headerRow.add(formattedHeader)
                         matchIndex = headerRow.lastIndex
@@ -262,7 +204,7 @@ class CourseCloudActions(
 
                 localStudents.forEach { student ->
                     if (!studentToRowIdx.containsKey(student.email)) {
-                        val newRow = mutableListOf<Any>(student.email, student.name)
+                        val newRow = mutableListOf<String>(student.email, student.name)
                         currentGrid.add(newRow)
                         studentToRowIdx[student.email] = currentGrid.lastIndex
                     }
@@ -289,7 +231,7 @@ class CourseCloudActions(
                 }
 
                 // 6. Save Matched Matrix State back to Google Drive Context
-                val updateBody = com.google.api.services.sheets.v4.model.ValueRange().setValues(currentGrid as List<List<Any>>?)
+                val updateBody = ValueRange().setValues(currentGrid as List<List<Any>>?)
                 sheetsService.spreadsheets().values()
                     .update(spreadsheetId, "'$tabName'!A1", updateBody)
                     .setValueInputOption("USER_ENTERED")

@@ -162,34 +162,6 @@ class CourseControllerDialogFactory(
         )
     }
 
-    fun showImportPreview(sessions: List<Session>) {
-        val bottomSheet = BottomSheetDialog(activity)
-        val view = layoutInflater.inflate(R.layout.layout_import_session_preview, null)
-        bottomSheet.setContentView(view)
-
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportPreview)
-        val txtImportCount = view.findViewById<TextView>(R.id.txtImportCount)
-        val btnConfirm = view.findViewById<Button>(R.id.btnConfirmImport)
-
-        recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportPreviewAdapter(sessions)
-
-        txtImportCount.text = activity.getString(R.string.dialog_import_sessions_hint, sessions.size)
-        btnConfirm.text = activity.getString(R.string.dialog_import_sessions_button_text)
-
-        btnConfirm.setOnClickListener {
-            activity.lifecycleScope.launch {
-                db.insertSessions(sessions)
-                bottomSheet.dismiss()
-                refreshCourseUI()
-
-                val toastMsg = activity.getString(R.string.toast_imported_sessions, sessions.size)
-                Toast.makeText(activity, toastMsg, Toast.LENGTH_SHORT).show()
-            }
-        }
-        bottomSheet.show()
-    }
-
     fun showCreateCourseDialog(onCourseCreated: () -> Unit) {
         val context = activity
         val dialogView = activity.layoutInflater.inflate(R.layout.dialog_add_course, null)

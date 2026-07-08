@@ -34,6 +34,8 @@ import com.example.presensor.DialogFactory
 import com.example.presensor.MainActivity
 import com.example.presensor.MainUiBinder
 import com.example.presensor.adapters.ImportPreviewAdapter
+import com.example.presensor.data.DataTransceiver
+import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
@@ -78,7 +80,7 @@ class CourseController(
         lifecycleOwner = lifecycleOwner,
         db = db,
         getSelectedCourse = { selectedCourse },
-        showImportPreview = { sessions -> dialogFactory.showImportPreview(sessions) }
+        onImportComplete = { refreshCourseUI() }
     )
 
     // Layout view boundaries inside layoutCourseView
@@ -364,19 +366,12 @@ class CourseController(
     }
 
     private fun importSessionsFromCsv(uri: Uri, courseId: Long) {
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val sessionsToInsert =
-                    CourseUtilities.parseSessionsFromCsv(activity.contentResolver, uri, courseId)
-                if (sessionsToInsert.isNotEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        dialogFactory.showImportPreview(sessionsToInsert)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("Presensor", "CSV Import error", e)
-            }
-        }
+        ImportSessionController.importFromLocal(
+            activity = activity,
+            uri = uri,
+            courseId = courseId,
+            onImportComplete = { refreshCourseUI() }
+        )
     }
 
     private fun triggerImportSessionPicker() {

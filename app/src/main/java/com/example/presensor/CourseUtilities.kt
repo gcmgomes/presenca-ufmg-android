@@ -19,6 +19,8 @@ import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
 
+import com.example.presensor.data.DataTransceiver
+import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
@@ -28,136 +30,66 @@ import java.time.ZoneOffset
 
 object CourseUtilities {
 
-    private fun parseSessionCsvLine(line: String): List<String> {
-        val tokens = mutableListOf<String>()
-        var currentToken = StringBuilder()
-        var inQuotes = false
-
-        // Determine delimiter dynamically per line row context
-        val delimiter = if (line.contains(";")) ';' else ','
-
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            if (c == '"') {
-                // Check for escaped quotes ("") inside a quoted block
-                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                    currentToken.append('"')
-                    i++ // Skip next quote character
-                } else {
-                    inQuotes = !inQuotes // Toggle quote state machine flag
-                }
-            } else if ((c == delimiter) && !inQuotes) {
-                tokens.add(currentToken.toString().trim())
-                currentToken.setLength(0) // Reset builder buffer
-            } else {
-                currentToken.append(c)
-            }
-            i++
-        }
-        tokens.add(currentToken.toString().trim())
-        return tokens
-    }
-
-    fun parseSessionsFromCsv(
-        contentResolver: ContentResolver,
-        uri: Uri,
+    fun parseSessionsFromTable(
+        table: InternalDataTable,
         courseId: Long
     ): List<Session> {
         val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val sessionsToInsert = mutableListOf<Session>()
 
-        contentResolver.openInputStream(uri)?.use { inputStream ->
-            // Force the InputStreamReader wrapper explicitly to eliminate internal system-default fallback variations
-            val reader = java.io.BufferedReader(
-                java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8)
-            )
+        for (i in 0 until table.rowCount) {
+            val tokens = table.rows[i]
+            if (tokens.size >= 2) {
+                var sessionName = ""
+                var localDate: LocalDate? = null
 
-            var isFirstLine = true
+                val firstTokenDate = tryParseDate(tokens[0], formatter)
+                val secondTokenDate = tryParseDate(tokens[1], formatter)
 
-            reader.use { bufferedReader ->
-                var line: String? = bufferedReader.readLine()
-
-                while (line != null) {
-                    // 1. Clean up Excel/Google Sheets BOM character immediately on the absolute first line
-                    if (isFirstLine) {
-                        if (line.startsWith("\uFEFF")) {
-                            line = line.substring(1)
-                        }
-                        isFirstLine = false
-
-                        // Skip processing the header row entirely
-                        line = bufferedReader.readLine()
-                        continue
+                when {
+                    firstTokenDate != null -> {
+                        localDate = firstTokenDate
+                        sessionName = tokens[1]
                     }
 
-                    // Split safely by both Comma and Semicolon formats
-                    val tokens = parseSessionCsvLine(line)
-
-                    if (tokens.size >= 2) {
-                        var sessionName = ""
-                        var localDate: LocalDate? = null
-
-                        val firstTokenDate = tryParseDate(tokens[0], formatter)
-                        val secondTokenDate = tryParseDate(tokens[1], formatter)
-
-                        when {
-                            firstTokenDate != null -> {
-                                localDate = firstTokenDate
-                                sessionName = tokens[1]
-                            }
-
-                            secondTokenDate != null -> {
-                                localDate = secondTokenDate
-                                sessionName = tokens[0]
-                            }
-                        }
-
-                        // Clean string layout values directly before saving them down into Room data trees
-                        if (localDate != null && sessionName.isNotEmpty()) {
-                            val timestamp = localDate.atStartOfDay(ZoneId.systemDefault())
-                                .toInstant()
-                                .toEpochMilli()
-
-                            sessionsToInsert.add(
-                                Session(
-                                    courseId = courseId,
-                                    name = sessionName,
-                                    date = timestamp
-                                )
-                            )
-                        }
+                    secondTokenDate != null -> {
+                        localDate = secondTokenDate
+                        sessionName = tokens[0]
                     }
+                }
 
-                    // Advance the reader loop safely
-                    line = bufferedReader.readLine()
+                if (localDate != null && sessionName.isNotEmpty()) {
+                    val timestamp = localDate.atStartOfDay(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+
+                    sessionsToInsert.add(
+                        Session(
+                            courseId = courseId,
+                            name = sessionName,
+                            date = timestamp
+                        )
+                    )
                 }
             }
         }
         return sessionsToInsert
     }
 
-    fun parseStudentsFromCsv(contentResolver: ContentResolver, uri: Uri): List<Student> {
+    fun parseStudentsFromTable(table: InternalDataTable): List<Student> {
         val students = mutableListOf<Student>()
-        contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-                lines.forEachIndexed { index, line ->
-                    if (line.isBlank() || (index == 0 && line.contains(
-                            "email",
-                            ignoreCase = true
-                        ))
-                    ) {
-                        return@forEachIndexed
-                    }
+        
+        // Handle "email" column indexing if headers exist
+        val emailIdx = table.headers.indexOfFirst { it.contains("email", ignoreCase = true) }.let { if (it == -1) 1 else it }
+        val nameIdx = if (emailIdx == 0) 1 else 0
 
-                    val tokens = line.split(Regex("[,;]")).map { it.trim() }
-                    if (tokens.size >= 2) {
-                        val name = tokens[0]
-                        val email = tokens[1]
-                        if (name.isNotEmpty() && email.isNotEmpty()) {
-                            students.add(Student(email = email, name = name))
-                        }
-                    }
+        for (i in 0 until table.rowCount) {
+            val row = table.rows[i]
+            if (row.size >= 2) {
+                val name = row.getOrNull(nameIdx) ?: ""
+                val email = row.getOrNull(emailIdx) ?: ""
+                if (name.isNotEmpty() && email.isNotEmpty()) {
+                    students.add(Student(email = email, name = name))
                 }
             }
         }

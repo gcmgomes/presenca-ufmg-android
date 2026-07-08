@@ -16,67 +16,28 @@ import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.presensor.data.DataTransceiver
+import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Student
 
 object ImportStudentController {
 
-    private fun importStudentsFromSheet(
+    private fun importStudentsFromTable(
         activity: MainActivity,
-        sheetsService: com.google.api.services.sheets.v4.Sheets,
-        spreadsheetId: String,
-        tabTitle: String
+        table: InternalDataTable
     ) {
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // Query columns A to D to pull structural content data arrays
-                val range = "'$tabTitle'!A1:D500"
-                val response =
-                    sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
-                val rows = response.getValues() ?: emptyList()
+        val students = CourseUtilities.parseStudentsFromTable(table)
 
-                val students: MutableList<Student> = mutableListOf()
-                if (rows.isNotEmpty()) {
-                    for (i in 1 until rows.size) {
-                        val row = rows[i]
-                        if (row.size >= 2) {
-                            val studentName = row[0].toString().trim()
-                            val studentEmail = row[1].toString().trim()
-                            val studentRfid: String? = if (row.size >= 3) {
-                                row[2].toString().trim()
-                            } else {
-                                null
-                            }
-
-                            // Break check loop sequence rule safely
-                            if (studentName.isEmpty() || studentEmail.isEmpty()) {
-                                break
-                            }
-
-                            students += Student(studentEmail, studentName, studentRfid)
-                        }
-                    }
-                }
-
-                // CRITICAL: Switch back to the UI thread to update your layouts
-                withContext(Dispatchers.Main) {
-                    // Turn off the loading screen overlay if you have access to it via your activity
-                    // (Adjust this line to match how your toggleLoadingOverlay is exposed to the controller)
-                    // activity.toggleLoadingOverlay(false)
-
-                    showStudentImportPreview(activity, students)
-                }
-
-            } catch (e: Exception) {
-                Log.e("CloudSync", "Failed to read rows within selected sheet layout bounds", e)
-                withContext(Dispatchers.Main) {
-                    // Make sure to hide the overlay on network error transitions too
-                    // activity.toggleLoadingOverlay(false)
-                    Toast.makeText(
-                        activity,
-                        "Failed to import rows from cloud sheet",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+        // CRITICAL: Switch back to the UI thread to update your layouts
+        activity.lifecycleScope.launch(Dispatchers.Main) {
+            if (students.isNotEmpty()) {
+                showStudentImportPreview(activity, students)
+            } else {
+                Toast.makeText(
+                    activity,
+                    "No students found in the provided data",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -91,13 +52,33 @@ object ImportStudentController {
             activity.toggleLoadingOverlay(false)
             return
         }
-        importStudentsFromSheet(activity, sheetsService, spreadsheetId, tabTitle)
+        activity.lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val table = DataTransceiver.ingestFromGoogleSheets(
+                    sheetsService,
+                    spreadsheetId,
+                    "'$tabTitle'!A1:D500"
+                )
+                importStudentsFromTable(activity, table)
+            } catch (e: Exception) {
+                Log.e("CloudSync", "Failed to read rows within selected sheet layout bounds", e)
+                withContext(Dispatchers.Main) {
+                    activity.toggleLoadingOverlay(false)
+                    Toast.makeText(
+                        activity,
+                        "Failed to import rows from cloud sheet",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
     }
 
     private fun importFromCsv(activity: MainActivity, uri: Uri) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val students = CourseUtilities.parseStudentsFromCsv(activity.contentResolver, uri)
+                val table = DataTransceiver.ingestFromCsv(activity.contentResolver, uri)
+                val students = CourseUtilities.parseStudentsFromTable(table)
                 withContext(Dispatchers.Main) {
                     if (students.isNotEmpty()) {
                         showStudentImportPreview(activity, students)
