@@ -12,7 +12,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.presensor.DialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
 import com.google.android.gms.auth.api.identity.AuthorizationRequest

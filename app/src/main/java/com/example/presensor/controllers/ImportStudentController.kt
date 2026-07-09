@@ -7,18 +7,17 @@ import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.CourseUtilities
 import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.adapters.ImportStudentAdapter
+import com.example.presensor.tools.DataProcessor
+import com.example.presensor.data.InternalDataTable
+import com.example.presensor.data.entities.Student
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.example.presensor.data.DataTransceiver
-import com.example.presensor.data.InternalDataTable
-import com.example.presensor.data.entities.Student
 
 object ImportStudentController {
 
@@ -26,7 +25,7 @@ object ImportStudentController {
         activity: MainActivity,
         table: InternalDataTable
     ) {
-        val students = CourseUtilities.parseStudentsFromTable(table)
+        val students = DataProcessor.parseStudentsFromTable(table)
 
         // CRITICAL: Switch back to the UI thread to update your layouts
         activity.lifecycleScope.launch(Dispatchers.Main) {
@@ -54,7 +53,7 @@ object ImportStudentController {
         }
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val table = DataTransceiver.ingestFromGoogleSheets(
+                val table = DataProcessor.ingestFromGoogleSheets(
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'!A1:D500"
@@ -77,8 +76,8 @@ object ImportStudentController {
     private fun importFromCsv(activity: MainActivity, uri: Uri) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val table = DataTransceiver.ingestFromCsv(activity.contentResolver, uri)
-                val students = CourseUtilities.parseStudentsFromTable(table)
+                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri)
+                val students = DataProcessor.parseStudentsFromTable(table)
                 withContext(Dispatchers.Main) {
                     if (students.isNotEmpty()) {
                         showStudentImportPreview(activity, students)

@@ -29,12 +29,12 @@ import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
-import com.example.presensor.CourseUtilities
-import com.example.presensor.DialogFactory
 import com.example.presensor.MainActivity
 import com.example.presensor.MainUiBinder
+import com.example.presensor.tools.DataProcessor
+import com.example.presensor.tools.TimeUtils
+import com.example.presensor.tools.UiUtils
 import com.example.presensor.adapters.ImportPreviewAdapter
-import com.example.presensor.data.DataTransceiver
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
@@ -51,6 +51,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import com.example.presensor.cloud.CourseCloudActions
+import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 
 import kotlin.math.abs
 
@@ -63,17 +64,9 @@ class CourseController(
     private val onToggleLockRequested: (Session, ImageView) -> Unit,
     private val onEditSessionRequested: (Session, ImageView) -> Unit,
     private val onOpenStatistics: () -> Unit,
+    private val dialogFactory: CourseControllerDialogFactory
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
-
-    private val dialogFactory = CourseControllerDialogFactory(
-        activity = activity,
-        lifecycleOwner = lifecycleOwner,
-        db = db,
-        getSelectedCourse = { selectedCourse },
-        refreshCourseUI = { refreshCourseUI() },
-        addSession = { courseId, name, date -> addSession(courseId, name, date) }
-    )
 
     private val cloudActions = CourseCloudActions(
         activity = activity,
@@ -236,7 +229,7 @@ class CourseController(
             }
             refreshSessionsList(sessionList)
             val layoutCourseView = activity.findViewById<View>(R.id.layoutCourseView)
-            CourseUtilities.fillCourseDetailedCardStatistics(
+            UiUtils.fillCourseDetailedCardStatistics(
                 activity,
                 layoutCourseView,
                 selectedCourse!!,
@@ -251,19 +244,19 @@ class CourseController(
         sessionContainer.removeAllViews()
 
         val thisWeekSessions = sessions.filter {
-            CourseUtilities.isDateInCurrentWeek(
-                CourseUtilities.fromMillisToLocalDate(it.date)
+            TimeUtils.isDateInCurrentWeek(
+                TimeUtils.fromMillisToLocalDate(it.date)
             )
         }
         val upcomingSessions = sessions.filter {
-            !CourseUtilities.isDateInCurrentWeek(
-                CourseUtilities.fromMillisToLocalDate(it.date)
-            ) && CourseUtilities.fromMillisToLocalDate(it.date).isAfter(LocalDate.now())
+            !TimeUtils.isDateInCurrentWeek(
+                TimeUtils.fromMillisToLocalDate(it.date)
+            ) && TimeUtils.fromMillisToLocalDate(it.date).isAfter(LocalDate.now())
         }
         val pastSessions = sessions.filter {
-            !CourseUtilities.isDateInCurrentWeek(
-                CourseUtilities.fromMillisToLocalDate(it.date)
-            ) && CourseUtilities.fromMillisToLocalDate(it.date).isBefore(LocalDate.now())
+            !TimeUtils.isDateInCurrentWeek(
+                TimeUtils.fromMillisToLocalDate(it.date)
+            ) && TimeUtils.fromMillisToLocalDate(it.date).isBefore(LocalDate.now())
         }.sortedBy { it.date }
 
         // Localized structural header elements matching layout boundaries cleanly
@@ -306,25 +299,25 @@ class CourseController(
 
     private fun addSessionCardToContainer(session: Session) {
         val itemView = layoutInflater.inflate(R.layout.item_session_card, sessionContainer, false)
-        val dateFormat = CourseUtilities.makeSessionTimeFormatter(activity)
+        val dateFormat = TimeUtils.makeSessionTimeFormatter(activity)
 
         val imgLock = itemView.findViewById<ImageView>(R.id.imgSessionLockOnSessionView)
         itemView.findViewById<View>(R.id.viewSessionAccent)
             .setBackgroundColor(
-                CourseUtilities.getColorForAccent(
+                UiUtils.getColorForAccent(
                     session.name,
                     activity.resources.obtainTypedArray(R.array.chalk_colors_list)
                 )
             )
         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
         itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
-            CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)
+            TimeUtils.fromMillisToLocalDate(session.date).format(dateFormat)
 
-        CourseUtilities.updateLockIconUI(session.isLocked, imgLock)
+        UiUtils.updateLockIconUI(session.isLocked, imgLock)
         imgLock.setOnClickListener { onToggleLockRequested(session, imgLock) }
 
         val editBtn = itemView.findViewById<ImageView>(R.id.btnEditSession)
-        CourseUtilities.updateEditIconUI(session.isLocked, editBtn)
+        UiUtils.updateEditIconUI(session.isLocked, editBtn)
         editBtn.setOnClickListener { onEditSessionRequested(session, editBtn) }
 
         itemView.setOnClickListener { onSessionSelected(session) }
@@ -401,7 +394,7 @@ class CourseController(
             val allStudents = db.getAllStudents()
 
             val csvData =
-                CourseUtilities.generateCsvString(
+                DataProcessor.generateCsvString(
                     activity,
                     course,
                     sessions,

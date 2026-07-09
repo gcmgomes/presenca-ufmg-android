@@ -11,9 +11,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.presensor.tools.TimeUtils
+import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
-import com.example.presensor.CourseUtilities
-import com.example.presensor.DialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.adapters.StudentStatsAdapter
 import com.example.presensor.data.AppDatabase
 import kotlinx.coroutines.Dispatchers
@@ -75,8 +76,8 @@ class DetailedCourseController(
                     cache.allAttendance,
                     cache.sessionIds,
                     getColorFromAttr = { attr -> getColorFromAttr(attr) },
-                    makeSessionTimeFormatter = { CourseUtilities.makeSessionTimeFormatter(activity) },
-                    fromMillisToLocalDate = { ms -> CourseUtilities.fromMillisToLocalDate(ms) }
+                    makeSessionTimeFormatter = { TimeUtils.makeSessionTimeFormatter(activity) },
+                    fromMillisToLocalDate = { ms -> TimeUtils.fromMillisToLocalDate(ms) }
                 )
             }
         }
@@ -93,7 +94,7 @@ class DetailedCourseController(
 
         // 3. Bind the Summary Card Data metrics fields
         val cache = db.getCourseCache()
-        CourseUtilities.fillCourseDetailedCardStatistics(
+        UiUtils.fillCourseDetailedCardStatistics(
             activity,
             statsView,
             courseController.getSelectedCourse()!!,

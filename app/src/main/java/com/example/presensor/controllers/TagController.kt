@@ -22,8 +22,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
-import com.example.presensor.DialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.R
+import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Student
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,7 @@ class TagController(
     private val scope: CoroutineScope,
     private val layoutInflater: LayoutInflater,
     private val sessionController: SessionController,
+    private val sessionDialogFactory: SessionControllerDialogFactory,
     private val isDialogShowingCheck: () -> Boolean,
 ) : NfcAdapter.ReaderCallback{
 
@@ -241,8 +243,7 @@ class TagController(
     }
 
     private fun showRegistrationDialog(rfid: String) {
-        DialogFactory.showManualRegistrationDialog(
-            context = activity,
+        sessionDialogFactory.showManualRegistrationDialog(
             rfid = rfid,
             onStudentSaved = { name, email, dialog ->
                 scope.launch {

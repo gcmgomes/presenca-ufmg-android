@@ -1,30 +1,34 @@
-package com.example.presensor.controllers
+package com.example.presensor.controllers.dialogs
 
+import android.content.Context
 import android.view.LayoutInflater
-import android.view.View
-import android.widget.Button
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.Spinner
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.CourseUtilities
-import com.example.presensor.DialogFactory
+import com.example.presensor.tools.TimeUtils
+import com.example.presensor.tools.UiUtils
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.MainActivity
 import com.example.presensor.R
-import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
-import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
+import java.util.Locale
 
 class CourseControllerDialogFactory(
     private val activity: MainActivity,
@@ -36,24 +40,139 @@ class CourseControllerDialogFactory(
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
+    private val TAG_DATE_PICKER_CREATE = "DATE_PICKER"
+    private val TAG_DATE_PICKER_EDIT = "EDIT_DATE_PICKER"
+
     fun showCreateSessionDialog() {
         val course = getSelectedCourse() ?: return
         lifecycleOwner.lifecycleScope.launch {
             val count = db.getSessionsByCourse(course.id).size + 1
             withContext(Dispatchers.Main) {
                 val sessionPlaceholder = activity.getString(R.string.session_text) + " $count"
-                DialogFactory.showCreateSessionDialog(
-                    context = activity,
-                    layoutInflater = layoutInflater,
-                    fragmentManager = activity.supportFragmentManager,
-                    defaultSessionName = sessionPlaceholder,
-                    onSessionCreated = { sessionName, dateMillis ->
-                        addSession(
-                            course.id, sessionName, CourseUtilities.fromMillisToLocalDate(dateMillis)
-                                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                        )
-                    }
+
+                val dialogView = layoutInflater.inflate(R.layout.dialog_create_session, null)
+                val edtName = dialogView.findViewById<EditText>(R.id.edtSessionName)
+                edtName.setText(sessionPlaceholder)
+                edtName.selectAll()
+
+                val edtDate = dialogView.findViewById<TextInputEditText>(R.id.edtSessionDate)
+                var selectedTimestamp = System.currentTimeMillis()
+
+                val pattern = activity.getString(R.string.date_picker_display_format)
+                val dateFormat = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+                edtDate.setText(
+                    TimeUtils.fromMillisToLocalDate(selectedTimestamp).format(dateFormat)
                 )
+
+                edtDate.setOnClickListener {
+                    val datePicker = MaterialDatePicker.Builder.datePicker()
+                        .setTitleText(activity.getString(R.string.select_session_date))
+                        .setSelection(selectedTimestamp)
+                        .build()
+
+                    datePicker.addOnPositiveButtonClickListener { selection ->
+                        selectedTimestamp = selection
+                        val localDate =
+                            Instant.ofEpochMilli(selection).atZone(ZoneOffset.UTC).toLocalDate()
+                        edtDate.setText(localDate.format(dateFormat))
+                    }
+                    datePicker.show(activity.supportFragmentManager, TAG_DATE_PICKER_CREATE)
+                }
+
+                with(DialogFactory) {
+                    val dialog = AlertDialog.Builder(activity)
+                        .setTitle(R.string.title_new_session)
+                        .setView(dialogView)
+                        .setPositiveButton(R.string.action_create, null)
+                        .setNegativeButton(R.string.action_cancel, null)
+                        .showWithSmartNfcReading()
+
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val nameText = edtName.text.toString().trim()
+                        if (nameText.isNotEmpty()) {
+                            addSession(
+                                course.id,
+                                nameText,
+                                TimeUtils.fromMillisToLocalDate(selectedTimestamp)
+                                    .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                            )
+                            dialog.dismiss()
+                        } else {
+                            Toast.makeText(
+                                activity,
+                                activity.getString(R.string.error_empty_name),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun showEditSessionDialog(
+        session: Session,
+        onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
+    ) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_create_session, null)
+
+        val edtName = dialogView.findViewById<EditText>(R.id.edtSessionName)
+        edtName.setText(session.name)
+        edtName.selectAll()
+
+        val edtDate = dialogView.findViewById<TextInputEditText>(R.id.edtSessionDate)
+        var selectedTimestamp = session.date
+
+        val pattern = activity.getString(R.string.date_picker_display_format)
+        val dateFormat = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+        edtDate.setText(TimeUtils.fromMillisToLocalDate(selectedTimestamp).format(dateFormat))
+
+        edtDate.setOnClickListener {
+            val datePicker = MaterialDatePicker.Builder.datePicker()
+                .setTitleText(activity.getString(R.string.select_session_date))
+                .setSelection(selectedTimestamp)
+                .build()
+
+            datePicker.addOnPositiveButtonClickListener { selection ->
+                selectedTimestamp = selection
+                val localDate = Instant.ofEpochMilli(selection).atZone(ZoneOffset.UTC).toLocalDate()
+                edtDate.setText(localDate.format(dateFormat))
+            }
+            datePicker.show(activity.supportFragmentManager, TAG_DATE_PICKER_EDIT)
+        }
+
+        edtName.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                val imm =
+                    activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(edtName.windowToken, 0)
+                edtName.clearFocus()
+                true
+            } else {
+                false
+            }
+        }
+
+        with(DialogFactory) {
+            val dialog = AlertDialog.Builder(activity)
+                .setTitle(R.string.title_edit_session)
+                .setView(dialogView)
+                .setPositiveButton(R.string.action_save, null)
+                .setNegativeButton(R.string.action_cancel, null)
+                .showWithSmartNfcReading()
+
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val nameText = edtName.text.toString().trim()
+                if (nameText.isNotEmpty()) {
+                    onSessionUpdated(nameText, selectedTimestamp)
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.error_empty_name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
     }
@@ -69,17 +188,17 @@ class CourseControllerDialogFactory(
         var thresholdTimestamp: Long? = null
         var newStartTimestamp: Long? = null
 
-        val dateFormatter = CourseUtilities.makeSessionTimeFormatter(activity)
+        val dateFormatter = TimeUtils.makeSessionTimeFormatter(activity)
 
         val attachDatePicker = { editText: EditText, onDateSelected: (Long) -> Unit ->
             editText.setOnClickListener {
-                val builder = com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
+                val builder = MaterialDatePicker.Builder.datePicker()
                 builder.setTitleText(editText.hint)
                 val picker = builder.build()
                 picker.addOnPositiveButtonClickListener { selection ->
                     onDateSelected(selection)
                     editText.setText(
-                        CourseUtilities.fromMillisToLocalDate(selection).format(dateFormatter)
+                        TimeUtils.fromMillisToLocalDate(selection).format(dateFormatter)
                     )
                 }
                 picker.show(activity.supportFragmentManager, "MASS_DATE_PICKER")
@@ -170,7 +289,7 @@ class CourseControllerDialogFactory(
         val edtYear = dialogView.findViewById<EditText>(R.id.edtCourseYear)
         val spinnerSemester = dialogView.findViewById<Spinner>(R.id.spinnerSemester)
 
-        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         edtYear.setText(currentYear.toString())
 
         with(DialogFactory) {

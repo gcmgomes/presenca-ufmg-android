@@ -8,7 +8,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.example.presensor.CourseUtilities
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student

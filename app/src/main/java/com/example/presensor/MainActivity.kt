@@ -1,6 +1,9 @@
 package com.example.presensor
 
 import android.app.Activity
+import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
+import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -45,6 +48,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 
+import com.example.presensor.tools.UiUtils
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.adapters.ImportPreviewAdapter
@@ -198,6 +202,16 @@ class MainActivity : AppCompatActivity() {
 
         cloudSyncController = CloudSyncController(this, this, db)
 
+        // Initialize Course related Dialog Factory
+        val courseDialogFactory = CourseControllerDialogFactory(
+            activity = this,
+            lifecycleOwner = this,
+            db = db,
+            getSelectedCourse = { if (::courseController.isInitialized) courseController.getSelectedCourse() else null },
+            refreshCourseUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() },
+            addSession = { cid, name, date -> if (::courseController.isInitialized) courseController.addSession(cid, name, date) }
+        )
+
         // Initialize Dashboard Controller
         dashboardController = DashboardController(
             activity = this,
@@ -234,7 +248,7 @@ class MainActivity : AppCompatActivity() {
             imgMasterLock = findViewById(R.id.imgMasterLock),
             btnEditSession = findViewById(R.id.btnEditSessionInternal),
             getColorForAccent = { name ->
-                CourseUtilities.getColorForAccent(
+                UiUtils.getColorForAccent(
                     name,
                     resources.obtainTypedArray(R.array.chalk_colors_list)
                 )
@@ -243,9 +257,13 @@ class MainActivity : AppCompatActivity() {
                 if (currentState == AppState.COURSE) {
                     courseController.refreshCourseUI()
                 }
-            }
+            },
+            dialogFactory = courseDialogFactory
         )
 
+
+        // Initialize Tag related Dialog Factory
+        val sessionDialogFactory = SessionControllerDialogFactory(this)
 
         // Initialize Tag Controller
         tagController = TagController(
@@ -254,6 +272,7 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             layoutInflater = layoutInflater,
             sessionController = sessionController,
+            sessionDialogFactory = sessionDialogFactory,
             isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() }
         )
         DialogFactory.tagController = tagController
@@ -270,7 +289,8 @@ class MainActivity : AppCompatActivity() {
                 courseController.refreshCourseUI()
             },
             onEditSessionRequested = { session, _ -> sessionController.showEditSessionDialog(session) },
-            onOpenStatistics = { openCourseStatistics() }
+            onOpenStatistics = { openCourseStatistics() },
+            dialogFactory = courseDialogFactory
         )
 
         detailedCourseController = DetailedCourseController(

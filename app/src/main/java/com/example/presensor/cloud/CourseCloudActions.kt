@@ -4,15 +4,15 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.presensor.CourseUtilities
 import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.data.AppDatabase
-import com.example.presensor.data.DataTransceiver
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
+import com.example.presensor.tools.DataProcessor
+import com.example.presensor.tools.TimeUtils
 import com.google.api.services.sheets.v4.model.ValueRange
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -156,7 +156,7 @@ class CourseCloudActions(
                 val sheetsService = activity.cloudSyncController.getSheetsService()
                     ?: throw IllegalStateException("Sheets service was not initialized properly")
 
-                val dateFormat = CourseUtilities.makeSessionTimeFormatter(activity)
+                val dateFormat = TimeUtils.makeSessionTimeFormatter(activity)
 
                 // 1. Query Local Room DB State Trees
                 val localSessions = db.getSessionsByCourse(course.id).sortedBy { it.date }
@@ -165,7 +165,7 @@ class CourseCloudActions(
                     .groupBy { it.studentEmail to it.sessionId }
 
                 // 2. Fetch Existing Cloud Layout Bounds
-                val table = DataTransceiver.ingestFromGoogleSheets(
+                val table = DataProcessor.ingestFromGoogleSheets(
                     sheetsService,
                     spreadsheetId,
                     "'$tabName'!A1:Z1000"
@@ -184,7 +184,7 @@ class CourseCloudActions(
                 // 3. Coordinate Columns Alignment (Sessions)
                 val sessionToColumnIdx = mutableMapOf<Long, Int>()
                 localSessions.forEach { session ->
-                    val formattedHeader = "${session.name} (${CourseUtilities.fromMillisToLocalDate(session.date).format(dateFormat)})"
+                    val formattedHeader = "${session.name} (${TimeUtils.fromMillisToLocalDate(session.date).format(dateFormat)})"
                     var matchIndex = headerRow.indexOfFirst { it.equals(formattedHeader, ignoreCase = true) }
                     if (matchIndex == -1) {
                         headerRow.add(formattedHeader)

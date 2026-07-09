@@ -34,9 +34,10 @@ import androidx.transition.TransitionSet
 import androidx.viewpager2.widget.ViewPager2
 import com.example.presensor.R
 import com.example.presensor.MainUiBinder
+import com.example.presensor.tools.UiUtils
 import com.example.presensor.MainActivity
-import com.example.presensor.CourseUtilities
-import com.example.presensor.DialogFactory
+import com.example.presensor.cloud.DashboardCloudActions
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.MainActivity.AppState
 import com.example.presensor.adapters.ActionItem
 import com.example.presensor.adapters.ActionsPageAdapter
@@ -69,6 +70,8 @@ class DashboardController(
     private val searchView: SearchView = activity.findViewById(R.id.courseSearchView)
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
+    private val cloudActions = DashboardCloudActions(activity) { refreshDashboard() }
+
     init {
         setupSearchView()
     }
@@ -82,116 +85,6 @@ class DashboardController(
                 return true
             }
         })
-    }
-
-    private fun triggerStudentImportCloudPicker() {
-        activity.toggleLoadingOverlay(true)
-
-        val action = {
-            activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
-                activity.toggleLoadingOverlay(false)
-
-                if (spreadsheets.isEmpty()) {
-                    Toast.makeText(
-                        activity,
-                        activity.getString(R.string.toast_cloud_sheets_empty),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@fetchAvailableSpreadsheets
-                }
-
-                // 1. Show the searchable Spreadsheet file dialog
-                activity.cloudSyncController.showCloudFileDialog(
-                    title = activity.getString(R.string.dialog_cloud_import_sheets_title),
-                    subtitle = activity.getString(R.string.dialog_cloud_import_sheets_subtitle),
-                    driveItems = spreadsheets,
-                    getName = { it.name }
-                ) { selectedSpreadsheet ->
-
-                    activity.toggleLoadingOverlay(true)
-
-                    // 2. Query for internal workbook worksheet tabs
-                    activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
-                        activity.toggleLoadingOverlay(false)
-
-                        if (tabs.isEmpty()) {
-                            Toast.makeText(
-                                activity,
-                                activity.getString(R.string.toast_cloud_sheet_tabs_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            return@fetchSpreadsheetTabs
-                        }
-
-                        // 3. REUSED: Show the exact same searchable file dialog structure for tabs!
-                        activity.cloudSyncController.showCloudFileDialog(
-                            title = activity.getString(R.string.dialog_cloud_select_tab_title),
-                            subtitle = activity.getString(R.string.dialog_cloud_select_tab_subtitle),
-                            driveItems = tabs,
-                            getName = { it } // Since items are already Strings, just return itself
-                        ) { selectedTab ->
-
-                            // 4. Trigger background sheet data collection ingestion
-                            activity.toggleLoadingOverlay(true)
-                            ImportStudentController.importFromCloud(
-                                activity,
-                                activity.cloudSyncController.getSheetsService(),
-                                selectedSpreadsheet.id,
-                                selectedTab
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(
-            activity.cloudSignInLauncher,
-            action
-        )
-    }
-
-    private fun triggerDatabaseExportCloudPicker() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_cloud_export, null)
-        val suffixInput = dialogView.findViewById<EditText>(R.id.editExportSuffix)
-        dialogView.findViewById<TextView>(R.id.textExportPrefixPreview).text =
-            activity.getString(R.string.dialog_cloud_export_prefix_preview) + " " + activity.getString(
-                R.string.dialog_cloud_backup_prefix
-            )
-
-        with(DialogFactory) {
-            // 2. Build the interactive container before authorizing to match workflow steps
-            AlertDialog.Builder(activity)
-                .setTitle(R.string.dialog_cloud_export_title)
-                .setView(dialogView)
-                .setPositiveButton(R.string.action_export) { _, _ ->
-                    val inputSuffix = suffixInput.text.toString()
-
-                    // 3. Lock layout screens smoothly to prevent interaction flickering rules
-                    activity.toggleLoadingOverlay(true)
-
-                    val action = {
-                        // Run the synchronized cloud task passing the customized suffix label
-                        activity.cloudSyncController.uploadBackupToDrive(inputSuffix) { isLoading ->
-                            activity.toggleLoadingOverlay(isLoading)
-                        }
-                    }
-
-                    activity.setPendingAction(action)
-                    activity.cloudSyncController.runWithCloudAuthentication(
-                        activity.cloudSignInLauncher,
-                        action
-                    )
-                }
-                .setNegativeButton(R.string.action_cancel, null)
-                .showWithSmartNfcReading()
-        }
-    }
-
-    private fun triggerDatabaseImportCloudPicker() {
-        activity.toggleLoadingOverlay(true)
-        triggerCustomImportFlow()
     }
 
     fun setupOnClickListeners() {
@@ -235,19 +128,19 @@ class DashboardController(
                 activity.getString(R.string.menu_cloud_student_import),
                 R.drawable.ic_person
             ) {
-                triggerStudentImportCloudPicker()
+                cloudActions.triggerStudentImportCloudPicker()
             },
             ActionItem(
                 activity.getString(R.string.menu_cloud_database_import),
                 R.drawable.ic_import
             ) {
-                triggerDatabaseImportCloudPicker()
+                cloudActions.triggerDatabaseImportCloudPicker()
             },
             ActionItem(
                 activity.getString(R.string.menu_cloud_database_export),
                 R.drawable.ic_export
             ) {
-                triggerDatabaseExportCloudPicker()
+                cloudActions.triggerDatabaseExportCloudPicker()
             }
         )
 
@@ -411,50 +304,6 @@ class DashboardController(
     }
 
 
-    fun triggerCustomImportFlow() {
-        activity.toggleLoadingOverlay(true)
-
-        val action = {
-            activity.cloudSyncController.fetchAvailableBackups { files ->
-                activity.toggleLoadingOverlay(false)
-
-                if (files.isEmpty()) {
-                    with(DialogFactory) {
-                        AlertDialog.Builder(activity)
-                            .setTitle("No Backups Found")
-                            .setMessage("No valid database backups were discovered on your Google Drive account.")
-                            .setPositiveButton("OK", null)
-                            .showWithSmartNfcReading()
-                    }
-                    return@fetchAvailableBackups
-                }
-
-                // Call the unified dialog framework
-                activity.cloudSyncController.showCloudFileDialog(
-                    title = activity.getString(R.string.dialog_cloud_import_title),
-                    subtitle = activity.getString(R.string.dialog_cloud_import_subtitle),
-                    driveItems = files,
-                    getName = { it.name }
-                ) { selectedFile ->
-
-                    // Handle download sync restoration
-                    activity.cloudSyncController.downloadAndRestoreBackup(
-                        selectedFile.id,
-                        onLoadingToggle = { isLoading -> activity.toggleLoadingOverlay(isLoading) },
-                        onComplete = { success -> if (success) refreshDashboard() }
-                    )
-                }
-            }
-        }
-
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(
-            activity.cloudSignInLauncher,
-            action
-        )
-    }
-
-
     fun refreshDashboard(filter: String = "") {
         val calendar = Calendar.getInstance()
         val curYear = calendar.get(Calendar.YEAR)
@@ -520,7 +369,12 @@ class DashboardController(
     private fun addCourseCardToContainer(course: Course) {
         val cardView = layoutInflater.inflate(R.layout.item_course_card, container, false)
         cardView.findViewById<View>(R.id.viewCourseAccent)
-            .setBackgroundColor(getColorForAccent(course.name))
+            .setBackgroundColor(
+                UiUtils.getColorForAccent(
+                    course.name,
+                    activity.resources.obtainTypedArray(R.array.chalk_colors_list)
+                )
+            )
         cardView.findViewById<TextView>(R.id.txtCourseName).text = course.name
 
         val semesterString = if (course.semester == 1) {
@@ -545,15 +399,5 @@ class DashboardController(
             onCourseEditRequested(course)
         }
         container.addView(cardView)
-    }
-
-    private fun getColorForAccent(courseName: String): Int {
-        val typedArray = activity.resources.obtainTypedArray(R.array.chalk_colors_list)
-        val colors = IntArray(typedArray.length())
-        for (i in 0 until typedArray.length()) {
-            colors[i] = typedArray.getColor(i, 0)
-        }
-        typedArray.recycle()
-        return colors[Math.abs(courseName.hashCode()) % colors.size]
     }
 }

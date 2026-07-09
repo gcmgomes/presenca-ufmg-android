@@ -1,7 +1,6 @@
 package com.example.presensor.data
 
 import android.view.View
-import com.example.presensor.CourseUtilities
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.AttendanceRecord

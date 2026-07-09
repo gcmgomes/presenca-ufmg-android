@@ -13,7 +13,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
-import com.example.presensor.CourseUtilities
+import com.example.presensor.tools.TimeUtils
+import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Session
@@ -25,7 +26,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.presensor.DialogFactory
+import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.data.entities.Course
 import java.time.LocalDate
 
@@ -42,7 +44,8 @@ class SessionController(
     private val imgMasterLock: ImageView,
     private val btnEditSession: ImageView,
     private val getColorForAccent: (String) -> Int,
-    private val onSessionStateMutated: () -> Unit
+    private val onSessionStateMutated: () -> Unit,
+    private val dialogFactory: CourseControllerDialogFactory
 ) {
     var activeSession: Session? = null
         private set
@@ -53,9 +56,9 @@ class SessionController(
 
     private fun updateCardOnSessionView(name: String, date: Long) {
         txtSessionTitle.text = name
-        val dateFormat = CourseUtilities.makeSessionTimeFormatter(context)
+        val dateFormat = TimeUtils.makeSessionTimeFormatter(context)
         txtSessionSubtitle.text =
-            CourseUtilities.fromMillisToLocalDate(date).format(dateFormat)
+            TimeUtils.fromMillisToLocalDate(date).format(dateFormat)
         viewSessionDetailAccent.setBackgroundColor(getColorForAccent(name))
     }
 
@@ -64,8 +67,8 @@ class SessionController(
 
         updateCardOnSessionView(session.name, session.date)
 
-        CourseUtilities.updateLockIconUI(session.isLocked, imgMasterLock)
-        CourseUtilities.updateEditIconUI(session.isLocked, btnEditSession)
+        UiUtils.updateLockIconUI(session.isLocked, imgMasterLock)
+        UiUtils.updateEditIconUI(session.isLocked, btnEditSession)
 
         imgMasterLock.setOnClickListener {
             activeSession?.let { currentSession ->
@@ -95,7 +98,7 @@ class SessionController(
                     layoutInflater.inflate(R.layout.item_attendance_row, attendanceContainer, false)
                 rowView.findViewById<TextView>(R.id.txtStudentInfo).text = record.studentName
                 rowView.findViewById<TextView>(R.id.txtTimestamp).text =
-                    CourseUtilities.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
+                    TimeUtils.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
                 attendanceContainer.addView(rowView)
             }
         }
@@ -136,8 +139,8 @@ class SessionController(
                     if (it.id == session.id) {
                         val updated = it.copy(isLocked = shouldLock)
                         activeSession = updated
-                        CourseUtilities.updateLockIconUI(shouldLock, imgMasterLock)
-                        CourseUtilities.updateEditIconUI(shouldLock, btnEditSession)
+                        UiUtils.updateLockIconUI(shouldLock, imgMasterLock)
+                        UiUtils.updateEditIconUI(shouldLock, btnEditSession)
                     }
                 }
                 onSessionStateMutated()
@@ -189,10 +192,7 @@ class SessionController(
             ).show()
             return
         }
-        DialogFactory.showEditSessionDialog(
-            context,
-            layoutInflater,
-            activity.supportFragmentManager,
+        dialogFactory.showEditSessionDialog(
             session,
             onSessionUpdated = { updatedName, updatedTimestamp ->
                 lifecycleOwner.lifecycleScope.launch {
@@ -209,8 +209,8 @@ class SessionController(
 
                     txtSessionTitle.text = updatedName
                     txtSessionSubtitle.text =
-                        CourseUtilities.fromMillisToLocalDate(updatedTimestamp)
-                            .format(CourseUtilities.makeSessionTimeFormatter(context))
+                        TimeUtils.fromMillisToLocalDate(updatedTimestamp)
+                            .format(TimeUtils.makeSessionTimeFormatter(context))
                     viewSessionDetailAccent.setBackgroundColor(getColorForAccent(updatedName))
 
                     onSessionStateMutated()

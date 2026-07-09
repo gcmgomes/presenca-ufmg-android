@@ -9,11 +9,10 @@ import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.CourseUtilities
 import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.adapters.ImportPreviewAdapter
-import com.example.presensor.data.DataTransceiver
+import com.example.presensor.tools.DataProcessor
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -29,7 +28,7 @@ object ImportSessionController {
         courseId: Long,
         onImportComplete: () -> Unit
     ) {
-        val sessions = CourseUtilities.parseSessionsFromTable(table, courseId)
+        val sessions = DataProcessor.parseSessionsFromTable(table, courseId)
 
         activity.lifecycleScope.launch(Dispatchers.Main) {
             if (sessions.isNotEmpty()) {
@@ -59,7 +58,7 @@ object ImportSessionController {
         }
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val table = DataTransceiver.ingestFromGoogleSheets(
+                val table = DataProcessor.ingestFromGoogleSheets(
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'!A1:B100"
@@ -83,7 +82,7 @@ object ImportSessionController {
     ) {
         activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val table = DataTransceiver.ingestFromCsv(activity.contentResolver, uri)
+                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri)
                 importSessionsFromTable(activity, table, courseId, onImportComplete)
             } catch (e: Exception) {
                 Log.e("ImportSession", "CSV Import error", e)
