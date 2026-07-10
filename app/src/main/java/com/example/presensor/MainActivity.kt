@@ -93,8 +93,15 @@ class MainActivity : AppCompatActivity() {
 
     lateinit var loadingOverlay: View
 
+    // Tracks any active background job associated with the loading overlay for cancellation
+    var currentOverlayJob: kotlinx.coroutines.Job? = null
+
     fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) {
+            currentOverlayJob?.cancel()
+            currentOverlayJob = null
+        }
     }
 
     // Flag to orchestrate the focus lock state safely
@@ -206,10 +213,15 @@ class MainActivity : AppCompatActivity() {
         val courseDialogFactory = CourseControllerDialogFactory(
             activity = this,
             lifecycleOwner = this,
+            db = db
+        )
+
+        // Initialize Session related Dialog Factory
+        val sessionDialogFactory = SessionControllerDialogFactory(
+            activity = this,
+            lifecycleOwner = this,
             db = db,
-            getSelectedCourse = { if (::courseController.isInitialized) courseController.getSelectedCourse() else null },
-            refreshCourseUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() },
-            addSession = { cid, name, date -> if (::courseController.isInitialized) courseController.addSession(cid, name, date) }
+            refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
 
         // Initialize Dashboard Controller
@@ -258,12 +270,8 @@ class MainActivity : AppCompatActivity() {
                     courseController.refreshCourseUI()
                 }
             },
-            dialogFactory = courseDialogFactory
+            dialogFactory = sessionDialogFactory
         )
-
-
-        // Initialize Tag related Dialog Factory
-        val sessionDialogFactory = SessionControllerDialogFactory(this)
 
         // Initialize Tag Controller
         tagController = TagController(
@@ -290,7 +298,8 @@ class MainActivity : AppCompatActivity() {
             },
             onEditSessionRequested = { session, _ -> sessionController.showEditSessionDialog(session) },
             onOpenStatistics = { openCourseStatistics() },
-            dialogFactory = courseDialogFactory
+            courseDialogFactory = courseDialogFactory,
+            sessionDialogFactory = sessionDialogFactory
         )
 
         detailedCourseController = DetailedCourseController(
@@ -313,6 +322,16 @@ class MainActivity : AppCompatActivity() {
 
         currentBackCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // If loading overlay is visible, it means a cloud or heavy operation is in progress.
+                // Revert control to the user and clear any pending cloud actions.
+                if (loadingOverlay.isVisible) {
+                    cloudSyncController.cancelActiveOperation()
+                    toggleLoadingOverlay(false)
+                    pendingCloudAction = null
+                    isCloudAuthSuccessPendingRun = false
+                    return
+                }
+
                 when (currentState) {
                     AppState.SESSION -> {
                         sessionController.clearActiveSession()

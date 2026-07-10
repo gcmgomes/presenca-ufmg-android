@@ -1,7 +1,6 @@
 package com.example.presensor.controllers
 
 import android.app.Activity.RESULT_OK
-import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -52,6 +51,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import com.example.presensor.cloud.CourseCloudActions
 import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
+import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 
 import kotlin.math.abs
 
@@ -64,7 +64,8 @@ class CourseController(
     private val onToggleLockRequested: (Session, ImageView) -> Unit,
     private val onEditSessionRequested: (Session, ImageView) -> Unit,
     private val onOpenStatistics: () -> Unit,
-    private val dialogFactory: CourseControllerDialogFactory
+    private val courseDialogFactory: CourseControllerDialogFactory,
+    private val sessionDialogFactory: SessionControllerDialogFactory
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
@@ -114,7 +115,7 @@ class CourseController(
         setSelectedCourse(course)
 
         btnEditCourse.setOnClickListener {
-            dialogFactory.showEditCourseDialog(selectedCourse!!, { updated ->
+            courseDialogFactory.showEditCourseDialog(selectedCourse!!, { updated ->
                 if (selectedCourse != null && updated.id == selectedCourse!!.id) {
                     selectedCourse = updated
                 }
@@ -134,7 +135,11 @@ class CourseController(
     }
 
     fun showCreateSessionDialog() {
-        dialogFactory.showCreateSessionDialog()
+        selectedCourse?.let {
+            sessionDialogFactory.showCreateSessionDialog(it.id) { courseId, sessionName, date ->
+                addSession(courseId, sessionName, date)
+            }
+        }
     }
 
 
@@ -151,7 +156,7 @@ class CourseController(
             com.example.presensor.adapters.ActionItem(
                 text = activity.getString(R.string.menu_course_postpone),
                 iconResId = R.drawable.ic_postpone,
-                onClick = { dialogFactory.showMassDateChangeDialog() }
+                onClick = { showMassDateChangeDialog() }
             ),
 
             // PAGE 2 Items
@@ -282,15 +287,17 @@ class CourseController(
     }
 
     fun showMassDateChangeDialog() {
-        dialogFactory.showMassDateChangeDialog()
+        selectedCourse?.let {
+            sessionDialogFactory.showMassDateChangeDialog(it.id)
+        }
     }
 
     fun showCreateCourseDialog(onCourseCreated: () -> Unit) {
-        dialogFactory.showCreateCourseDialog(onCourseCreated)
+        courseDialogFactory.showCreateCourseDialog(onCourseCreated)
     }
 
     fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
-        dialogFactory.showEditCourseDialog(course, { updated ->
+        courseDialogFactory.showEditCourseDialog(course, { updated ->
             if (selectedCourse != null && updated.id == selectedCourse!!.id) {
                 selectedCourse = updated
             }
@@ -322,7 +329,7 @@ class CourseController(
 
         itemView.setOnClickListener { onSessionSelected(session) }
         itemView.setOnLongClickListener {
-            dialogFactory.showDeleteSessionDialog(session)
+            sessionDialogFactory.showDeleteSessionDialog(session)
             true
         }
         sessionContainer.addView(itemView)

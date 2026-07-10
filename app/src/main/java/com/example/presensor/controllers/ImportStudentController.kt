@@ -13,6 +13,7 @@ import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.tools.DataProcessor
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Student
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
@@ -21,23 +22,41 @@ import kotlinx.coroutines.withContext
 
 object ImportStudentController {
 
-    private fun importStudentsFromTable(
+    private fun handleTableIngested(
         activity: MainActivity,
         table: InternalDataTable
     ) {
-        val students = DataProcessor.parseStudentsFromTable(table)
-
-        // CRITICAL: Switch back to the UI thread to update your layouts
         activity.lifecycleScope.launch(Dispatchers.Main) {
-            if (students.isNotEmpty()) {
-                showStudentImportPreview(activity, students)
-            } else {
-                Toast.makeText(
-                    activity,
-                    "No students found in the provided data",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            DialogFactory.showMappingDialog(
+                activity,
+                fields = listOf("name", "email"),
+                columns = table.headers,
+                sampleRow = table.rows.firstOrNull(),
+                onDismissed = { activity.toggleLoadingOverlay(false) },
+                onConfirmed = { mapping ->
+                    val result = DataProcessor.parseStudentsFromTable(activity, table, mapping)
+                    if (result.items.isNotEmpty()) {
+                        showStudentImportPreview(activity, result.items)
+                        if (result.errors.isNotEmpty()) {
+                            Toast.makeText(
+                                activity,
+                                activity.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            // Log specific errors for the developer/user to see in logcat if needed
+                            result.errors.forEach { Log.w("ImportStudent", it) }
+                        }
+                    } else {
+                        val errorMessage = if (result.errors.isNotEmpty()) {
+                            activity.getString(R.string.msg_failed_to_parse_any, result.errors.take(3).joinToString("\n"))
+                        } else {
+                            activity.getString(R.string.toast_cloud_student_import_empty)
+                        }
+                        Toast.makeText(activity, errorMessage, Toast.LENGTH_LONG).show()
+                        activity.toggleLoadingOverlay(false)
+                    }
+                }
+            )
         }
     }
 
@@ -51,21 +70,23 @@ object ImportStudentController {
             activity.toggleLoadingOverlay(false)
             return
         }
-        activity.lifecycleScope.launch(Dispatchers.IO) {
+        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val table = DataProcessor.ingestFromGoogleSheets(
+                    activity,
                     sheetsService,
                     spreadsheetId,
-                    "'$tabTitle'!A1:D500"
+                    "'$tabTitle'",
+                    caller = "ImportStudentController.importFromCloud"
                 )
-                importStudentsFromTable(activity, table)
+                handleTableIngested(activity, table)
             } catch (e: Exception) {
                 Log.e("CloudSync", "Failed to read rows within selected sheet layout bounds", e)
                 withContext(Dispatchers.Main) {
                     activity.toggleLoadingOverlay(false)
                     Toast.makeText(
                         activity,
-                        "Failed to import rows from cloud sheet",
+                        activity.getString(R.string.toast_cloud_student_import_failed),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -74,21 +95,10 @@ object ImportStudentController {
     }
 
     private fun importFromCsv(activity: MainActivity, uri: Uri) {
-        activity.lifecycleScope.launch(Dispatchers.IO) {
+        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri)
-                val students = DataProcessor.parseStudentsFromTable(table)
-                withContext(Dispatchers.Main) {
-                    if (students.isNotEmpty()) {
-                        showStudentImportPreview(activity, students)
-                    } else {
-                        Toast.makeText(
-                            activity,
-                            activity.getString(R.string.msg_no_students_found),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
+                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri, caller = "ImportStudentController.importFromCsv")
+                handleTableIngested(activity, table)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
@@ -127,7 +137,7 @@ object ImportStudentController {
             // Ensure the loading wheel stays visible while the database is working
             activity.toggleLoadingOverlay(true)
 
-            activity.lifecycleScope.launch {
+            activity.currentOverlayJob = activity.lifecycleScope.launch {
                 withContext(Dispatchers.IO) {
                     activity.getDb().insertStudents(students)
                 }

@@ -42,8 +42,11 @@
     <string name="toast_cloud_sheets_empty">Nenhuma Planilha do Google encontrada no seu Google Drive.</string>
     <string name="toast_cloud_sheets_fetch_failed">Falha ao ler as planilhas do Google Drive</string>
     <string name="toast_cloud_sheet_tabs_failed">Falha ao carregar as abas da planilha</string>
+    <string name="toast_cloud_tab_retrieval_failed">Falha ao recuperar abas da planilha.</string>
     <string name="toast_cloud_student_import_success">%1$d alunos importados com sucesso!</string>
     <string name="toast_cloud_student_import_empty">Nenhuma linha válida de alunos encontrada na aba selecionada.</string>
+    <string name="toast_cloud_attendance_sync_success">Presenças sincronizadas com sucesso na nuvem!</string>
+    <string name="toast_cloud_sync_failed">Falha na sincronização na nuvem. Verifique as configurações de conectividade.</string>
 
     <string name="menu_cloud_student_import">Importar alunos</string>
     <string name="menu_cloud_database_import">Importar banco de dados</string>
@@ -133,7 +136,7 @@
     <string name="dialog_delete_course_title">Confirmação Final</string>
     <string name="dialog_delete_course_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite DELETE abaixo:</string>
     <string name="dialog_delete_session_title">Confirmação Final</string>
-    <string name="dialog_delete_session_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite EXCLUIR abaixo:</string>
+    <string name="dialog_delete_session_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite DELETE abaixo:</string>
     <string name="hint_delete_confirm">Digite \'DELETE\' para confirmar</string>
 
     <string name="error_empty_name">O nome não pode estar vazio</string>
@@ -165,4 +168,30 @@
 
 
     <string name="dialog_cloud_import_full_prefix">%1$s %2$s!</string>
+
+    <string name="dialog_mapping_title">Mapeamento de Colunas</string>
+    <string name="dialog_mapping_subtitle">Associe as colunas do seu arquivo aos campos do aplicativo:</string>
+    <string name="dialog_mapping_preview_header">Prévia dos Dados (Primeira Linha):</string>
+    <string name="dialog_mapping_button_continue">Continuar para Prévia</string>
+    <string name="dialog_mapping_field_name">Nome</string>
+    <string name="dialog_mapping_field_email">E-mail</string>
+    <string name="dialog_mapping_field_date">Data</string>
+    <string name="error_parsing_mapping_students">Falha ao processar alunos com o mapeamento selecionado</string>
+    <string name="error_parsing_mapping_sessions">Falha ao processar aulas com o mapeamento selecionado. Verifique se as datas estão no formato dd/MM/aaaa.</string>
+    <string name="msg_imported_with_errors">Importados %1$d itens. %2$d linhas continham erros e foram ignoradas.</string>
+    <string name="msg_failed_to_parse_any">Falha ao processar qualquer item dos dados fornecidos:\n%1$s</string>
+
+    <string name="label_column_placeholder">Coluna %1$d</string>
+    <string name="error_import_row_session_name_missing">Linha %1$d: Nome da aula ausente.</string>
+    <string name="error_import_row_invalid_date">Linha %1$d: Formato de data inválido \'%2$s\'. Esperado dd/MM/aaaa.</string>
+    <string name="error_import_row_student_name_email_missing">Linha %1$d: Nome e e-mail ausentes.</string>
+    <string name="error_import_row_student_name_missing">Linha %1$d: Nome do aluno ausente.</string>
+    <string name="error_import_row_student_email_missing">Linha %1$d: E-mail do aluno ausente.</string>
+
+    <string name="label_preview_empty_value">---</string>
+    <string name="toast_cloud_student_import_failed">Falha ao importar linhas da planilha na nuvem</string>
+    <string name="toast_cloud_schedule_import_failed">Falha na importação do cronograma da nuvem.</string>
+    <string name="toast_csv_import_error">Erro na importação do CSV</string>
+    <string name="label_student_email_column">E-mail do Aluno</string>
+    <string name="label_student_name_column">Nome do Aluno</string>
 </resources>

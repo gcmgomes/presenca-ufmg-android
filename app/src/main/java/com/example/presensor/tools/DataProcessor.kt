@@ -3,6 +3,7 @@ package com.example.presensor.tools
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.example.presensor.R
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.AttendanceRecord
@@ -49,7 +50,7 @@ object DataProcessor {
         return tokens
     }
 
-    fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri): InternalDataTable {
+    fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri, caller: String = "Unknown"): InternalDataTable {
         val rows = mutableListOf<List<String>>()
         var headers = listOf<String>()
 
@@ -62,6 +63,10 @@ object DataProcessor {
                     firstLine = firstLine.substring(1)
                 }
                 headers = parseCsvLine(firstLine)
+                
+                Log.d("DataProcessor", "Ingestion pipeline started by: $caller")
+                Log.d("DataProcessor", "Headers found in CSV: ${headers.joinToString(", ")}")
+
                 for (i in 1 until lines.size) {
                     val line = lines[i]
                     if (line.isNotBlank()) {
@@ -74,36 +79,70 @@ object DataProcessor {
     }
 
     fun ingestFromGoogleSheets(
+        context: Context,
         sheetsService: Sheets,
         spreadsheetId: String,
-        range: String
+        range: String,
+        caller: String = "Unknown"
     ): InternalDataTable {
         val response = sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
         val values = response.getValues() ?: emptyList<List<Any>>()
 
-        if (values.isEmpty()) return InternalDataTable(emptyList(), emptyList())
+        if (values.isEmpty()) {
+            Log.d("DataProcessor", "Ingestion pipeline started by: $caller - Sheet is empty.")
+            return InternalDataTable(emptyList(), emptyList())
+        }
 
-        val headers = values[0].map { it.toString() }
+        // Determine the maximum number of columns across all rows to ensure no data is truncated
+        val maxCols = values.maxOf { it.size }
+        val rawHeaders = values[0]
+        
+        val headers = (0 until maxCols).map { i ->
+            rawHeaders.getOrNull(i)?.toString()?.trim()?.ifEmpty { context.getString(R.string.label_column_placeholder, i + 1) } ?: context.getString(R.string.label_column_placeholder, i + 1)
+        }
+        
+        Log.d("DataProcessor", "Ingestion pipeline started by: $caller")
+        Log.d("DataProcessor", "Headers found in Google Sheets: ${headers.joinToString(", ")}")
+
         val rows = values.drop(1).map { row -> 
-            headers.indices.map { i -> row.getOrNull(i)?.toString() ?: "" }
+            (0 until maxCols).map { i -> row.getOrNull(i)?.toString() ?: "" }
         }
 
         return InternalDataTable(headers, rows)
     }
 
+    data class ImportResult<T>(
+        val items: List<T>,
+        val errors: List<String>
+    )
+
     fun parseSessionsFromTable(
+        context: Context,
         table: InternalDataTable,
-        courseId: Long
-    ): List<Session> {
+        courseId: Long,
+        mapping: Map<String, String>? = null
+    ): ImportResult<Session> {
         val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val sessionsToInsert = mutableListOf<Session>()
+        val errors = mutableListOf<String>()
+
+        val nameCol = mapping?.get("name")
+        val dateCol = mapping?.get("date")
 
         for (i in 0 until table.rowCount) {
             val tokens = table.rows[i]
-            if (tokens.size >= 2) {
-                var sessionName = ""
-                var localDate: LocalDate? = null
+            val rowNum = i + 2 // +1 for 0-indexing, +1 for header
+            
+            var sessionName = ""
+            var localDate: LocalDate? = null
+            var dateStrForError = ""
 
+            if (nameCol != null && dateCol != null) {
+                sessionName = table.getCellValue(i, nameCol)
+                val dateStr = table.getCellValue(i, dateCol)
+                dateStrForError = dateStr
+                localDate = TimeUtils.tryParseDate(dateStr, formatter)
+            } else if (tokens.size >= 2) {
                 val firstTokenDate = TimeUtils.tryParseDate(tokens[0], formatter)
                 val secondTokenDate = TimeUtils.tryParseDate(tokens[1], formatter)
 
@@ -112,48 +151,85 @@ object DataProcessor {
                         localDate = firstTokenDate
                         sessionName = tokens[1]
                     }
-
                     secondTokenDate != null -> {
                         localDate = secondTokenDate
                         sessionName = tokens[0]
                     }
+                    else -> {
+                        dateStrForError = "${tokens[0]} or ${tokens[1]}"
+                    }
                 }
+            }
 
-                if (localDate != null && sessionName.isNotEmpty()) {
-                    val timestamp = localDate.atStartOfDay(ZoneId.systemDefault())
-                        .toInstant()
-                        .toEpochMilli()
+            if (localDate != null && sessionName.isNotEmpty()) {
+                val timestamp = localDate.atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
 
-                    sessionsToInsert.add(
-                        Session(
-                            courseId = courseId,
-                            name = sessionName,
-                            date = timestamp
-                        )
+                sessionsToInsert.add(
+                    Session(
+                        courseId = courseId,
+                        name = sessionName,
+                        date = timestamp
                     )
+                )
+            } else {
+                if (sessionName.isEmpty()) {
+                    errors.add(context.getString(R.string.error_import_row_session_name_missing, rowNum))
+                } else if (localDate == null) {
+                    errors.add(context.getString(R.string.error_import_row_invalid_date, rowNum, dateStrForError))
                 }
             }
         }
-        return sessionsToInsert
+        return ImportResult(sessionsToInsert, errors)
     }
 
-    fun parseStudentsFromTable(table: InternalDataTable): List<Student> {
+    fun parseStudentsFromTable(
+        context: Context,
+        table: InternalDataTable,
+        mapping: Map<String, String>? = null
+    ): ImportResult<Student> {
         val students = mutableListOf<Student>()
+        val errors = mutableListOf<String>()
         
-        val emailIdx = table.headers.indexOfFirst { it.contains("email", ignoreCase = true) }.let { if (it == -1) 1 else it }
-        val nameIdx = if (emailIdx == 0) 1 else 0
+        val nameCol = mapping?.get("name")
+        val emailCol = mapping?.get("email")
+
+        val emailIdx = if (emailCol != null) {
+            table.headers.indexOf(emailCol)
+        } else {
+            table.headers.indexOfFirst { it.contains("email", ignoreCase = true) }.let { if (it == -1) 1 else it }
+        }
+        
+        val nameIdx = if (nameCol != null) {
+            table.headers.indexOf(nameCol)
+        } else {
+            if (emailIdx == 0) 1 else 0
+        }
 
         for (i in 0 until table.rowCount) {
             val row = table.rows[i]
-            if (row.size >= 2) {
-                val name = row.getOrNull(nameIdx) ?: ""
-                val email = row.getOrNull(emailIdx) ?: ""
-                if (name.isNotEmpty() && email.isNotEmpty()) {
-                    students.add(Student(email = email, name = name))
+            val rowNum = i + 2
+            val name = row.getOrNull(nameIdx) ?: ""
+            val email = row.getOrNull(emailIdx) ?: ""
+            
+            if (name.isNotEmpty() && email.isNotEmpty()) {
+                students.add(Student(email = email, name = name))
+            } else {
+                if (name.isEmpty() && email.isEmpty()) {
+                    // Skip completely empty rows without error? 
+                    // Usually better to report if it looks like data was intended.
+                    if (row.any { it.isNotBlank() }) {
+                        errors.add(context.getString(R.string.error_import_row_student_name_email_missing, rowNum))
+                    }
+                } else if (name.isEmpty()) {
+                    errors.add(context.getString(R.string.error_import_row_student_name_missing, rowNum))
+                } else {
+                    errors.add(context.getString(R.string.error_import_row_student_email_missing, rowNum))
                 }
             }
         }
-        return students
+        return ImportResult(students, errors)
     }
 
     fun generateCsvString(

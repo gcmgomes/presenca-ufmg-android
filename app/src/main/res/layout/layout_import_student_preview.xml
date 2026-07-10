@@ -13,7 +13,8 @@
         android:layout_height="wrap_content"
         android:text="@string/dialog_import_students"
         android:textSize="20sp"
-        android:textStyle="bold" />
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary" />
 
     <TextView
         android:id="@+id/txtImportStudentCount"
@@ -21,18 +22,21 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
         android:text="@string/dialog_import_students_hint"
-        android:textColor="?attr/descriptiveTextColor" />
+        android:textColor="?attr/descriptiveTextColor"
+        android:textSize="14sp" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvImportStudentPreview"
         android:layout_width="match_parent"
-        android:layout_height="300dp" />
+        android:layout_height="320dp"
+        android:background="#08000000" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnConfirmStudentImport"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="20dp"
         android:text="@string/dialog_import_students_button_text"
-        app:cornerRadius="8dp" />
+        app:cornerRadius="8dp"
+        android:padding="12dp" />
 </LinearLayout>

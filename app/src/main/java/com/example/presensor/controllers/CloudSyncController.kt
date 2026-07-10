@@ -12,6 +12,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.example.presensor.MainActivity
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
@@ -28,6 +29,7 @@ import com.google.api.services.drive.model.FileList
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.SheetsScopes
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -40,11 +42,22 @@ class CloudSyncController(
     private val lifecycleOwner: LifecycleOwner,
     private val db: AppDatabase
 ) {
+    // Optimization: Reuse transport and factory instances
+    private val transport = NetHttpTransport()
+    private val jsonFactory = GsonFactory.getDefaultInstance()
+
     private var driveService: Drive? = null
     private var sheetsService: Sheets? = null
 
-    // Cache the active access token for token pre-fetching or validation validations if needed
     private var currentAccessToken: String? = null
+
+    // Track the active coroutine job to allow user cancellation via Back button
+    private var activeJob: Job? = null
+
+    fun cancelActiveOperation() {
+        activeJob?.cancel()
+        activeJob = null
+    }
 
     // Bundle all required OAuth permissions using standard modern Scope objects
     private val requestedScopes = listOf(
@@ -62,18 +75,17 @@ class CloudSyncController(
         signInLauncher: ActivityResultLauncher<IntentSenderRequest>,
         onAuthSuccess: () -> Unit
     ) {
+        Log.d("CloudSync", "Initiating cloud authentication check...")
         val authorizationClient = Identity.getAuthorizationClient(activity)
         val authorizationRequest = AuthorizationRequest.builder()
             .setRequestedScopes(requestedScopes)
             .build()
 
-
         authorizationClient.authorize(authorizationRequest)
             .addOnSuccessListener { result ->
-
+                Log.d("CloudSync", "Authorization check success. Has resolution: ${result.hasResolution()}")
                 if (result.hasResolution()) {
                     // Authorization needed: trigger modern UI flow resolution account picker
-                    Log.d("runWithCloudAuthentication", "success!")
                     val pendingIntent = result.pendingIntent!!
                     signInLauncher.launch(IntentSenderRequest.Builder(pendingIntent).build())
                 } else {
@@ -116,15 +128,20 @@ class CloudSyncController(
 
     private fun initializeCloudServices(accessToken: String?) {
         if (accessToken == null) return
+        
+        // Skip re-initialization if the token hasn't changed
+        if (accessToken == currentAccessToken && driveService != null && sheetsService != null) {
+            return
+        }
+        
         currentAccessToken = accessToken
 
-        // Injects the OAuth2 bearer access token seamlessly into HTTP headers
         val requestInitializer = HttpRequestInitializer { request ->
             request.headers.authorization = "Bearer $accessToken"
+            // Optimization: Set reasonable timeouts for mobile networks
+            request.connectTimeout = 10000 // 10s
+            request.readTimeout = 10000    // 10s
         }
-
-        val transport = NetHttpTransport()
-        val jsonFactory = GsonFactory.getDefaultInstance()
 
         driveService = Drive.Builder(transport, jsonFactory, requestInitializer)
             .setApplicationName("Presensor")
@@ -148,7 +165,8 @@ class CloudSyncController(
 
         onLoadingToggle(true)
 
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
             try {
                 val outputStream = ByteArrayOutputStream()
                 val dumpSuccess = db.performFullDatabaseDump(outputStream)
@@ -190,10 +208,10 @@ class CloudSyncController(
     }
 
     fun fetchAvailableBackups(onResult: (List<com.google.api.services.drive.model.File>) -> Unit) {
-        Log.d("fetchAvailableBackups", "here")
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        Log.d("CloudSync", "Fetching backups from Drive...")
+        activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
             try {
-
                 val service = driveService ?: return@launch
                 val prefix = activity.getString(R.string.dialog_cloud_backup_prefix)
                 val result: FileList = service.files().list()
@@ -202,6 +220,7 @@ class CloudSyncController(
                     .setFields("files(id, name)")
                     .execute()
 
+                Log.d("CloudSync", "Backups fetched: ${result.files?.size ?: 0} items found.")
                 withContext(Dispatchers.Main) {
                     onResult(result.files ?: emptyList())
                 }
@@ -219,7 +238,8 @@ class CloudSyncController(
         onLoadingToggle: (Boolean) -> Unit,
         onComplete: (Boolean) -> Unit
     ) {
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
+        activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
+            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
             val service = driveService ?: return@launch
             onLoadingToggle(true)
 
@@ -268,16 +288,18 @@ class CloudSyncController(
      * Queries Google Drive for Spreadsheets matching the standard Google Sheets MimeType.
      */
     fun fetchAvailableSpreadsheets(onResult: (List<com.google.api.services.drive.model.File>) -> Unit) {
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        Log.d("CloudSync", "Fetching spreadsheets from Drive...")
+        activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
             try {
                 val service = driveService ?: return@launch
                 val result: FileList = service.files().list()
                     .setQ("mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false")
                     .setSpaces("drive")
-                    .setCorpora("user")
                     .setFields("files(id, name)")
                     .execute()
 
+                Log.d("CloudSync", "Spreadsheets fetched: ${result.files?.size ?: 0} items found.")
                 withContext(Dispatchers.Main) {
                     onResult(result.files ?: emptyList())
                 }
@@ -292,7 +314,8 @@ class CloudSyncController(
      * Fetches individual worksheet tab titles inside a target spreadsheet ID.
      */
     fun fetchSpreadsheetTabs(spreadsheetId: String, onResult: (List<String>) -> Unit) {
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
             try {
                 val service = sheetsService ?: return@launch
 

@@ -26,7 +26,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
+import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.data.entities.Course
 import java.time.LocalDate
@@ -45,7 +45,7 @@ class SessionController(
     private val btnEditSession: ImageView,
     private val getColorForAccent: (String) -> Int,
     private val onSessionStateMutated: () -> Unit,
-    private val dialogFactory: CourseControllerDialogFactory
+    private val dialogFactory: SessionControllerDialogFactory
 ) {
     var activeSession: Session? = null
         private set

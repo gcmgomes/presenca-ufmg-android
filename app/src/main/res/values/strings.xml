@@ -41,8 +41,11 @@
     <string name="toast_cloud_sheets_empty">No Google Sheets found in your Drive account.</string>
     <string name="toast_cloud_sheets_fetch_failed">Failed to read spreadsheet records from Drive</string>
     <string name="toast_cloud_sheet_tabs_failed">Failed to parse sheet tabs</string>
+    <string name="toast_cloud_tab_retrieval_failed">Failed to retrieve worksheet tabs.</string>
     <string name="toast_cloud_student_import_success">Imported %1$d students successfully!</string>
     <string name="toast_cloud_student_import_empty">No valid student rows found in the selected sheet.</string>
+    <string name="toast_cloud_attendance_sync_success">Attendance synced successfully to Cloud!</string>
+    <string name="toast_cloud_sync_failed">Cloud sync failed. Check connectivity configurations.</string>
 
     <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
     <string name="toast_cloud_auth_pre_fetch_failed">Failed to authorize cloud session</string>
@@ -56,6 +59,14 @@
     <string name="menu_cloud_student_import">Import students</string>
     <string name="menu_cloud_database_import">Import database</string>
     <string name="menu_cloud_database_export">Export database</string>
+    <string name="dialog_cloud_schedule_import_title">Import Schedule from Sheets</string>
+    <string name="dialog_cloud_schedule_import_subtitle">Choose the Google Spreadsheet containing your class schedule calendar:</string>
+    <string name="dialog_cloud_select_schedule_tab_title">Select Schedule Tab</string>
+    <string name="dialog_cloud_select_schedule_tab_subtitle">Choose the worksheet tab that contains your session dates:</string>
+    <string name="dialog_cloud_export_attendance_title">Select Sheet to Export Attendance</string>
+    <string name="dialog_cloud_export_attendance_subtitle">Choose the Google Spreadsheet to update with current session records:</string>
+    <string name="dialog_cloud_select_target_tab_title">Select Target Sheet Tab</string>
+    <string name="dialog_cloud_select_target_tab_subtitle">Choose the worksheet tab to merge attendance matrix columns:</string>
     <string name="dialog_cloud_import_title">Restore Database Backup</string>
     <string name="dialog_cloud_import_subtitle">Select a timestamped snapshot below to completely restore your local database state configuration:</string>
     <string name="dialog_cloud_import_no_backups_title">No Backups Found</string>
@@ -161,4 +172,30 @@
     </string-array>
 
     <string name="dialog_cloud_import_full_prefix">%1$s %2$s!</string>
+
+    <string name="dialog_mapping_title">Column Mapping</string>
+    <string name="dialog_mapping_subtitle">Match the columns from your file to the application fields:</string>
+    <string name="dialog_mapping_preview_header">Data Preview (First Row):</string>
+    <string name="dialog_mapping_button_continue">Continue to Preview</string>
+    <string name="dialog_mapping_field_name">Name</string>
+    <string name="dialog_mapping_field_email">Email</string>
+    <string name="dialog_mapping_field_date">Date</string>
+    <string name="error_parsing_mapping_students">Failed to parse students with the selected mapping</string>
+    <string name="error_parsing_mapping_sessions">Failed to parse sessions with the selected mapping. Ensure dates are in dd/MM/yyyy format.</string>
+    <string name="msg_imported_with_errors">Imported %1$d items. %2$d rows had errors and were skipped.</string>
+    <string name="msg_failed_to_parse_any">Failed to parse any items from the provided data:\n%1$s</string>
+
+    <string name="label_column_placeholder">Column %1$d</string>
+    <string name="error_import_row_session_name_missing">Row %1$d: Session name is missing.</string>
+    <string name="error_import_row_invalid_date">Row %1$d: Invalid date format \'%2$s\'. Expected dd/MM/yyyy.</string>
+    <string name="error_import_row_student_name_email_missing">Row %1$d: Both name and email are missing.</string>
+    <string name="error_import_row_student_name_missing">Row %1$d: Student name is missing.</string>
+    <string name="error_import_row_student_email_missing">Row %1$d: Student email is missing.</string>
+
+    <string name="label_preview_empty_value">---</string>
+    <string name="toast_cloud_student_import_failed">Failed to import rows from cloud sheet</string>
+    <string name="toast_cloud_schedule_import_failed">Cloud schedule import failed.</string>
+    <string name="toast_csv_import_error">CSV Import error</string>
+    <string name="label_student_email_column">Student Email</string>
+    <string name="label_student_name_column">Student Name</string>
 </resources>
