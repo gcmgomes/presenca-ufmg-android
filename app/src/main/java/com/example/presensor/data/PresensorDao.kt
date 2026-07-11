@@ -99,6 +99,6 @@ interface PresensorDao {
     @Query("SELECT * FROM Student")
     suspend fun getAllStudents(): List<Student>
 
-    @Query("SELECT EXISTS(SELECT 1 FROM Attendance WHERE rfid = :r AND sessionId = :s)")
-    suspend fun isPresent(r: String, s: Long): Boolean
+    @Query("SELECT EXISTS(SELECT 1 FROM Attendance WHERE studentEmail = :email AND sessionId = :s)")
+    suspend fun isPresent(email: String, s: Long): Boolean
 }

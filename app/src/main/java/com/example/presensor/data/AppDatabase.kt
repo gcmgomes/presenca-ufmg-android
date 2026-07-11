@@ -1,7 +1,6 @@
 package com.example.presensor.data
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
@@ -15,7 +14,6 @@ import com.example.presensor.data.entities.Attendance
 import com.example.presensor.data.entities.AttendanceRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStream
@@ -139,10 +137,9 @@ abstract class AppDatabase : RoomDatabase() {
 
         val sessions = sessionsDeferred.await().sortedByDescending { it.date }
         val allAttendance = attendanceDeferred.await()
-        val attendeeEmails = allAttendance.map { it.studentEmail }.toSet()
-        val activeStudents = activeStudentsDeferred.await().filter { it.email in attendeeEmails }
-
-        courseCache.computeFromMinimalData(course.id, sessions, allAttendance, activeStudents)
+        
+        // Populate the cache
+        courseCache.computeFromMinimalData(course.id, sessions, allAttendance, activeStudentsDeferred.await())
     }
 
     // ==========================================
@@ -248,7 +245,7 @@ abstract class AppDatabase : RoomDatabase() {
                     timestamp = timestamp
                 )
             )
-            if (useCourseCache) {
+            if (useCourseCache && courseCache.courseId == session.courseId) {
                 val attendanceRecord = AttendanceRecord(
                     timestamp,
                     student.name,
@@ -277,8 +274,9 @@ abstract class AppDatabase : RoomDatabase() {
         withContext(Dispatchers.IO) {
             if(useCourseCache && courseCache.courseId == courseId) {
                 courseCache.allAttendance
+            } else {
+                dao().getAllAttendanceForCourse(courseId)
             }
-            dao().getAllAttendanceForCourse(courseId)
         }
 
     suspend fun deleteAttendancesBySessionId(sessionId: Long) = withContext(Dispatchers.IO) {
@@ -313,65 +311,30 @@ abstract class AppDatabase : RoomDatabase() {
                 sb.append("=== COURSES ===\n")
                 sb.append("Course ID,Course Name,Year,Semester\n")
                 allCourses.forEach {
-                    sb.append(
-                        "${it.id},\"${
-                            it.name.replace(
-                                "\"",
-                                "\"\""
-                            )
-                        }\",${it.year},${it.semester}\n"
-                    )
+                    sb.append("${it.id},${it.name.replace(",", "")},${it.year},${it.semester}\n")
                 }
-                sb.append("\n")
+                
+                // Append Students
+                sb.append("=== STUDENTS ===\n")
+                sb.append("Email,Name,RFID Tag\n")
+                allStudents.forEach {
+                    sb.append("${it.email},${it.name.replace(",", "")},${it.rfid ?: ""}\n")
+                }
 
                 // Append Sessions
                 sb.append("=== SESSIONS ===\n")
                 sb.append("Session ID,Course ID,Session Name,Timestamp/Date\n")
                 allSessions.forEach {
-                    sb.append(
-                        "${it.id},${it.courseId},\"${
-                            it.name.replace(
-                                "\"",
-                                "\"\""
-                            )
-                        }\",${it.date}\n"
-                    )
+                    sb.append("${it.id},${it.courseId},${it.name.replace(",", "")},${it.date}\n")
                 }
-                sb.append("\n")
-
-                // Append Students
-                sb.append("=== STUDENTS ===\n")
-                sb.append("Email,Name,RFID Tag\n")
-                allStudents.forEach {
-                    sb.append(
-                        "\"${it.email}\",\"${
-                            it.name.replace(
-                                "\"",
-                                "\"\""
-                            )
-                        }\",${it.rfid ?: ""}\n"
-                    )
-                }
-                sb.append("\n")
 
                 // Append Attendance Records
                 sb.append("=== ATTENDANCE RECORDS ===\n")
                 sb.append("Timestamp,Student Email,Student Name,RFID Tag,Session ID,Session Name\n")
-                allAttendance.forEach {
-                    sb.append(
-                        "${it.timestamp},\"${it.studentEmail}\",\"${
-                            it.studentName.replace(
-                                "\"",
-                                "\"\""
-                            )
-                        }\",${it.studentRfid ?: ""},${it.sessionId},\"${
-                            it.sessionName.replace(
-                                "\"",
-                                "\"\""
-                            )
-                        }\"\n"
-                    )
+                allAttendance.forEach { record ->
+                    sb.append("${record.timestamp},${record.studentEmail},${record.studentName.replace(",", "")},${record.studentRfid ?: ""},${record.sessionId},${record.sessionName.replace(",", "")}\n")
                 }
+                sb.append("=== END ===\n")
 
                 // 3. Write compiled byte arrays safely to the output target stream
                 outputStream.use { stream ->
@@ -396,102 +359,45 @@ abstract class AppDatabase : RoomDatabase() {
                 val studentsToInsert = mutableListOf<Student>()
                 val attendanceToInsert = mutableListOf<Attendance>()
 
-                // Helper helper parsing routine handling simple split rules for escaped quotes
-                fun parseCsvLine(line: String): List<String> {
-                    val tokens = mutableListOf<String>()
-                    var sb = StringBuilder()
-                    var inQuotes = false
-                    var i = 0
-                    while (i < line.length) {
-                        val c = line[i]
-                        if (c == '"') {
-                            if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                                sb.append('"') // Handle escaped quote ""
-                                i++
-                            } else {
-                                inQuotes = !inQuotes
-                            }
-                        } else if (c == ',' && !inQuotes) {
-                            tokens.add(sb.toString())
-                            sb = StringBuilder()
-                        } else {
-                            sb.append(c)
-                        }
-                        i++
-                    }
-                    tokens.add(sb.toString())
-                    return tokens
-                }
-
                 reader.useLines { lines ->
                     lines.forEach { rawLine ->
                         val line = rawLine.trim()
                         if (line.isEmpty()) return@forEach
 
-                        // Identify structural tables transitions markers
                         if (line.startsWith("===")) {
                             currentSection = line
+                            Log.d("AppDatabase", "Switching to section: $currentSection")
                             return@forEach
                         }
 
-                        // Skip individual table headers rows
                         if (line.startsWith("Course ID,") || line.startsWith("Session ID,") ||
                             line.startsWith("Email,") || line.startsWith("Timestamp,")
                         ) {
                             return@forEach
                         }
 
-                        val tokens = parseCsvLine(line)
+                        val rowTokens = line.split(",")
                         try {
                             when (currentSection) {
                                 "=== COURSES ===" -> {
-                                    if (tokens.size >= 4) {
-                                        coursesToInsert.add(
-                                            Course(
-                                                id = tokens[0].toLong(),
-                                                name = tokens[1],
-                                                year = tokens[2].toInt(),
-                                                semester = tokens[3].toInt()
-                                            )
-                                        )
+                                    if (rowTokens.size >= 4 && rowTokens[0].toLongOrNull() != null) {
+                                        coursesToInsert.add(Course(id = rowTokens[0].toLong(), name = rowTokens[1], year = rowTokens[2].toInt(), semester = rowTokens[3].toInt()))
                                     }
                                 }
-
                                 "=== SESSIONS ===" -> {
-                                    if (tokens.size >= 4) {
-                                        sessionsToInsert.add(
-                                            Session(
-                                                id = tokens[0].toLong(),
-                                                courseId = tokens[1].toLong(),
-                                                name = tokens[2],
-                                                date = tokens[3].toLong()
-                                            )
-                                        )
+                                    if (rowTokens.size >= 4 && rowTokens[0].toLongOrNull() != null) {
+                                        sessionsToInsert.add(Session(id = rowTokens[0].toLong(), courseId = rowTokens[1].toLong(), name = rowTokens[2], date = rowTokens[3].toLong()))
                                     }
                                 }
-
                                 "=== STUDENTS ===" -> {
-                                    if (tokens.size >= 2) {
-                                        studentsToInsert.add(
-                                            Student(
-                                            email = tokens[0],
-                                            name = tokens[1],
-                                            rfid = tokens.getOrNull(2)?.takeIf { it.isNotBlank() }
-                                        ))
+                                    if (rowTokens.size >= 2 && !rowTokens[0].startsWith("Email")) {
+                                        studentsToInsert.add(Student(email = rowTokens[0], name = rowTokens[1], rfid = rowTokens.getOrNull(2)?.takeIf { it.isNotBlank() }))
                                     }
                                 }
-
                                 "=== ATTENDANCE RECORDS ===" -> {
-                                    if (tokens.size >= 5) {
-                                        attendanceToInsert.add(
-                                            Attendance(
-                                                timestamp = tokens[0].toLong(),
-                                                studentEmail = tokens[1],
-                                                rfid = tokens.getOrNull(3)
-                                                    ?.takeIf { it.isNotBlank() },
-                                                sessionId = tokens[4].toLong()
-                                            )
-                                        )
+                                    if (rowTokens.size >= 5 && rowTokens[0].toLongOrNull() != null) {
+                                        Log.d("AppDatabase", "Importing Attendance for ${rowTokens[1]} in session ${rowTokens[4]}")
+                                        attendanceToInsert.add(Attendance(timestamp = rowTokens[0].toLong(), studentEmail = rowTokens[1], rfid = rowTokens[3].takeIf { it.isNotBlank() }, sessionId = rowTokens[4].toLong()))
                                     }
                                 }
                             }
@@ -501,34 +407,18 @@ abstract class AppDatabase : RoomDatabase() {
                     }
                 }
 
-                // Database transaction insertion block executed entirely on background thread
                 try {
                     withTransaction {
-                        // Bulk insert structures back into the underlying tables
-                        coursesToInsert.forEach {
-                            Log.d("importFullDatabase", "inserting course: $it")
-                            insertCourse(it) }
-                        insertSessions(sessionsToInsert)
-                        insertStudents(studentsToInsert)
-                        attendanceToInsert.forEach { attendance ->
-                            val insertingStudent =
-                                studentsToInsert.filter { it.email == attendance.studentEmail }[0]
-                            val insertingSession =
-                                sessionsToInsert.filter { it.id == attendance.sessionId }[0]
-                            recordAttendance(
-                                insertingStudent.copy(rfid = attendance.rfid),
-                                insertingSession,
-                                attendance.timestamp
-                            )
-                        }
+                        coursesToInsert.forEach { dao().insertCourse(it) }
+                        dao().insertStudents(studentsToInsert)
+                        dao().insertSessions(sessionsToInsert)
+                        attendanceToInsert.forEach { dao().recordAttendance(it) }
                     }
                 } catch (dbException: Exception) {
                     Log.e("AppDatabase", "Transaction failed during CSV insertion", dbException)
                     return@withContext false
                 }
 
-
-                // Wipe local in-memory cache models clean to force immediate reload
                 courseCache.clear()
                 preloadStudents()
                 true
@@ -537,10 +427,6 @@ abstract class AppDatabase : RoomDatabase() {
                 false
             }
         }
-
-    // ==========================================
-    // LIFECYCLE COMPANION INSTANCE
-    // ==========================================
 
     companion object {
         @Volatile
