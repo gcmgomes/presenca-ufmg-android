@@ -109,22 +109,104 @@ class PresensorDaoTest {
     }
 
     @Test
-    fun deleteSessionsByCourseIdClearsRelatedData() = runBlocking {
-        val c1 = dao.insertCourse(Course(name = "C1"))
-        val c2 = dao.insertCourse(Course(name = "C2"))
+    fun deleteCourseCascades() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val sId = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        dao.recordAttendance(Attendance(studentEmail = "e", sessionId = sId, timestamp = 100L, rfid = null))
         
-        val s1 = dao.insertSession(Session(courseId = c1, name = "S1", date = 1000L))
-        val s2 = dao.insertSession(Session(courseId = c2, name = "S2", date = 2000L))
+        dao.deleteCourse(Course(id = cId, name = "C1"))
+        
+        assertTrue(dao.getAllCourses().isEmpty())
+        assertTrue(dao.getSessionsByCourse(cId).isEmpty())
+        assertTrue(dao.getAttendanceRecordsForSession(sId).isEmpty())
+    }
+
+    @Test
+    fun deleteSessionsByCourseIdCascades() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val sId = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        dao.recordAttendance(Attendance(studentEmail = "e", sessionId = sId, timestamp = 100L, rfid = null))
+        
+        dao.deleteSessionsByCourseId(cId)
+        
+        assertTrue(dao.getSessionsByCourse(cId).isEmpty())
+        assertTrue(dao.getAttendanceRecordsForSession(sId).isEmpty())
+    }
+
+    @Test
+    fun insertSessionsWithConflict() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val s1 = Session(id = 20, courseId = cId, name = "S1", date = 1000L)
+        dao.insertSessions(listOf(s1))
+        
+        // Try inserting same ID again
+        val s2 = Session(id = 20, courseId = cId, name = "S1 Duplicate", date = 2000L)
+        val ids = dao.insertSessions(listOf(s2))
+        
+        assertEquals(1, ids.size)
+        
+        val sessions = dao.getSessionsByCourse(cId)
+        assertEquals(1, sessions.size)
+        assertEquals("S1", sessions[0].name)
+    }
+
+    @Test
+    fun getUnboundStudents() = runBlocking {
+        val s1 = Student("e1", "Bound", "TAG")
+        val s2 = Student("e2", "Unbound", null)
+        dao.insertStudents(listOf(s1, s2))
+        
+        val unbound = dao.getUnboundStudents()
+        assertEquals(1, unbound.size)
+        assertEquals("e2", unbound[0].email)
+    }
+
+    @Test
+    fun updateSessionLock() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val sId = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        
+        dao.updateSessionLock(sId, true)
+        
+        val sessions = dao.getSessionsByCourse(cId)
+        assertTrue(sessions[0].isLocked)
+    }
+
+    @Test
+    fun updateSession() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val sId = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        
+        val session = dao.getSessionsByCourse(cId)[0]
+        val updated = session.copy(name = "New Name")
+        dao.updateSession(updated)
+        
+        val sessions = dao.getSessionsByCourse(cId)
+        assertEquals("New Name", sessions[0].name)
+    }
+
+    @Test
+    fun deleteAttendancesBySessionId() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val sId = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        dao.recordAttendance(Attendance(studentEmail = "e", sessionId = sId, timestamp = 100L, rfid = null))
+        
+        dao.deleteAttendancesBySessionId(sId)
+        
+        assertTrue(dao.getAttendanceRecordsForSession(sId).isEmpty())
+    }
+
+    @Test
+    fun getAllAttendanceForCourse() = runBlocking {
+        val cId = dao.insertCourse(Course(name = "C1"))
+        val s1 = dao.insertSession(Session(courseId = cId, name = "S1", date = 1000L))
+        val s2 = dao.insertSession(Session(courseId = cId, name = "S2", date = 2000L))
+        dao.insertStudents(listOf(Student("e1", "S1"), Student("e2", "S2")))
         
         dao.recordAttendance(Attendance(studentEmail = "e1", sessionId = s1, timestamp = 100L, rfid = null))
         dao.recordAttendance(Attendance(studentEmail = "e2", sessionId = s2, timestamp = 200L, rfid = null))
         
-        dao.deleteSessionsByCourseId(c1)
-        
-        assertTrue(dao.getSessionsByCourse(c1).isEmpty())
-        assertEquals(1, dao.getSessionsByCourse(c2).size)
-        // Attendance for c1's session should be gone (if foreign keys are on or handled in code)
-        // Note: DAO doesn't automatically cascade if not configured in Room, 
-        // but AppDatabase.deleteSessionsByCourseId should handle it if needed.
+        val all = dao.getAllAttendanceForCourse(cId)
+        assertEquals(2, all.size)
     }
 }

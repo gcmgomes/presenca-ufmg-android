@@ -34,6 +34,10 @@ android {
                 "proguard-rules.pro"
             )
         }
+        getByName("debug") {
+            // Enable coverage for instrumentation (androidTest)
+            enableAndroidTestCoverage = true
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

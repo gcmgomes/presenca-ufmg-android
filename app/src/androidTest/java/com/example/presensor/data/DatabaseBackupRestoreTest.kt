@@ -10,6 +10,7 @@ import com.example.presensor.data.entities.Student
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -92,12 +93,105 @@ class DatabaseBackupRestoreTest {
         val malformedCsv = "NOT A REAL BACKUP\n=== COURSES ===\nInvalid,Data,Row"
         val inputStream = ByteArrayInputStream(malformedCsv.toByteArray())
         
-        // The current implementation might return true if it doesn't crash, 
-        // but it shouldn't corrupt the DB. 
-        // Let's check if it handles bad lines gracefully.
         val restoreSuccess = db.importFullDatabaseDump(inputStream)
         
         // Verification: DB should be empty or consistent
         assertTrue(dao.getAllCourses().isEmpty())
+    }
+
+    @Test
+    fun restoreWithForeignKeyViolationReturnsFalse() = runBlocking {
+        // Attendance referencing session 999 which doesn't exist
+        val invalidBackup = "=== ATTENDANCE RECORDS ===\n123456,test@e.com,Name,TAG,999,SessionName\n"
+        val inputStream = ByteArrayInputStream(invalidBackup.toByteArray())
+        
+        val success = db.importFullDatabaseDump(inputStream)
+        
+        // Since we enable PRAGMA foreign_keys = ON in onOpen, 
+        // and we have a ForeignKey in Attendance entity, it should fail.
+        assertFalse("Restore should fail due to foreign key violation", success)
+    }
+
+    @Test
+    fun restoreWithConflictingIdsFails() = runBlocking {
+        val csv = """
+            === COURSES ===
+            10,C1,2023,1
+            10,C2,2023,2
+            === END ===
+        """.trimIndent()
+        
+        val inputStream = ByteArrayInputStream(csv.toByteArray())
+        val success = db.importFullDatabaseDump(inputStream)
+        
+        assertFalse("Restore should fail due to primary key conflict in transaction", success)
+        assertTrue(dao.getAllCourses().isEmpty()) // Transaction should roll back
+    }
+
+    @Test
+    fun restoreHandlesInvalidLinesGracefully() = runBlocking {
+        val mixedCsv = """
+            === COURSES ===
+            100,Valid Course,2023,1
+            BAD,LINE,HERE
+            101,Another Valid,2023,2
+            === STUDENTS ===
+            e1@test.com,Name 1,TAG1
+            e2@test.com,Name 2
+            === END ===
+        """.trimIndent()
+        
+        val inputStream = ByteArrayInputStream(mixedCsv.toByteArray())
+        val success = db.importFullDatabaseDump(inputStream)
+        
+        assertTrue("Import should succeed even with some bad lines", success)
+        assertEquals(2, dao.getAllCourses().size)
+        assertEquals(2, dao.getAllStudents().size)
+    }
+
+    @Test
+    fun backupEmptyDatabase() = runBlocking {
+        val outputStream = ByteArrayOutputStream()
+        val success = db.performFullDatabaseDump(outputStream)
+        assertTrue(success)
+        val data = String(outputStream.toByteArray())
+        assertTrue(data.contains("=== COURSES ==="))
+        assertTrue(data.contains("=== STUDENTS ==="))
+        assertTrue(data.contains("=== SESSIONS ==="))
+        assertTrue(data.contains("=== ATTENDANCE RECORDS ==="))
+        assertTrue(data.contains("=== END ==="))
+    }
+
+    @Test
+    fun backupEscapesCommas() = runBlocking {
+        val course = Course(name = "Course, with, commas")
+        val courseId = dao.insertCourse(course)
+        
+        val outputStream = ByteArrayOutputStream()
+        db.performFullDatabaseDump(outputStream)
+        val data = String(outputStream.toByteArray())
+        
+        assertTrue(data.contains("Course with commas"))
+        assertFalse(data.contains("Course, with, commas"))
+    }
+
+    @Test
+    fun restoreHandlesBlankRfid() = runBlocking {
+        val csv = """
+            === STUDENTS ===
+            e1@test.com,Name 1,
+            e2@test.com,Name 2,   
+            e3@test.com,Name 3,TAG3
+            === END ===
+        """.trimIndent()
+        
+        val inputStream = ByteArrayInputStream(csv.toByteArray())
+        db.importFullDatabaseDump(inputStream)
+        
+        val students = dao.getAllStudents().sortedBy { it.email }
+        assertEquals(3, students.size)
+        assertTrue(students[0].rfid.isNullOrBlank())
+        assertTrue(students[1].rfid.isNullOrBlank())
+        assertEquals("TAG3", students[2].rfid)
     }
 }

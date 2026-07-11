@@ -165,34 +165,29 @@ abstract class AppDatabase : RoomDatabase() {
     suspend fun getStudentsForCourse(courseId: Long): List<Student> =
         withContext(Dispatchers.IO) {
             if(useCourseCache && courseCache.courseId == courseId) {
-                courseCache.activeStudents
+                return@withContext courseCache.activeStudents
             }
             val studentEmails = dao().getAllAttendanceForCourse(courseId).map {it.studentEmail}.toSet()
             getAllStudents().filter {it.email in studentEmails}
         }
 
     suspend fun getAllStudents(): List<Student> = withContext(Dispatchers.IO) {
-        if(useCourseCache) {
-            courseCache.allStudents
+        if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
+            return@withContext courseCache.allStudents
         }
         dao().getAllStudents()
     }
 
     suspend fun getUnboundStudents(): List<Student> = withContext(Dispatchers.IO) {
-        if(useCourseCache) {
-            courseCache.allStudents.filter { it.rfid == null }
+        if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
+            return@withContext courseCache.allStudents.filter { it.rfid == null }
         }
         dao().getUnboundStudents()
     }
 
     suspend fun getStudentByRfid(rfid: String): Student? = withContext(Dispatchers.IO) {
-        if(useCourseCache) {
-            val tempStudents = courseCache.allStudents.filter { it.rfid == rfid }
-            if(tempStudents.isNotEmpty()) {
-                tempStudents[0]
-            } else {
-                null
-            }
+        if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
+            return@withContext courseCache.allStudents.find { it.rfid == rfid }
         }
         dao().getStudentByRfid(rfid)
     }
@@ -262,8 +257,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun getAttendanceRecordsForSession(sid: Long): List<AttendanceRecord> =
         withContext(Dispatchers.IO) {
-            if(useCourseCache) {
-                courseCache.allAttendance.filter {it.sessionId == sid}
+            if(useCourseCache && courseCache.sessionIds.contains(sid)) {
+                return@withContext courseCache.allAttendance.filter {it.sessionId == sid}
             }
             dao().getAttendanceRecordsForSession(sid)
         }
