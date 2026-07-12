@@ -32,6 +32,20 @@ class TimeUtilsTest {
     }
 
     @Test
+    fun `fromMillisToLocalDateTime converts correctly`() {
+        val now = System.currentTimeMillis()
+        val result = TimeUtils.fromMillisToLocalDateTime(now)
+        val expected = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(now),
+            java.time.ZoneId.systemDefault()
+        )
+        assertEquals(expected.year, result.year)
+        assertEquals(expected.month, result.month)
+        assertEquals(expected.dayOfMonth, result.dayOfMonth)
+        assertEquals(expected.hour, result.hour)
+    }
+
+    @Test
     fun `isDateInCurrentWeek logic check`() {
         // This is tricky to test without mocking now(), but we can at least check if today is in current week
         val today = LocalDate.now()

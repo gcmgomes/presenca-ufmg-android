@@ -68,22 +68,46 @@ class CourseCacheTest {
     }
 
     @Test
-    fun `getFilteredStudents returns correct results`() {
+    fun `getFilteredStudents exhaustive coverage`() {
         val student1 = Student("s1@example.com", "John Doe")
         val student2 = Student("s2@example.com", "Jane Smith")
-        cache.activeStudents = listOf(student1, student2)
+        val student3 = Student("s3@example.com", "Johnny Appleseed")
+        cache.activeStudents = listOf(student1, student2, student3)
 
-        assertEquals(2, cache.getFilteredStudents("").size)
-        assertEquals(1, cache.getFilteredStudents("John").size)
-        assertEquals(student1, cache.getFilteredStudents("John")[0])
-        assertEquals(1, cache.getFilteredStudents("jane").size)
-        assertEquals(student2, cache.getFilteredStudents("jane")[0])
-    }
+        // 1. query.isBlank() is true (empty string)
+        assertEquals(3, cache.getFilteredStudents("").size)
+        
+        // 2. query.isBlank() is true (whitespace)
+        assertEquals(3, cache.getFilteredStudents("   ").size)
 
-    @Test
-    fun `getFilteredStudents with blank query returns all active students`() {
-        cache.activeStudents = listOf(Student("s1", "N1"), Student("s2", "N2"))
-        assertEquals(2, cache.getFilteredStudents("   ").size)
+        // 3. Exact match
+        val johnResult = cache.getFilteredStudents("John Doe")
+        assertEquals(1, johnResult.size)
+        assertEquals(student1, johnResult[0])
+
+        // 4. Case insensitivity match
+        val janeResult = cache.getFilteredStudents("JANE")
+        assertEquals(1, janeResult.size)
+        assertEquals(student2, janeResult[0])
+
+        // 5. Multiple matches (John and Johnny)
+        val multipleResult = cache.getFilteredStudents("John")
+        assertEquals(2, multipleResult.size)
+        assertTrue(multipleResult.contains(student1))
+        assertTrue(multipleResult.contains(student3))
+
+        // 6. Substring match in the middle of name
+        val midResult = cache.getFilteredStudents("ppl")
+        assertEquals(1, midResult.size)
+        assertEquals(student3, midResult[0])
+
+        // 7. Match at the end of name
+        val endResult = cache.getFilteredStudents("seed")
+        assertEquals(1, endResult.size)
+        assertEquals(student3, endResult[0])
+
+        // 8. No match
+        assertTrue(cache.getFilteredStudents("Unknown").isEmpty())
     }
 
     @Test

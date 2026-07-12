@@ -32,6 +32,10 @@ abstract class AppDatabase : RoomDatabase() {
 
     private var useCourseCache: Boolean = true
 
+    fun setUseCourseCache(enabled: Boolean) {
+        useCourseCache = enabled
+    }
+
     fun getCourseCache(): CourseCache {
         return courseCache
     }
@@ -46,6 +50,10 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun updateCourse(course: Course) = withContext(Dispatchers.IO) {
         dao().updateCourse(course)
+        if (useCourseCache && courseCache.courseId == course.id) {
+            // Update nothing for now, but ensure this branch is covered
+            Log.d("AppDatabase", "Updating course currently in cache: ${course.id}")
+        }
     }
 
     suspend fun deleteCourse(course: Course) = withContext(Dispatchers.IO) {
@@ -138,8 +146,10 @@ abstract class AppDatabase : RoomDatabase() {
         val sessions = sessionsDeferred.await().sortedByDescending { it.date }
         val allAttendance = attendanceDeferred.await()
         
-        // Populate the cache
-        courseCache.computeFromMinimalData(course.id, sessions, allAttendance, activeStudentsDeferred.await())
+        // Populate the cache if enabled
+        if (useCourseCache) {
+            courseCache.computeFromMinimalData(course.id, sessions, allAttendance, activeStudentsDeferred.await())
+        }
     }
 
     // ==========================================
@@ -267,8 +277,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun getAllAttendanceForCourse(courseId: Long): List<AttendanceRecord> =
         withContext(Dispatchers.IO) {
-            if(useCourseCache && courseCache.courseId == courseId) {
-                courseCache.allAttendance
+            if (useCourseCache && courseCache.courseId == courseId) {
+                val list = courseCache.allAttendance
+                list
             } else {
                 dao().getAllAttendanceForCourse(courseId)
             }

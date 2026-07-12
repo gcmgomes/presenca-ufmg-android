@@ -51,27 +51,31 @@ object DataProcessor {
     }
 
     fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri, caller: String = "Unknown"): InternalDataTable {
+        return contentResolver.openInputStream(uri)?.use { inputStream ->
+            ingestFromInputStream(inputStream, caller)
+        } ?: InternalDataTable(emptyList(), emptyList())
+    }
+
+    fun ingestFromInputStream(inputStream: java.io.InputStream, caller: String = "Unknown"): InternalDataTable {
         val rows = mutableListOf<List<String>>()
         var headers = listOf<String>()
 
-        contentResolver.openInputStream(uri)?.use { inputStream ->
-            val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
-            val lines = reader.readLines()
-            if (lines.isNotEmpty()) {
-                var firstLine = lines[0]
-                if (firstLine.startsWith("\uFEFF")) {
-                    firstLine = firstLine.substring(1)
-                }
-                headers = parseCsvLine(firstLine)
-                
-                Log.d("DataProcessor", "Ingestion pipeline started by: $caller")
-                Log.d("DataProcessor", "Headers found in CSV: ${headers.joinToString(", ")}")
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+        val lines = reader.readLines()
+        if (lines.isNotEmpty()) {
+            var firstLine = lines[0]
+            if (firstLine.startsWith("\uFEFF")) {
+                firstLine = firstLine.substring(1)
+            }
+            headers = parseCsvLine(firstLine)
+            
+            Log.d("DataProcessor", "Ingestion pipeline started by: $caller")
+            Log.d("DataProcessor", "Headers found in CSV: ${headers.joinToString(", ")}")
 
-                for (i in 1 until lines.size) {
-                    val line = lines[i]
-                    if (line.isNotBlank()) {
-                        rows.add(parseCsvLine(line))
-                    }
+            for (i in 1 until lines.size) {
+                val line = lines[i]
+                if (line.isNotBlank()) {
+                    rows.add(parseCsvLine(line))
                 }
             }
         }
@@ -210,8 +214,8 @@ object DataProcessor {
         for (i in 0 until table.rowCount) {
             val row = table.rows[i]
             val rowNum = i + 2
-            val name = row.getOrNull(nameIdx) ?: ""
-            val email = row.getOrNull(emailIdx) ?: ""
+            val name = row.getOrNull(nameIdx)?.trim() ?: ""
+            val email = row.getOrNull(emailIdx)?.trim() ?: ""
             
             if (name.isNotEmpty() && email.isNotEmpty()) {
                 students.add(Student(email = email, name = name))

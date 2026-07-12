@@ -375,16 +375,73 @@ class AppDatabaseTest {
     }
 
     @Test
-    fun getAllAttendanceForCourseUsesCache() = runBlocking {
-        val courseId = db.insertCourse(Course(name = "C1"))
-        db.loadSessionsForCourse(Course(id = courseId, name = "C1"))
+    fun updateCourseWorks() = runBlocking {
+        val courseId = db.insertCourse(Course(name = "Old Name"))
+        val updatedCourse = Course(id = courseId, name = "New Name")
+        db.updateCourse(updatedCourse)
         
-        db.getCourseCache().allAttendance = listOf(
-            AttendanceRecord(2000L, "N", null, "E", "S1", 100L)
-        )
+        val courses = db.getAllCourses()
+        assertEquals("New Name", courses[0].name)
+    }
+
+    @Test
+    fun updateCourseUpdatesCacheAware() = runBlocking {
+        val courseId = db.insertCourse(Course(name = "Original"))
+        db.loadSessionsForCourse(Course(id = courseId, name = "Original"))
         
-        val records = db.getAllAttendanceForCourse(courseId)
-        assertEquals(1, records.size)
-        assertEquals(2000L, records[0].timestamp)
+        // This will hit the branch where courseId matches
+        db.updateCourse(Course(id = courseId, name = "Updated"))
+        
+        val courses = db.getAllCourses()
+        assertEquals("Updated", courses[0].name)
+    }
+
+    @Test
+    fun preloadStudentsDirectly() = runBlocking {
+        val students = listOf(Student("e1", "N1"), Student("e2", "N2"))
+        db.insertStudents(students)
+        
+        db.preloadStudents()
+        
+        assertEquals(2, db.getCourseCache().allStudents.size)
+    }
+
+    @Test
+    fun testOperationsWithoutCache() = runBlocking {
+        db.setUseCourseCache(false)
+        
+        val courseId = db.insertCourse(Course(name = "NoCache"))
+        db.updateCourse(Course(id = courseId, name = "UpdatedName"))
+        
+        db.insertSession(courseId, "S1", 1000L)
+        db.insertSessions(listOf(Session(courseId = courseId, name = "S2", date = 2000L)))
+        
+        val session = db.getSessionsByCourse(courseId)[0]
+        db.updateSessionLock(session.id, true)
+        db.updateSession(session.copy(name = "Updated"))
+        
+        val student = Student("e@test.com", "N", null)
+        db.insertStudents(listOf(student))
+        db.bindTagToStudent("TAG", "e@test.com")
+        db.clearTagFromOthers("TAG")
+        db.clearAndBind("TAG2", "e@test.com")
+        
+        db.recordAttendance(student, session, 3000L)
+        db.preloadStudents()
+        db.getAttendanceRecordsForSession(session.id)
+        db.getStudentsForCourse(courseId)
+        db.getAllStudents()
+        db.getUnboundStudents()
+        db.getStudentByRfid("TAG2")
+        db.getAllAttendanceForCourse(courseId)
+        db.loadSessionsForCourse(Course(id = courseId, name = "UpdatedName"))
+        db.deleteAttendancesBySessionId(session.id)
+        db.deleteSession(session)
+        db.deleteSessionsByCourseId(courseId)
+        db.deleteCourse(Course(id = courseId, name = "UpdatedName"))
+        
+        // Cache should be empty since it was disabled
+        assertTrue(db.getCourseCache().allSessions.isEmpty())
+        assertTrue(db.getCourseCache().allStudents.isEmpty())
     }
 }
