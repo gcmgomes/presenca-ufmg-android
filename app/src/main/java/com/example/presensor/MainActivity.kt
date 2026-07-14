@@ -3,7 +3,10 @@ package com.example.presensor
 import android.app.Activity
 import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
+import com.example.presensor.controllers.dialogs.AndroidTagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.tools.providers.ToastProvider
+import com.example.presensor.tools.providers.AndroidToastProvider
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -278,9 +281,10 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             db = db,
             scope = lifecycleScope,
-            layoutInflater = layoutInflater,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
+            tagControllerDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
+            toastProvider = AndroidToastProvider(this),
             isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() }
         )
         DialogFactory.tagController = tagController
@@ -463,7 +467,7 @@ class MainActivity : AppCompatActivity() {
             readerFlags = readerFlags or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
         }
 
-        tagController.getNfcAdapter().enableReaderMode(
+        tagController.getNfcAdapter()?.enableReaderMode(
             this,
             tagController,
             readerFlags,

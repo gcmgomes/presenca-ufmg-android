@@ -40,6 +40,14 @@ object DialogFactory {
      */
     fun isAnyDialogOpen(): Boolean = isDialogOpen
 
+    fun resetForTesting() {
+        isDialogOpen = false
+    }
+
+    fun setDialogOpenForTesting(open: Boolean) {
+        isDialogOpen = open
+    }
+
 
 
     // Private helper extension that manages the state tracker centrally

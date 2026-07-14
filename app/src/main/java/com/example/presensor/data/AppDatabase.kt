@@ -162,7 +162,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun insertStudents(students: List<Student>) = withContext(Dispatchers.IO) {
+    suspend fun insertStudents(students: List<Student>) {
         val knownEmails = if (useCourseCache) courseCache.allStudents.map { it.email }.toSet() else emptySet()
         dao().insertStudents(students)
 
@@ -181,32 +181,32 @@ abstract class AppDatabase : RoomDatabase() {
             getAllStudents().filter {it.email in studentEmails}
         }
 
-    suspend fun getAllStudents(): List<Student> = withContext(Dispatchers.IO) {
+    suspend fun getAllStudents(): List<Student> {
         if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
-            return@withContext courseCache.allStudents
+            return courseCache.allStudents
         }
-        dao().getAllStudents()
+        return dao().getAllStudents()
     }
 
-    suspend fun getUnboundStudents(): List<Student> = withContext(Dispatchers.IO) {
+    suspend fun getUnboundStudents(): List<Student> {
         if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
-            return@withContext courseCache.allStudents.filter { it.rfid == null }
+            return courseCache.allStudents.filter { it.rfid == null }
         }
-        dao().getUnboundStudents()
+        return dao().getUnboundStudents()
     }
 
-    suspend fun getStudentByRfid(rfid: String): Student? = withContext(Dispatchers.IO) {
+    suspend fun getStudentByRfid(rfid: String): Student? {
         if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
-            return@withContext courseCache.allStudents.find { it.rfid == rfid }
+            return courseCache.allStudents.find { it.rfid == rfid }
         }
-        dao().getStudentByRfid(rfid)
+        return dao().getStudentByRfid(rfid)
     }
 
     // ==========================================
     // RFID TAG BINDING MANAGEMENT
     // ==========================================
 
-    suspend fun clearTagFromOthers(rfid: String) = withContext(Dispatchers.IO) {
+    suspend fun clearTagFromOthers(rfid: String) {
         dao().clearTagFromOthers(rfid)
 
         if (useCourseCache) {
@@ -215,7 +215,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun bindTagToStudent(rfid: String?, email: String) = withContext(Dispatchers.IO) {
+    suspend fun bindTagToStudent(rfid: String?, email: String) {
         dao().bindTagToStudent(rfid, email)
 
         if (useCourseCache) {
@@ -224,7 +224,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun clearAndBind(rfid: String, email: String) = withContext(Dispatchers.IO) {
+    suspend fun clearAndBind(rfid: String, email: String) {
         dao().clearAndBind(rfid, email)
 
         if (useCourseCache) {
