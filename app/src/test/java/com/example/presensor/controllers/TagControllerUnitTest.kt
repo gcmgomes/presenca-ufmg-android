@@ -231,7 +231,6 @@ class TagControllerUnitTest : BaseControllerTest() {
         val flagsCaptor = argumentCaptor<Int>()
         verify(nfcAdapter).enableReaderMode(any(), any(), flagsCaptor.capture(), any())
         
-        // FLAG_READER_NFC_A (1) | FLAG_READER_SKIP_NDEF_CHECK (128) = 129
         assert(flagsCaptor.firstValue and NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS == 0)
     }
 
@@ -257,5 +256,10 @@ class TagControllerUnitTest : BaseControllerTest() {
         ShadowLooper.idleMainLooper()
 
         verify(sessionController).activeSession
+    }
+
+    @Test
+    fun getNfcAdapter_returnsAdapter() {
+        assert(tagController.getNfcAdapter() == nfcAdapter)
     }
 }
