@@ -28,6 +28,7 @@ import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.FileList
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.SheetsScopes
+import com.example.presensor.tools.providers.LoadingOverlayProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -166,7 +167,7 @@ class CloudSyncController(
         onLoadingToggle(true)
 
         activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
+            (activity as? LoadingOverlayProvider)?.setCurrentOverlayJob(coroutineContext[Job])
             try {
                 val outputStream = ByteArrayOutputStream()
                 val dumpSuccess = db.performFullDatabaseDump(outputStream)
@@ -210,7 +211,7 @@ class CloudSyncController(
     fun fetchAvailableBackups(onResult: (List<com.google.api.services.drive.model.File>) -> Unit) {
         Log.d("CloudSync", "Fetching backups from Drive...")
         activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
+            (activity as? LoadingOverlayProvider)?.setCurrentOverlayJob(coroutineContext[Job])
             try {
                 val service = driveService ?: return@launch
                 val prefix = activity.getString(R.string.dialog_cloud_backup_prefix)
@@ -239,7 +240,7 @@ class CloudSyncController(
         onComplete: (Boolean) -> Unit
     ) {
         activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
-            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
+            (activity as? LoadingOverlayProvider)?.setCurrentOverlayJob(coroutineContext[Job])
             val service = driveService ?: return@launch
             onLoadingToggle(true)
 
@@ -290,7 +291,7 @@ class CloudSyncController(
     fun fetchAvailableSpreadsheets(onResult: (List<com.google.api.services.drive.model.File>) -> Unit) {
         Log.d("CloudSync", "Fetching spreadsheets from Drive...")
         activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
+            (activity as? LoadingOverlayProvider)?.setCurrentOverlayJob(coroutineContext[Job])
             try {
                 val service = driveService ?: return@launch
                 val result: FileList = service.files().list()
@@ -315,7 +316,7 @@ class CloudSyncController(
      */
     fun fetchSpreadsheetTabs(spreadsheetId: String, onResult: (List<String>) -> Unit) {
         activeJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            (activity as? MainActivity)?.currentOverlayJob = coroutineContext[Job]
+            (activity as? LoadingOverlayProvider)?.setCurrentOverlayJob(coroutineContext[Job])
             try {
                 val service = sheetsService ?: return@launch
 

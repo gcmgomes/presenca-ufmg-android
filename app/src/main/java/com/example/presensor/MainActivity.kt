@@ -65,11 +65,17 @@ import com.example.presensor.controllers.TagController
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
-import com.example.presensor.data.entities.Attendance
-import com.example.presensor.data.entities.AttendanceRecord
+import com.example.presensor.controllers.ImportSessionController
+import com.example.presensor.controllers.ImportStudentController
+import com.example.presensor.tools.providers.AndroidDataProcessorProvider
+import com.example.presensor.tools.providers.AndroidDialogProvider
+import com.example.presensor.tools.providers.DialogProvider
+import com.example.presensor.tools.providers.LoadingOverlayProvider
+import com.example.presensor.tools.providers.PreviewProvider
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
     private enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS }
 
@@ -82,6 +88,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var detailedCourseController: DetailedCourseController
     private lateinit var sessionController: SessionController
     private lateinit var tagController: TagController
+    lateinit var importSessionController: ImportSessionController
+    lateinit var importStudentController: ImportStudentController
 
     lateinit var cloudSyncController: CloudSyncController
 
@@ -97,14 +105,18 @@ class MainActivity : AppCompatActivity() {
     lateinit var loadingOverlay: View
 
     // Tracks any active background job associated with the loading overlay for cancellation
-    var currentOverlayJob: kotlinx.coroutines.Job? = null
+    private var currentOverlayJob: Job? = null
 
-    fun toggleLoadingOverlay(show: Boolean) {
+    override fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
         if (!show) {
             currentOverlayJob?.cancel()
             currentOverlayJob = null
         }
+    }
+
+    override fun setCurrentOverlayJob(job: Job?) {
+        currentOverlayJob = job
     }
 
     // Flag to orchestrate the focus lock state safely
@@ -225,6 +237,46 @@ class MainActivity : AppCompatActivity() {
             lifecycleOwner = this,
             db = db,
             refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
+        )
+
+        val toastProvider = AndroidToastProvider(this)
+        val dataProcessorProvider = AndroidDataProcessorProvider()
+        val previewProvider = PreviewProvider(this)
+
+        // Initialize Import Controllers
+        val customDialogProvider = object : DialogProvider {
+            override fun showMappingDialog(context: Context, fields: List<String>, columns: List<String>, sampleRow: List<String>?, onDismissed: () -> Unit, onConfirmed: (Map<String, String>) -> Unit) {
+                DialogFactory.showMappingDialog(context, fields, columns, sampleRow, onDismissed, onConfirmed)
+            }
+
+            override fun showSessionImportPreview(activity: AppCompatActivity, sessions: List<Session>, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+                previewProvider.showSessionImportPreview(sessions, onConfirm, onDismiss)
+            }
+
+            override fun showStudentImportPreview(activity: AppCompatActivity, students: List<Student>, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+                previewProvider.showStudentImportPreview(students, onConfirm, onDismiss)
+            }
+        }
+
+        importSessionController = ImportSessionController(
+            activity = this,
+            context = this,
+            scope = lifecycleScope,
+            db = db,
+            dataProcessorProvider = dataProcessorProvider,
+            dialogProvider = customDialogProvider,
+            loadingOverlayProvider = this,
+            toastProvider = toastProvider
+        )
+        importStudentController = ImportStudentController(
+            activity = this,
+            context = this,
+            scope = lifecycleScope,
+            db = db,
+            dataProcessorProvider = dataProcessorProvider,
+            dialogProvider = customDialogProvider,
+            loadingOverlayProvider = this,
+            toastProvider = toastProvider
         )
 
         // Initialize Dashboard Controller

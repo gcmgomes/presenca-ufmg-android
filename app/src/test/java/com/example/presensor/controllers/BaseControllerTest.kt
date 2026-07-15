@@ -13,7 +13,9 @@ import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.data.entities.Course
 import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32])
@@ -37,6 +39,10 @@ abstract class BaseControllerTest {
         
         activity = Robolectric.buildActivity(AppCompatActivity::class.java).create().get()
         activity.setTheme(androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
+    }
+
+    protected fun insertTestCourse(id: Long = 1L) = runBlocking {
+        db.insertCourse(Course(id = id, name = "Test Course", year = 2024, semester = 1))
     }
 
     @After

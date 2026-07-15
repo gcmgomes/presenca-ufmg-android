@@ -63,8 +63,7 @@ class DashboardCloudActions(
 
                             // 4. Trigger background sheet data collection ingestion
                             activity.toggleLoadingOverlay(true)
-                            ImportStudentController.importFromCloud(
-                                activity,
+                            activity.importStudentController.importFromCloud(
                                 activity.cloudSyncController.getSheetsService(),
                                 selectedSpreadsheet.id,
                                 selectedTab

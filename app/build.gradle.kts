@@ -86,6 +86,8 @@ val jacocoTestReport by tasks.registering(JacocoReport::class) {
     val debugTree = fileTree("${project.layout.buildDirectory.get()}/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes") {
         include("**/TagController.class")
         include("**/SessionController.class")
+        include("**/ImportSessionController.class")
+        include("**/ImportStudentController.class")
     }
     val mainSrc = "${project.projectDir}/src/main/java"
 

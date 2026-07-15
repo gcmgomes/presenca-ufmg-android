@@ -366,8 +366,7 @@ class CourseController(
     }
 
     private fun importSessionsFromCsv(uri: Uri, courseId: Long) {
-        ImportSessionController.importFromLocal(
-            activity = activity,
+        activity.importSessionController.importFromLocal(
             uri = uri,
             courseId = courseId,
             onImportComplete = { refreshCourseUI() }

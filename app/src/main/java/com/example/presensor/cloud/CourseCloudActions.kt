@@ -72,8 +72,7 @@ class CourseCloudActions(
                             getName = { it }
                         ) { selectedTab ->
                             // 4. Trigger background parsing matching local structural rules
-                            ImportSessionController.importFromCloud(
-                                activity = activity,
+                            activity.importSessionController.importFromCloud(
                                 sheetsService = activity.cloudSyncController.getSheetsService(),
                                 spreadsheetId = selectedSpreadsheet.id,
                                 tabTitle = selectedTab,
@@ -151,7 +150,7 @@ class CourseCloudActions(
         val course = getSelectedCourse() ?: return
         activity.toggleLoadingOverlay(true)
 
-        activity.currentOverlayJob = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        val job = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val sheetsService = activity.cloudSyncController.getSheetsService()
                     ?: throw IllegalStateException("Sheets service was not initialized properly")
@@ -254,5 +253,6 @@ class CourseCloudActions(
                 }
             }
         }
+        activity.setCurrentOverlayJob(job)
     }
 }

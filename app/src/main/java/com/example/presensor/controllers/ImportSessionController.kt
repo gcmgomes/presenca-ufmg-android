@@ -1,69 +1,97 @@
 package com.example.presensor.controllers
 
+import android.content.Context
 import android.net.Uri
 import android.util.Log
-import android.view.LayoutInflater
-import android.widget.Button
-import android.widget.TextView
 import android.widget.Toast
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.MainActivity
+import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
-import com.example.presensor.adapters.ImportPreviewAdapter
-import com.example.presensor.tools.DataProcessor
+import com.example.presensor.tools.providers.DataProcessorProvider
+import com.example.presensor.tools.providers.DialogProvider
+import com.example.presensor.tools.providers.LoadingOverlayProvider
+import com.example.presensor.tools.providers.ToastProvider
+import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
-import com.example.presensor.controllers.dialogs.DialogFactory
-import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-object ImportSessionController {
+class ImportSessionController(
+    private val activity: AppCompatActivity,
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val db: AppDatabase,
+    private val dataProcessorProvider: DataProcessorProvider,
+    private val dialogProvider: DialogProvider,
+    private val loadingOverlayProvider: LoadingOverlayProvider,
+    private val toastProvider: ToastProvider,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     private fun handleTableIngested(
-        activity: MainActivity,
         table: InternalDataTable,
         courseId: Long,
         onImportComplete: () -> Unit
     ) {
-        activity.lifecycleScope.launch(Dispatchers.Main) {
-            DialogFactory.showMappingDialog(
-                activity,
+        scope.launch(mainDispatcher) {
+            dialogProvider.showMappingDialog(
+                context,
                 fields = listOf("name", "date"),
                 columns = table.headers,
                 sampleRow = table.rows.firstOrNull(),
-                onDismissed = { activity.toggleLoadingOverlay(false) },
+                onDismissed = { loadingOverlayProvider.toggleLoadingOverlay(false) },
                 onConfirmed = { mapping ->
-                    val result = DataProcessor.parseSessionsFromTable(activity, table, courseId, mapping)
+                    val result = dataProcessorProvider.parseSessionsFromTable(context, table, courseId, mapping)
                     if (result.items.isNotEmpty()) {
-                        showSessionImportPreview(activity, result.items, onImportComplete)
+                        dialogProvider.showSessionImportPreview(
+                            activity,
+                            result.items,
+                            onConfirm = { executeImport(result.items, onImportComplete) },
+                            onDismiss = { loadingOverlayProvider.toggleLoadingOverlay(false) }
+                        )
                         if (result.errors.isNotEmpty()) {
-                            Toast.makeText(
-                                activity,
-                                activity.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
+                            toastProvider.showToast(
+                                context.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
                                 Toast.LENGTH_LONG
-                            ).show()
+                            )
                             result.errors.forEach { Log.w("ImportSession", it) }
                         }
                     } else {
                         val errorMessage = if (result.errors.isNotEmpty()) {
-                            activity.getString(R.string.msg_failed_to_parse_any, result.errors.take(2).joinToString("\n"))
+                            context.getString(R.string.msg_failed_to_parse_any, result.errors.take(2).joinToString("\n"))
                         } else {
-                            activity.getString(R.string.error_parsing_mapping_sessions)
+                            context.getString(R.string.error_parsing_mapping_sessions)
                         }
-                        Toast.makeText(activity, errorMessage, Toast.LENGTH_LONG).show()
-                        activity.toggleLoadingOverlay(false)
+                        toastProvider.showToast(errorMessage, Toast.LENGTH_LONG)
+                        loadingOverlayProvider.toggleLoadingOverlay(false)
                     }
                 }
             )
         }
     }
 
+    private fun executeImport(sessions: List<Session>, onImportComplete: () -> Unit) {
+        loadingOverlayProvider.toggleLoadingOverlay(true)
+        val job = scope.launch {
+            withContext(ioDispatcher) {
+                db.insertSessions(sessions)
+            }
+            
+            withContext(mainDispatcher) {
+                loadingOverlayProvider.toggleLoadingOverlay(false)
+                onImportComplete()
+                val toastMsg = context.getString(R.string.toast_imported_sessions, sessions.size)
+                toastProvider.showToast(toastMsg)
+            }
+        }
+        loadingOverlayProvider.setCurrentOverlayJob(job)
+    }
+
     fun importFromCloud(
-        activity: MainActivity,
         sheetsService: com.google.api.services.sheets.v4.Sheets?,
         spreadsheetId: String,
         tabTitle: String,
@@ -71,95 +99,47 @@ object ImportSessionController {
         onImportComplete: () -> Unit
     ) {
         if (sheetsService == null) {
-            activity.toggleLoadingOverlay(false)
+            loadingOverlayProvider.toggleLoadingOverlay(false)
             return
         }
-        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
+        val job = scope.launch(ioDispatcher) {
             try {
-                val table = DataProcessor.ingestFromGoogleSheets(
-                    activity,
+                val table = dataProcessorProvider.ingestFromGoogleSheets(
+                    context,
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'",
                     caller = "ImportSessionController.importFromCloud"
                 )
-                handleTableIngested(activity, table, courseId, onImportComplete)
+                handleTableIngested(table, courseId, onImportComplete)
             } catch (e: Exception) {
                 Log.e("ImportSession", "Failed to ingest schedule from Sheets", e)
-                withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_schedule_import_failed), Toast.LENGTH_SHORT).show()
+                withContext(mainDispatcher) {
+                    loadingOverlayProvider.toggleLoadingOverlay(false)
+                    toastProvider.showToast(context.getString(R.string.toast_cloud_schedule_import_failed))
                 }
             }
         }
+        loadingOverlayProvider.setCurrentOverlayJob(job)
     }
 
     fun importFromLocal(
-        activity: MainActivity,
         uri: Uri,
         courseId: Long,
         onImportComplete: () -> Unit
     ) {
-        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
+        val job = scope.launch(ioDispatcher) {
             try {
-                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri, caller = "ImportSessionController.importFromLocal")
-                handleTableIngested(activity, table, courseId, onImportComplete)
+                val table = dataProcessorProvider.ingestFromCsv(context.contentResolver, uri, caller = "ImportSessionController.importFromLocal")
+                handleTableIngested(table, courseId, onImportComplete)
             } catch (e: Exception) {
                 Log.e("ImportSession", "CSV Import error", e)
-                withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(activity, activity.getString(R.string.toast_csv_import_error), Toast.LENGTH_SHORT).show()
+                withContext(mainDispatcher) {
+                    loadingOverlayProvider.toggleLoadingOverlay(false)
+                    toastProvider.showToast(context.getString(R.string.toast_csv_import_error))
                 }
             }
         }
-    }
-
-    private fun showSessionImportPreview(
-        activity: MainActivity,
-        sessions: List<Session>,
-        onImportComplete: () -> Unit
-    ) {
-        val bottomSheet = BottomSheetDialog(activity)
-        val view = LayoutInflater.from(activity).inflate(R.layout.layout_import_session_preview, activity.findViewById(android.R.id.content), false)
-        bottomSheet.setContentView(view)
-
-        var importConfirmed = false
-
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportPreview)
-        val txtImportCount = view.findViewById<TextView>(R.id.txtImportCount)
-        val btnConfirm = view.findViewById<Button>(R.id.btnConfirmImport)
-
-        recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportPreviewAdapter(sessions)
-
-        txtImportCount.text = activity.getString(R.string.dialog_import_sessions_hint, sessions.size)
-        btnConfirm.text = activity.getString(R.string.dialog_import_sessions_button_text)
-
-        btnConfirm.setOnClickListener {
-            importConfirmed = true
-            activity.toggleLoadingOverlay(true)
-
-            activity.currentOverlayJob = activity.lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    activity.getDb().insertSessions(sessions)
-                }
-                
-                bottomSheet.dismiss()
-                activity.toggleLoadingOverlay(false)
-                
-                onImportComplete()
-
-                val toastMsg = activity.getString(R.string.toast_imported_sessions, sessions.size)
-                Toast.makeText(activity, toastMsg, Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        bottomSheet.setOnDismissListener {
-            if (!importConfirmed) {
-                activity.toggleLoadingOverlay(false)
-            }
-        }
-
-        bottomSheet.show()
+        loadingOverlayProvider.setCurrentOverlayJob(job)
     }
 }

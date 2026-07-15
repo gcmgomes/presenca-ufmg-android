@@ -202,10 +202,7 @@ class DashboardController(
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
                 result.data?.data?.let { uri ->
-                    ImportStudentController.importFromLocal(
-                        activity,
-                        uri
-                    )
+                    activity.importStudentController.importFromLocal(uri)
                 }
             }
         }

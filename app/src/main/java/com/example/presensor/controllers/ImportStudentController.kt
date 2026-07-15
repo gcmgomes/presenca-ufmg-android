@@ -1,167 +1,140 @@
 package com.example.presensor.controllers
 
+import android.content.Context
 import android.net.Uri
 import android.util.Log
-import android.widget.TextView
 import android.widget.Toast
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.example.presensor.MainActivity
+import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
-import com.example.presensor.adapters.ImportStudentAdapter
-import com.example.presensor.tools.DataProcessor
+import com.example.presensor.tools.providers.DataProcessorProvider
+import com.example.presensor.tools.providers.DialogProvider
+import com.example.presensor.tools.providers.LoadingOverlayProvider
+import com.example.presensor.tools.providers.ToastProvider
+import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Student
-import com.example.presensor.controllers.dialogs.DialogFactory
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-object ImportStudentController {
+class ImportStudentController(
+    private val activity: AppCompatActivity,
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val db: AppDatabase,
+    private val dataProcessorProvider: DataProcessorProvider,
+    private val dialogProvider: DialogProvider,
+    private val loadingOverlayProvider: LoadingOverlayProvider,
+    private val toastProvider: ToastProvider,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     private fun handleTableIngested(
-        activity: MainActivity,
         table: InternalDataTable
     ) {
-        activity.lifecycleScope.launch(Dispatchers.Main) {
-            DialogFactory.showMappingDialog(
-                activity,
+        scope.launch(mainDispatcher) {
+            dialogProvider.showMappingDialog(
+                context,
                 fields = listOf("name", "email"),
                 columns = table.headers,
                 sampleRow = table.rows.firstOrNull(),
-                onDismissed = { activity.toggleLoadingOverlay(false) },
+                onDismissed = { loadingOverlayProvider.toggleLoadingOverlay(false) },
                 onConfirmed = { mapping ->
-                    val result = DataProcessor.parseStudentsFromTable(activity, table, mapping)
+                    val result = dataProcessorProvider.parseStudentsFromTable(context, table, mapping)
                     if (result.items.isNotEmpty()) {
-                        showStudentImportPreview(activity, result.items)
+                        dialogProvider.showStudentImportPreview(
+                            activity,
+                            result.items,
+                            onConfirm = { executeImport(result.items) },
+                            onDismiss = { loadingOverlayProvider.toggleLoadingOverlay(false) }
+                        )
                         if (result.errors.isNotEmpty()) {
-                            Toast.makeText(
-                                activity,
-                                activity.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
+                            toastProvider.showToast(
+                                context.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
                                 Toast.LENGTH_LONG
-                            ).show()
-                            // Log specific errors for the developer/user to see in logcat if needed
+                            )
                             result.errors.forEach { Log.w("ImportStudent", it) }
                         }
                     } else {
                         val errorMessage = if (result.errors.isNotEmpty()) {
-                            activity.getString(R.string.msg_failed_to_parse_any, result.errors.take(3).joinToString("\n"))
+                            context.getString(R.string.msg_failed_to_parse_any, result.errors.take(3).joinToString("\n"))
                         } else {
-                            activity.getString(R.string.toast_cloud_student_import_empty)
+                            context.getString(R.string.toast_cloud_student_import_empty)
                         }
-                        Toast.makeText(activity, errorMessage, Toast.LENGTH_LONG).show()
-                        activity.toggleLoadingOverlay(false)
+                        toastProvider.showToast(errorMessage, Toast.LENGTH_LONG)
+                        loadingOverlayProvider.toggleLoadingOverlay(false)
                     }
                 }
             )
         }
     }
 
+    private fun executeImport(students: List<Student>) {
+        loadingOverlayProvider.toggleLoadingOverlay(true)
+        val job = scope.launch {
+            withContext(ioDispatcher) {
+                db.insertStudents(students)
+            }
+
+            withContext(mainDispatcher) {
+                loadingOverlayProvider.toggleLoadingOverlay(false)
+                toastProvider.showToast(
+                    context.getString(R.string.toast_cloud_student_import_success, students.size)
+                )
+            }
+        }
+        loadingOverlayProvider.setCurrentOverlayJob(job)
+    }
+
     fun importFromCloud(
-        activity: MainActivity,
         sheetsService: com.google.api.services.sheets.v4.Sheets?,
         spreadsheetId: String,
         tabTitle: String
     ) {
         if (sheetsService == null) {
-            activity.toggleLoadingOverlay(false)
+            loadingOverlayProvider.toggleLoadingOverlay(false)
             return
         }
-        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
+        val job = scope.launch(ioDispatcher) {
             try {
-                val table = DataProcessor.ingestFromGoogleSheets(
-                    activity,
+                val table = dataProcessorProvider.ingestFromGoogleSheets(
+                    context,
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'",
                     caller = "ImportStudentController.importFromCloud"
                 )
-                handleTableIngested(activity, table)
+                handleTableIngested(table)
             } catch (e: Exception) {
                 Log.e("CloudSync", "Failed to read rows within selected sheet layout bounds", e)
-                withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(
-                        activity,
-                        activity.getString(R.string.toast_cloud_student_import_failed),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                withContext(mainDispatcher) {
+                    loadingOverlayProvider.toggleLoadingOverlay(false)
+                    toastProvider.showToast(
+                        context.getString(R.string.toast_cloud_student_import_failed)
+                    )
                 }
             }
         }
+        loadingOverlayProvider.setCurrentOverlayJob(job)
     }
 
-    private fun importFromCsv(activity: MainActivity, uri: Uri) {
-        activity.currentOverlayJob = activity.lifecycleScope.launch(Dispatchers.IO) {
+    fun importFromLocal(uri: Uri) {
+        val job = scope.launch(ioDispatcher) {
             try {
-                val table = DataProcessor.ingestFromCsv(activity.contentResolver, uri, caller = "ImportStudentController.importFromCsv")
-                handleTableIngested(activity, table)
+                val table = dataProcessorProvider.ingestFromCsv(context.contentResolver, uri, caller = "ImportStudentController.importFromLocal")
+                handleTableIngested(table)
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        activity,
-                        activity.getString(R.string.toast_export_failed),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                withContext(mainDispatcher) {
+                    loadingOverlayProvider.toggleLoadingOverlay(false)
+                    toastProvider.showToast(
+                        context.getString(R.string.toast_csv_import_error)
+                    )
                 }
             }
         }
-    }
-
-    fun importFromLocal(activity: MainActivity, uri: Uri) {
-        importFromCsv(activity, uri)
-    }
-
-    private fun showStudentImportPreview(activity: MainActivity, students: List<Student>) {
-        val bottomSheet = BottomSheetDialog(activity)
-        val view = activity.layoutInflater.inflate(R.layout.layout_import_student_preview, null)
-        bottomSheet.setContentView(view)
-
-        // Flag to keep track of whether the user actually confirmed the action
-        var importConfirmed = false
-
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportStudentPreview)
-        val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmStudentImport)
-
-        view.findViewById<TextView>(R.id.txtImportStudentCount).text =
-            activity.getString(R.string.dialog_import_students_hint, students.size)
-
-        recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportStudentAdapter(students)
-
-        btnConfirm.setOnClickListener {
-            importConfirmed = true
-            // Ensure the loading wheel stays visible while the database is working
-            activity.toggleLoadingOverlay(true)
-
-            activity.currentOverlayJob = activity.lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    activity.getDb().insertStudents(students)
-                }
-
-                // Once DB work completes on the background thread, dismiss dialog and overlay on Main
-                bottomSheet.dismiss()
-                activity.toggleLoadingOverlay(false)
-
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.toast_cloud_student_import_success, students.size),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-
-        // This catches ALL dismiss events (sliding away, tapping outside, back button)
-        bottomSheet.setOnDismissListener {
-            if (!importConfirmed) {
-                // The user canceled the preview, hide the loading wheel immediately
-                activity.toggleLoadingOverlay(false)
-            }
-        }
-
-        bottomSheet.show()
+        loadingOverlayProvider.setCurrentOverlayJob(job)
     }
 }
