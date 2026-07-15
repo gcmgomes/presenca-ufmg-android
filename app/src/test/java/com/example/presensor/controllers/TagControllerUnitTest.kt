@@ -12,6 +12,8 @@ import android.nfc.Tag
 import android.nfc.NfcAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -29,12 +31,17 @@ class TagControllerUnitTest : BaseControllerTest() {
     private val tagControllerDialogFactory: TagControllerDialogFactory = mock()
     private val toastProvider: ToastProvider = mock()
     private val nfcAdapter: NfcAdapter = mock()
-    private lateinit var testScope: CoroutineScope
+    private val disableRefreshSpinner: () -> Unit = mock()
+    private val resetSyncTimeout: () -> Unit = mock()
+    private lateinit var testScope: TestScope
+    private val rfidSwipeFlow = MutableSharedFlow<Pair<String, Long>>(extraBufferCapacity = 1)
 
     @Before
     override fun setup() {
         super.setup()
-        testScope = CoroutineScope(mainDispatcherRule.testDispatcher)
+        testScope = TestScope(mainDispatcherRule.testDispatcher)
+        whenever(readerManager.rfidSwipeFlow).thenReturn(rfidSwipeFlow)
+        
         tagController = TagController(
             activity = activity,
             db = db,
@@ -47,8 +54,8 @@ class TagControllerUnitTest : BaseControllerTest() {
             mainDispatcher = mainDispatcherRule.testDispatcher,
             nfcAdapter = nfcAdapter,
             isDialogShowingCheck = { false },
-            disableRefreshSpinner = {},
-            resetSyncTimeout = {}
+            disableRefreshSpinner = disableRefreshSpinner,
+            resetSyncTimeout = resetSyncTimeout
         )
     }
 
@@ -99,7 +106,7 @@ class TagControllerUnitTest : BaseControllerTest() {
     }
 
     @Test
-    fun handleTagDiscovered_dialogOpen_earlyExit() = runTest(mainDispatcherRule.testDispatcher) {
+    fun handleTagDiscovered_dialogOpen_earlyExit() = testScope.runTest {
         val rfid = "AA:BB:CC:DD"
         val time = 1000L
         
@@ -339,5 +346,53 @@ class TagControllerUnitTest : BaseControllerTest() {
         DialogFactory.setDialogOpenForTesting(true)
         tagController.handleTagDiscovered("RFID", 1000L)
         verifyNoInteractions(sessionController)
+    }
+
+    @Test
+    fun startReaderCollection_collectsTagsAndFormatsThem() = testScope.runTest {
+        whenever(sessionController.activeSession).thenReturn(mock())
+        tagController.startReaderCollection()
+        
+        // Emit a raw RFID string (4 bytes in hex)
+        rfidSwipeFlow.emit(Pair("AABBCCDD", 1625097600L)) // 2021-07-01 00:00:00
+        
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+        
+        // Verify formatting "AABBCCDD" -> "AA:BB:CC:DD"
+        // And timestamp conversion 1625097600 * 1000
+        verify(sessionController).registerAttendance(anyOrNull(), eq(1625097600000L))
+        verify(resetSyncTimeout).invoke()
+
+        tagController.readerCollectionJob?.cancel()
+    }
+
+    @Test
+    fun startReaderCollection_receivesSyncDone_disablesSpinner() = testScope.runTest {
+        tagController.startReaderCollection()
+        
+        rfidSwipeFlow.emit(Pair("SYNC_DONE", 0L))
+        
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+        
+        verify(disableRefreshSpinner).invoke()
+        verify(resetSyncTimeout, never()).invoke()
+
+        tagController.readerCollectionJob?.cancel()
+    }
+
+    @Test
+    fun startReaderCollection_cancelsPreviousJob() = testScope.runTest {
+        tagController.startReaderCollection()
+        val firstJob = tagController.readerCollectionJob
+        
+        tagController.startReaderCollection()
+        val secondJob = tagController.readerCollectionJob
+        
+        assert(firstJob != secondJob)
+        assert(firstJob?.isCancelled == true)
+
+        secondJob?.cancel()
     }
 }

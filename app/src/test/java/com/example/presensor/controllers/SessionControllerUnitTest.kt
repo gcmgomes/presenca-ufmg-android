@@ -14,6 +14,7 @@ import com.example.presensor.tools.providers.ToastProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.After
@@ -344,6 +345,59 @@ class SessionControllerUnitTest : BaseControllerTest() {
         
         assert(sessionController.activeSession == null)
         assert(txtSessionTitle.text == "New")
+    }
+
+    @Test
+    fun resetSyncTimeout_triggersAfter10Seconds() = runTest(mainDispatcherRule.testDispatcher) {
+        swipeRefreshLayout.isRefreshing = true
+        sessionController.resetSyncTimeout()
+        
+        // Advance 9 seconds - nothing should happen yet
+        advanceTimeBy(9000)
+        assert(swipeRefreshLayout.isRefreshing)
+        
+        // Advance the final second
+        advanceTimeBy(1001)
+        
+        assert(!swipeRefreshLayout.isRefreshing)
+        verify(toastProvider).showToast(argThat { contains("Sync timed out") }, any())
+    }
+
+    @Test
+    fun resetSyncTimeout_multipleCalls_resetsTimer() = runTest(mainDispatcherRule.testDispatcher) {
+        swipeRefreshLayout.isRefreshing = true
+        sessionController.resetSyncTimeout()
+        
+        advanceTimeBy(5000)
+        sessionController.resetSyncTimeout() // Reset at 5s
+        
+        advanceTimeBy(7000) // Total 12s, but only 7s since last reset
+        assert(swipeRefreshLayout.isRefreshing)
+        
+        advanceTimeBy(3001) // Total 15s, 10s since last reset
+        assert(!swipeRefreshLayout.isRefreshing)
+    }
+
+    @Test
+    fun cancelSyncTimeout_stopsTimer() = runTest(mainDispatcherRule.testDispatcher) {
+        swipeRefreshLayout.isRefreshing = true
+        sessionController.resetSyncTimeout()
+        
+        advanceTimeBy(5000)
+        sessionController.cancelSyncTimeout()
+        
+        advanceTimeBy(6000) // Past the original 10s mark
+        assert(swipeRefreshLayout.isRefreshing)
+        verifyNoInteractions(toastProvider)
+    }
+
+    @Test
+    fun showLayoutRefreshSpinner_togglesRefreshing() {
+        sessionController.showLayoutRefreshSpinner(true)
+        assert(swipeRefreshLayout.isRefreshing)
+        
+        sessionController.showLayoutRefreshSpinner(false)
+        assert(!swipeRefreshLayout.isRefreshing)
     }
 
     @Test

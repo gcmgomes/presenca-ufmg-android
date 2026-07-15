@@ -36,7 +36,7 @@ class TagController(
     private val resetSyncTimeout: () -> Unit,
 ) : NfcAdapter.ReaderCallback {
 
-    private var readerCollectionJob: Job? = null
+    internal var readerCollectionJob: Job? = null
     fun getNfcAdapter(): NfcAdapter? = nfcAdapter
 
     fun pauseNfcScanning() {
