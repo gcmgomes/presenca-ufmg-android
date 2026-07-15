@@ -42,6 +42,9 @@ interface PresensorDao {
     @Query("SELECT * FROM Session WHERE courseId = :courseId")
     suspend fun getSessionsByCourse(courseId: Long): List<Session>
 
+    @Query("SELECT * FROM Session WHERE id = :id")
+    suspend fun getSessionById(id: Long): Session?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertStudents(students: List<Student>)
 

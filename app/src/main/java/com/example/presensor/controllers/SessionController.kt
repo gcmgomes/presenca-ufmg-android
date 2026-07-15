@@ -19,22 +19,23 @@ import com.example.presensor.R
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
+import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.data.entities.Course
+import com.example.presensor.tools.providers.ToastProvider
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
-import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
-import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.data.entities.Course
 import java.time.LocalDate
 
 class SessionController(
     private val activity: AppCompatActivity,
     private val context: Context,
-    private val lifecycleOwner: LifecycleOwner,
+    private val scope: CoroutineScope,
     private val db: AppDatabase,
     private val layoutInflater: LayoutInflater,
     private val attendanceContainer: LinearLayout,
@@ -45,7 +46,10 @@ class SessionController(
     private val btnEditSession: ImageView,
     private val getColorForAccent: (String) -> Int,
     private val onSessionStateMutated: () -> Unit,
-    private val dialogFactory: SessionControllerDialogFactory
+    private val dialogFactory: SessionControllerDialogFactory,
+    private val toastProvider: ToastProvider,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     var activeSession: Session? = null
         private set
@@ -79,8 +83,8 @@ class SessionController(
         btnEditSession.setOnClickListener {
             activeSession?.let { currentSession ->
                 showEditSessionDialog(currentSession)
+                updateCardOnSessionView(currentSession.name, currentSession.date)
             }
-            updateCardOnSessionView(activeSession!!.name, activeSession!!.date)
         }
 
         loadAttendanceList()
@@ -88,18 +92,20 @@ class SessionController(
 
     fun loadAttendanceList() {
         val currentSessionId = activeSession?.id ?: return
-        lifecycleOwner.lifecycleScope.launch {
+        scope.launch {
             val records = db.getAttendanceRecordsForSession(currentSessionId)
-            attendanceContainer.removeAllViews()
-            val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
+            withContext(mainDispatcher) {
+                attendanceContainer.removeAllViews()
+                val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
 
-            records.forEach { record ->
-                val rowView =
-                    layoutInflater.inflate(R.layout.item_attendance_row, attendanceContainer, false)
-                rowView.findViewById<TextView>(R.id.txtStudentInfo).text = record.studentName
-                rowView.findViewById<TextView>(R.id.txtTimestamp).text =
-                    TimeUtils.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
-                attendanceContainer.addView(rowView)
+                records.forEach { record ->
+                    val rowView =
+                        layoutInflater.inflate(R.layout.item_attendance_row, attendanceContainer, false)
+                    rowView.findViewById<TextView>(R.id.txtStudentInfo).text = record.studentName
+                    rowView.findViewById<TextView>(R.id.txtTimestamp).text =
+                        TimeUtils.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
+                    attendanceContainer.addView(rowView)
+                }
             }
         }
     }
@@ -107,7 +113,10 @@ class SessionController(
     fun handleLockToggleSequence(targetSession: Session) {
         if (targetSession.isLocked) {
             val input =
-                EditText(context).apply { inputType = android.text.InputType.TYPE_CLASS_TEXT }
+                EditText(context).apply {
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT
+                    tag = "unlock_input"
+                }
 
             AlertDialog.Builder(context)
                 .setTitle(context.getString(R.string.dialog_unlock_title, targetSession.name))
@@ -117,11 +126,7 @@ class SessionController(
                     if (input.text.toString() == targetSession.name) {
                         executeLockStateUpdate(targetSession, false)
                     } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.error_incorrect_password),
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        toastProvider.showToast(context.getString(R.string.error_incorrect_password))
                     }
                 }
                 .setNegativeButton(context.getString(R.string.action_cancel), null)
@@ -132,9 +137,9 @@ class SessionController(
     }
 
     private fun executeLockStateUpdate(session: Session, shouldLock: Boolean) {
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        scope.launch(ioDispatcher) {
             db.updateSessionLock(session.id, shouldLock)
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 activeSession?.let {
                     if (it.id == session.id) {
                         val updated = it.copy(isLocked = shouldLock)
@@ -150,52 +155,41 @@ class SessionController(
                 } else {
                     context.getString(R.string.msg_session_unlocked)
                 }
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                toastProvider.showToast(msg)
             }
         }
     }
 
     fun registerAttendance(student: Student?, time: Long) {
         val session = activeSession ?: return
-        activity.lifecycleScope.launch {
+        scope.launch {
             if (session.isLocked) {
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.msg_session_locked),
-                    Toast.LENGTH_SHORT
-                ).show()
+                withContext(mainDispatcher) {
+                    toastProvider.showToast(activity.getString(R.string.msg_session_locked))
+                }
                 return@launch
             }
 
             if (student != null) {
-                val identifier =
-                    if (!student.rfid.isNullOrEmpty()) student.rfid else "MANUAL:${student.email}"
-
                 db.recordAttendance(student, session, time)
                 loadAttendanceList()
             } else {
-                Toast.makeText(
-                    activity,
-                    activity.getString(R.string.toast_tag_not_registered),
-                    Toast.LENGTH_SHORT
-                ).show()
+                withContext(mainDispatcher) {
+                    toastProvider.showToast(activity.getString(R.string.toast_tag_not_registered))
+                }
             }
         }
     }
 
     fun showEditSessionDialog(session: Session) {
         if (session.isLocked) {
-            Toast.makeText(
-                context,
-                context.getString(R.string.msg_session_locked),
-                Toast.LENGTH_SHORT
-            ).show()
+            toastProvider.showToast(context.getString(R.string.msg_session_locked))
             return
         }
         dialogFactory.showEditSessionDialog(
             session,
             onSessionUpdated = { updatedName, updatedTimestamp ->
-                lifecycleOwner.lifecycleScope.launch {
+                scope.launch {
                     val modifiedSession = session.copy(
                         name = updatedName,
                         date = updatedTimestamp
@@ -203,23 +197,21 @@ class SessionController(
 
                     db.updateSession(modifiedSession)
 
-                    if (activeSession != null) {
-                        activeSession = modifiedSession
+                    withContext(mainDispatcher) {
+                        if (activeSession != null) {
+                            activeSession = modifiedSession
+                        }
+
+                        txtSessionTitle.text = updatedName
+                        txtSessionSubtitle.text =
+                            TimeUtils.fromMillisToLocalDate(updatedTimestamp)
+                                .format(TimeUtils.makeSessionTimeFormatter(context))
+                        viewSessionDetailAccent.setBackgroundColor(getColorForAccent(updatedName))
+
+                        onSessionStateMutated()
+
+                        toastProvider.showToast(context.getString(R.string.toast_session_properties_modified))
                     }
-
-                    txtSessionTitle.text = updatedName
-                    txtSessionSubtitle.text =
-                        TimeUtils.fromMillisToLocalDate(updatedTimestamp)
-                            .format(TimeUtils.makeSessionTimeFormatter(context))
-                    viewSessionDetailAccent.setBackgroundColor(getColorForAccent(updatedName))
-
-                    onSessionStateMutated()
-
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.toast_session_properties_modified),
-                        Toast.LENGTH_SHORT
-                    ).show()
                 }
             })
     }
@@ -227,14 +219,14 @@ class SessionController(
     fun showManualAttendanceDialog() {
         val currentSession = activeSession ?: return
 
-        lifecycleOwner.lifecycleScope.launch {
+        scope.launch {
             val allStudents = db.getAllStudents().sortedBy { it.name }
             val currentAttendance = db.getAttendanceRecordsForSession(currentSession.id)
 
             val presentEmails = currentAttendance.map { it.studentEmail }.toSet()
             val absentStudents = allStudents.filter { it.email !in presentEmails }
 
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
                 val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
                 val container = dialogView.findViewById<LinearLayout>(R.id.studentListContainer)

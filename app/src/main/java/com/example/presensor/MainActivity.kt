@@ -253,7 +253,7 @@ class MainActivity : AppCompatActivity() {
         sessionController = SessionController(
             activity = this,
             context = this,
-            lifecycleOwner = this,
+            scope = lifecycleScope,
             db = db,
             layoutInflater = layoutInflater,
             attendanceContainer = findViewById(R.id.attendanceContainer),
@@ -273,7 +273,8 @@ class MainActivity : AppCompatActivity() {
                     courseController.refreshCourseUI()
                 }
             },
-            dialogFactory = sessionDialogFactory
+            dialogFactory = sessionDialogFactory,
+            toastProvider = AndroidToastProvider(this)
         )
 
         // Initialize Tag Controller

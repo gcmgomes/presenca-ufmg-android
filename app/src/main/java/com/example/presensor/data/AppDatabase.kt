@@ -14,6 +14,7 @@ import com.example.presensor.data.entities.Attendance
 import com.example.presensor.data.entities.AttendanceRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStream
@@ -44,11 +45,9 @@ abstract class AppDatabase : RoomDatabase() {
     // COURSE ACTIONS
     // ==========================================
 
-    suspend fun insertCourse(course: Course): Long = withContext(Dispatchers.IO) {
-        dao().insertCourse(course)
-    }
+    suspend fun insertCourse(course: Course): Long = dao().insertCourse(course)
 
-    suspend fun updateCourse(course: Course) = withContext(Dispatchers.IO) {
+    suspend fun updateCourse(course: Course) {
         dao().updateCourse(course)
         if (useCourseCache && courseCache.courseId == course.id) {
             // Update nothing for now, but ensure this branch is covered
@@ -56,7 +55,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun deleteCourse(course: Course) = withContext(Dispatchers.IO) {
+    suspend fun deleteCourse(course: Course) {
         dao().deleteCourse(course)
         // Only invalidate cache if caching is enabled
         if (useCourseCache && courseCache.courseId == course.id) {
@@ -64,26 +63,23 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun getAllCourses(): List<Course> = withContext(Dispatchers.IO) {
-        dao().getAllCourses()
-    }
+    suspend fun getAllCourses(): List<Course> = dao().getAllCourses()
 
     // ==========================================
     // SESSION ACTIONS
     // ==========================================
 
-    suspend fun insertSession(courseId: Long, sessionName: String, date: Long) =
-        withContext(Dispatchers.IO) {
-            val session = Session(courseId = courseId, name = sessionName, date = date)
-            val newSessionId = dao().insertSession(session)
+    suspend fun insertSession(courseId: Long, sessionName: String, date: Long) {
+        val session = Session(courseId = courseId, name = sessionName, date = date)
+        val newSessionId = dao().insertSession(session)
 
-            if (useCourseCache && courseCache.courseId == courseId) {
-                courseCache.sessionIds += newSessionId
-                courseCache.allSessions += session.copy(id = newSessionId)
-            }
+        if (useCourseCache && courseCache.courseId == courseId) {
+            courseCache.sessionIds += newSessionId
+            courseCache.allSessions += session.copy(id = newSessionId)
         }
+    }
 
-    suspend fun insertSessions(sessions: List<Session>) = withContext(Dispatchers.IO) {
+    suspend fun insertSessions(sessions: List<Session>) {
         val newIds = dao().insertSessions(sessions)
         sessions.zip(newIds).forEach { (session, id) ->
             if (useCourseCache && courseCache.courseId == session.courseId) {
@@ -93,7 +89,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun deleteSession(session: Session) = withContext(Dispatchers.IO) {
+    suspend fun deleteSession(session: Session) {
         dao().deleteAttendancesBySessionId(session.id)
         dao().deleteSession(session)
         if (useCourseCache && courseCache.courseId == session.courseId) {
@@ -101,7 +97,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun deleteSessionsByCourseId(courseId: Long) = withContext(Dispatchers.IO) {
+    suspend fun deleteSessionsByCourseId(courseId: Long) {
         dao().deleteSessionsByCourseId(courseId)
         if (useCourseCache && courseCache.courseId == courseId) {
             courseCache.allSessions = emptyList()
@@ -112,31 +108,33 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    suspend fun updateSessionLock(sessionId: Long, locked: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun updateSessionLock(sessionId: Long, locked: Boolean) {
         dao().updateSessionLock(sessionId, locked)
         if (useCourseCache) {
             courseCache.updateSessionLock(sessionId, locked)
         }
     }
 
-    suspend fun updateSession(session: Session) = withContext(Dispatchers.IO) {
+    suspend fun updateSession(session: Session) {
         dao().updateSession(session)
         if (useCourseCache) {
             courseCache.updateSession(session)
         }
     }
 
-    suspend fun getSessionsByCourse(courseId: Long): List<Session> = withContext(Dispatchers.IO) {
-        if (useCourseCache && courseCache.courseId != null && courseId == courseCache.courseId) {
+    suspend fun getSessionsByCourse(courseId: Long): List<Session> {
+        return if (useCourseCache && courseCache.courseId != null && courseId == courseCache.courseId) {
             courseCache.allSessions
         } else {
             dao().getSessionsByCourse(courseId)
         }
     }
 
-    suspend fun loadSessionsForCourse(course: Course) = withContext(Dispatchers.IO) {
+    suspend fun getSessionById(id: Long): Session? = dao().getSessionById(id)
+
+    suspend fun loadSessionsForCourse(course: Course) = coroutineScope {
         if (useCourseCache && course.id == courseCache.courseId) {
-            return@withContext
+            return@coroutineScope
         }
 
         val sessionsDeferred = async { dao().getSessionsByCourse(course.id) }
@@ -145,10 +143,15 @@ abstract class AppDatabase : RoomDatabase() {
 
         val sessions = sessionsDeferred.await().sortedByDescending { it.date }
         val allAttendance = attendanceDeferred.await()
-        
+
         // Populate the cache if enabled
         if (useCourseCache) {
-            courseCache.computeFromMinimalData(course.id, sessions, allAttendance, activeStudentsDeferred.await())
+            courseCache.computeFromMinimalData(
+                course.id,
+                sessions,
+                allAttendance,
+                activeStudentsDeferred.await()
+            )
         }
     }
 
@@ -156,7 +159,7 @@ abstract class AppDatabase : RoomDatabase() {
     // STUDENT ACTIONS
     // ==========================================
 
-    suspend fun preloadStudents() = withContext(Dispatchers.IO) {
+    suspend fun preloadStudents() {
         if (useCourseCache) {
             courseCache.allStudents = dao().getAllStudents()
         }
@@ -172,14 +175,13 @@ abstract class AppDatabase : RoomDatabase() {
     }
 
 
-    suspend fun getStudentsForCourse(courseId: Long): List<Student> =
-        withContext(Dispatchers.IO) {
-            if(useCourseCache && courseCache.courseId == courseId) {
-                return@withContext courseCache.activeStudents
-            }
-            val studentEmails = dao().getAllAttendanceForCourse(courseId).map {it.studentEmail}.toSet()
-            getAllStudents().filter {it.email in studentEmails}
+    suspend fun getStudentsForCourse(courseId: Long): List<Student> {
+        if (useCourseCache && courseCache.courseId == courseId) {
+            return courseCache.activeStudents
         }
+        val studentEmails = dao().getAllAttendanceForCourse(courseId).map { it.studentEmail }.toSet()
+        return getAllStudents().filter { it.email in studentEmails }
+    }
 
     suspend fun getAllStudents(): List<Student> {
         if(useCourseCache && courseCache.allStudents.isNotEmpty()) {
@@ -240,52 +242,44 @@ abstract class AppDatabase : RoomDatabase() {
     // ATTENDANCE MANAGEMENT
     // ==========================================
 
-    suspend fun recordAttendance(student: Student, session: Session, timestamp: Long) =
-        withContext(Dispatchers.IO) {
-            dao().recordAttendance(
-                Attendance(
-                    rfid = student.rfid,
-                    sessionId = session.id,
-                    studentEmail = student.email,
-                    timestamp = timestamp
-                )
+    suspend fun recordAttendance(student: Student, session: Session, timestamp: Long) {
+        dao().recordAttendance(
+            Attendance(
+                rfid = student.rfid,
+                sessionId = session.id,
+                studentEmail = student.email,
+                timestamp = timestamp
             )
-            if (useCourseCache && courseCache.courseId == session.courseId) {
-                val attendanceRecord = AttendanceRecord(
-                    timestamp,
-                    student.name,
-                    student.rfid,
-                    student.email,
-                    session.name,
-                    session.id
-                )
-                courseCache.addAttendance(student, session, attendanceRecord)
-            }
+        )
+        if (useCourseCache && courseCache.courseId == session.courseId) {
+            val attendanceRecord = AttendanceRecord(
+                timestamp,
+                student.name,
+                student.rfid,
+                student.email,
+                session.name,
+                session.id
+            )
+            courseCache.addAttendance(student, session, attendanceRecord)
         }
+    }
 
-
-
-    suspend fun getAttendanceRecordsForSession(sid: Long): List<AttendanceRecord> =
-        withContext(Dispatchers.IO) {
-            if(useCourseCache && courseCache.sessionIds.contains(sid)) {
-                return@withContext courseCache.allAttendance.filter {it.sessionId == sid}
-            }
-            dao().getAttendanceRecordsForSession(sid)
+    suspend fun getAttendanceRecordsForSession(sid: Long): List<AttendanceRecord> {
+        if (useCourseCache && courseCache.sessionIds.contains(sid)) {
+            return courseCache.allAttendance.filter { it.sessionId == sid }
         }
+        return dao().getAttendanceRecordsForSession(sid)
+    }
 
-
-
-    suspend fun getAllAttendanceForCourse(courseId: Long): List<AttendanceRecord> =
-        withContext(Dispatchers.IO) {
-            if (useCourseCache && courseCache.courseId == courseId) {
-                val list = courseCache.allAttendance
-                list
-            } else {
-                dao().getAllAttendanceForCourse(courseId)
-            }
+    suspend fun getAllAttendanceForCourse(courseId: Long): List<AttendanceRecord> {
+        return if (useCourseCache && courseCache.courseId == courseId) {
+            courseCache.allAttendance
+        } else {
+            dao().getAllAttendanceForCourse(courseId)
         }
+    }
 
-    suspend fun deleteAttendancesBySessionId(sessionId: Long) = withContext(Dispatchers.IO) {
+    suspend fun deleteAttendancesBySessionId(sessionId: Long) {
         dao().deleteAttendancesBySessionId(sessionId)
         if (useCourseCache && courseCache.sessionIds.contains(sessionId)) {
             courseCache.allAttendance =

@@ -262,4 +262,61 @@ class TagControllerUnitTest : BaseControllerTest() {
     fun getNfcAdapter_returnsAdapter() {
         assert(tagController.getNfcAdapter() == nfcAdapter)
     }
+
+    @Test
+    fun constructor_defaultParams_initializesCorrectly() {
+        val tc = TagController(
+            activity = activity,
+            db = db,
+            scope = testScope,
+            sessionController = sessionController,
+            sessionDialogFactory = sessionDialogFactory,
+            tagControllerDialogFactory = tagControllerDialogFactory,
+            toastProvider = toastProvider,
+            isDialogShowingCheck = { false }
+        )
+        // In Robolectric, NfcAdapter.getDefaultAdapter returns null if not shadowed properly
+        // or if the device doesn't support NFC.
+        // We just want to cover the branch.
+        tc.getNfcAdapter()
+    }
+
+    @Test
+    fun pauseScanning_nullAdapter_noCrash() {
+        val tc = TagController(
+            activity = activity,
+            db = db,
+            scope = testScope,
+            sessionController = sessionController,
+            sessionDialogFactory = sessionDialogFactory,
+            tagControllerDialogFactory = tagControllerDialogFactory,
+            toastProvider = toastProvider,
+            nfcAdapter = null,
+            isDialogShowingCheck = { false }
+        )
+        tc.pauseNfcScanning()
+    }
+
+    @Test
+    fun resumeScanning_nullAdapter_noCrash() {
+        val tc = TagController(
+            activity = activity,
+            db = db,
+            scope = testScope,
+            sessionController = sessionController,
+            sessionDialogFactory = sessionDialogFactory,
+            tagControllerDialogFactory = tagControllerDialogFactory,
+            toastProvider = toastProvider,
+            nfcAdapter = null,
+            isDialogShowingCheck = { false }
+        )
+        tc.resumeNfcScanning()
+    }
+
+    @Test
+    fun handleTagDiscovered_anyDialogShowing_earlyExit() {
+        DialogFactory.setDialogOpenForTesting(true)
+        tagController.handleTagDiscovered("RFID", 1000L)
+        verifyNoInteractions(sessionController)
+    }
 }
