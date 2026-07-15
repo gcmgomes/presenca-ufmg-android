@@ -31,7 +31,9 @@ interface DialogProvider {
     )
 }
 
-class AndroidDialogProvider : DialogProvider {
+class AndroidDialogProvider(
+    private val previewProvider: PreviewProvider
+) : DialogProvider {
     override fun showMappingDialog(
         context: Context,
         fields: List<String>,
@@ -49,7 +51,7 @@ class AndroidDialogProvider : DialogProvider {
         onConfirm: () -> Unit,
         onDismiss: () -> Unit
     ) {
-        // Implementation will be moved from Controller to here or MainActivity
+        previewProvider.showSessionImportPreview(activity, sessions, onConfirm, onDismiss)
     }
 
     override fun showStudentImportPreview(
@@ -58,6 +60,6 @@ class AndroidDialogProvider : DialogProvider {
         onConfirm: () -> Unit,
         onDismiss: () -> Unit
     ) {
-        // Implementation will be moved from Controller to here or MainActivity
+        previewProvider.showStudentImportPreview(activity, students, onConfirm, onDismiss)
     }
 }

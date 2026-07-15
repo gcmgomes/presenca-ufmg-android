@@ -88,6 +88,7 @@ val jacocoTestReport by tasks.registering(JacocoReport::class) {
         include("**/SessionController.class")
         include("**/ImportSessionController.class")
         include("**/ImportStudentController.class")
+        include("**/tools/providers/*.class")
     }
     val mainSrc = "${project.projectDir}/src/main/java"
 

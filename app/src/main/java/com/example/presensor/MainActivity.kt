@@ -69,6 +69,7 @@ import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.controllers.ImportStudentController
 import com.example.presensor.tools.providers.AndroidDataProcessorProvider
 import com.example.presensor.tools.providers.AndroidDialogProvider
+import com.example.presensor.tools.providers.AndroidPreviewProvider
 import com.example.presensor.tools.providers.DialogProvider
 import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.tools.providers.PreviewProvider
@@ -241,22 +242,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         val toastProvider = AndroidToastProvider(this)
         val dataProcessorProvider = AndroidDataProcessorProvider()
-        val previewProvider = PreviewProvider(this)
-
-        // Initialize Import Controllers
-        val customDialogProvider = object : DialogProvider {
-            override fun showMappingDialog(context: Context, fields: List<String>, columns: List<String>, sampleRow: List<String>?, onDismissed: () -> Unit, onConfirmed: (Map<String, String>) -> Unit) {
-                DialogFactory.showMappingDialog(context, fields, columns, sampleRow, onDismissed, onConfirmed)
-            }
-
-            override fun showSessionImportPreview(activity: AppCompatActivity, sessions: List<Session>, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-                previewProvider.showSessionImportPreview(sessions, onConfirm, onDismiss)
-            }
-
-            override fun showStudentImportPreview(activity: AppCompatActivity, students: List<Student>, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-                previewProvider.showStudentImportPreview(students, onConfirm, onDismiss)
-            }
-        }
+        val previewProvider = AndroidPreviewProvider()
+        val dialogProvider = AndroidDialogProvider(previewProvider)
 
         importSessionController = ImportSessionController(
             activity = this,
@@ -264,7 +251,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             scope = lifecycleScope,
             db = db,
             dataProcessorProvider = dataProcessorProvider,
-            dialogProvider = customDialogProvider,
+            dialogProvider = dialogProvider,
             loadingOverlayProvider = this,
             toastProvider = toastProvider
         )
@@ -274,7 +261,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             scope = lifecycleScope,
             db = db,
             dataProcessorProvider = dataProcessorProvider,
-            dialogProvider = customDialogProvider,
+            dialogProvider = dialogProvider,
             loadingOverlayProvider = this,
             toastProvider = toastProvider
         )

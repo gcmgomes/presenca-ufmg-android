@@ -15,11 +15,31 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 
 /**
- * Encapsulates the complex UI logic for showing import preview bottom sheets.
+ * Interface for showing import preview bottom sheets.
  */
-class PreviewProvider(private val activity: AppCompatActivity) {
-
+interface PreviewProvider {
     fun showSessionImportPreview(
+        activity: AppCompatActivity,
+        sessions: List<Session>,
+        onConfirm: () -> Unit,
+        onDismiss: () -> Unit
+    )
+
+    fun showStudentImportPreview(
+        activity: AppCompatActivity,
+        students: List<Student>,
+        onConfirm: () -> Unit,
+        onDismiss: () -> Unit
+    )
+}
+
+/**
+ * Android implementation of PreviewProvider using BottomSheetDialog.
+ */
+class AndroidPreviewProvider : PreviewProvider {
+
+    override fun showSessionImportPreview(
+        activity: AppCompatActivity,
         sessions: List<Session>,
         onConfirm: () -> Unit,
         onDismiss: () -> Unit
@@ -58,7 +78,8 @@ class PreviewProvider(private val activity: AppCompatActivity) {
         bottomSheet.show()
     }
 
-    fun showStudentImportPreview(
+    override fun showStudentImportPreview(
+        activity: AppCompatActivity,
         students: List<Student>,
         onConfirm: () -> Unit,
         onDismiss: () -> Unit
