@@ -1,5 +1,6 @@
 package com.example.presensor
 
+import android.Manifest
 import android.app.Activity
 import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
@@ -9,6 +10,7 @@ import com.example.presensor.tools.providers.ToastProvider
 import com.example.presensor.tools.providers.AndroidToastProvider
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.nfc.NfcAdapter
@@ -28,6 +30,7 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -56,6 +59,7 @@ import com.example.presensor.data.AppDatabase
 import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.adapters.StudentStatsAdapter
+import com.example.presensor.ble.ReaderManager
 import com.example.presensor.controllers.CloudSyncController
 import com.example.presensor.controllers.DashboardController
 import com.example.presensor.controllers.CourseController
@@ -107,6 +111,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
     // Tracks any active background job associated with the loading overlay for cancellation
     private var currentOverlayJob: Job? = null
+
+    private val readerManager: ReaderManager = ReaderManager(this)
 
     override fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
@@ -181,6 +187,48 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         this.pendingCloudAction = action
     }
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            Log.d("MainActivity", "All Bluetooth permissions granted. Starting connection...")
+            readerManager.startConnecting()
+        } else {
+            Log.e("MainActivity", "Permissions denied by user.")
+            Toast.makeText(this, "Bluetooth permissions are required for Presensor to work!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun checkAndRequestBluetoothPermissions() {
+        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ targets
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+        } else {
+            // Android 11 and below targets
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+
+        val missingPermissions = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missingPermissions.isEmpty()) {
+            Log.d("MainActivity", "Permissions already granted. Connecting...")
+            readerManager.startConnecting()
+
+            readerManager.setAppActive(false)
+        } else {
+            Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")
+            requestPermissionLauncher.launch(missingPermissions.toTypedArray())
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -195,6 +243,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 db.execSQL("PRAGMA optimize;")
             }
         }
+
+        checkAndRequestBluetoothPermissions()
 
         loadingOverlay = findViewById(R.id.loadingOverlay)
 
@@ -296,6 +346,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             db = db,
             layoutInflater = layoutInflater,
             attendanceContainer = findViewById(R.id.attendanceContainer),
+            swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout),
             txtSessionTitle = findViewById(R.id.txtSessionTitle),
             txtSessionSubtitle = findViewById(R.id.txtSessionSubtitle),
             viewSessionDetailAccent = findViewById(R.id.viewSessionDetailAccent),
@@ -313,7 +364,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 }
             },
             dialogFactory = sessionDialogFactory,
-            toastProvider = AndroidToastProvider(this)
+            toastProvider = AndroidToastProvider(this),
+            onPulldown = { readerManager.requestBacklogSync() }
         )
 
         // Initialize Tag Controller
@@ -321,13 +373,17 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             activity = this,
             db = db,
             scope = lifecycleScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
             toastProvider = AndroidToastProvider(this),
-            isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() }
+            isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() },
+            disableRefreshSpinner = { sessionController.showLayoutRefreshSpinner(false) },
+            resetSyncTimeout = { sessionController.resetSyncTimeout() }
         )
         DialogFactory.tagController = tagController
+        tagController.startReaderCollection()
 
         // Initialize Course Controller
         courseController = CourseController(
@@ -335,7 +391,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             lifecycleOwner = this,
             selectedCourse = null,
             db = db,
-            onSessionSelected = { session -> openSessionView(session) },
+            onSessionSelected = { session -> openSessionView(session)
+                                readerManager.setAppActive(true)},
             onToggleLockRequested = { session, _ ->
                 sessionController.handleLockToggleSequence(session)
                 courseController.refreshCourseUI()
@@ -378,6 +435,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
                 when (currentState) {
                     AppState.SESSION -> {
+                        readerManager.setAppActive(false)
                         sessionController.clearActiveSession()
                         currentState = AppState.COURSE
                         toggleAllViews(layoutCourseView = true)
@@ -515,5 +573,9 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        readerManager.disconnect()
+    }
 
 }

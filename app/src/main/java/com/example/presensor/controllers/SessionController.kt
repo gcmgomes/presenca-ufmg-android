@@ -2,6 +2,8 @@ package com.example.presensor.controllers
 
 import android.content.Context
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -13,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
@@ -26,6 +29,8 @@ import com.example.presensor.tools.providers.ToastProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
@@ -39,6 +44,7 @@ class SessionController(
     private val db: AppDatabase,
     private val layoutInflater: LayoutInflater,
     private val attendanceContainer: LinearLayout,
+    private val swipeRefreshLayout: SwipeRefreshLayout,
     private val txtSessionTitle: TextView,
     private val txtSessionSubtitle: TextView,
     private val viewSessionDetailAccent: View,
@@ -49,10 +55,13 @@ class SessionController(
     private val dialogFactory: SessionControllerDialogFactory,
     private val toastProvider: ToastProvider,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onPulldown: () -> Unit,
 ) {
     var activeSession: Session? = null
         private set
+
+    private var syncTimeoutJob: Job? = null
 
     fun clearActiveSession() {
         activeSession = null
@@ -66,6 +75,31 @@ class SessionController(
         viewSessionDetailAccent.setBackgroundColor(getColorForAccent(name))
     }
 
+    fun resetSyncTimeout() {
+        // 1. Cancel the current active timer
+        syncTimeoutJob?.cancel()
+
+        // 2. Start a fresh 10-second timer
+        syncTimeoutJob = scope.launch {
+            delay(10000) // 10 seconds of silence allowed
+
+            if (swipeRefreshLayout.isRefreshing) {
+                swipeRefreshLayout.isRefreshing = false
+                toastProvider.showToast("Sync timed out. Connection lost.")
+                Log.w("SyncWatchdog", "Inactivity timeout: No tags received for 10 seconds.")
+            }
+        }
+    }
+
+    fun cancelSyncTimeout() {
+        syncTimeoutJob?.cancel()
+        syncTimeoutJob = null
+    }
+
+    fun showLayoutRefreshSpinner(state: Boolean) {
+        swipeRefreshLayout.isRefreshing = state
+    }
+
     fun openSessionView(session: Session) {
         activeSession = session
 
@@ -73,6 +107,14 @@ class SessionController(
 
         UiUtils.updateLockIconUI(session.isLocked, imgMasterLock)
         UiUtils.updateEditIconUI(session.isLocked, btnEditSession)
+
+        swipeRefreshLayout.setOnRefreshListener {
+            showLayoutRefreshSpinner(true)
+
+            onPulldown()
+
+            resetSyncTimeout()
+        }
 
         imgMasterLock.setOnClickListener {
             activeSession?.let { currentSession ->

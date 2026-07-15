@@ -3,6 +3,7 @@ package com.example.presensor.controllers
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.ble.ReaderManager
 import androidx.appcompat.app.AlertDialog
 import com.example.presensor.data.entities.Student
 import com.example.presensor.tools.providers.ToastProvider
@@ -23,6 +24,7 @@ class TagControllerUnitTest : BaseControllerTest() {
 
     private lateinit var tagController: TagController
     private val sessionController: SessionController = mock()
+    private val readerManager: ReaderManager = mock()
     private val sessionDialogFactory: SessionControllerDialogFactory = mock()
     private val tagControllerDialogFactory: TagControllerDialogFactory = mock()
     private val toastProvider: ToastProvider = mock()
@@ -37,13 +39,16 @@ class TagControllerUnitTest : BaseControllerTest() {
             activity = activity,
             db = db,
             scope = testScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = tagControllerDialogFactory,
             toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             nfcAdapter = nfcAdapter,
-            isDialogShowingCheck = { false }
+            isDialogShowingCheck = { false },
+            disableRefreshSpinner = {},
+            resetSyncTimeout = {}
         )
     }
 
@@ -102,13 +107,16 @@ class TagControllerUnitTest : BaseControllerTest() {
             activity = activity,
             db = db,
             scope = testScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = tagControllerDialogFactory,
             toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             nfcAdapter = nfcAdapter,
-            isDialogShowingCheck = { true }
+            isDialogShowingCheck = { true },
+            disableRefreshSpinner = {},
+            resetSyncTimeout = {}
         )
 
         tagControllerWithOpenDialog.handleTagDiscovered(rfid, time)
@@ -269,11 +277,16 @@ class TagControllerUnitTest : BaseControllerTest() {
             activity = activity,
             db = db,
             scope = testScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = tagControllerDialogFactory,
             toastProvider = toastProvider,
-            isDialogShowingCheck = { false }
+            mainDispatcher = mainDispatcherRule.testDispatcher,
+            nfcAdapter = null,
+            isDialogShowingCheck = { false },
+            disableRefreshSpinner = {},
+            resetSyncTimeout = {}
         )
         // In Robolectric, NfcAdapter.getDefaultAdapter returns null if not shadowed properly
         // or if the device doesn't support NFC.
@@ -287,12 +300,16 @@ class TagControllerUnitTest : BaseControllerTest() {
             activity = activity,
             db = db,
             scope = testScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = tagControllerDialogFactory,
             toastProvider = toastProvider,
+            mainDispatcher = mainDispatcherRule.testDispatcher,
             nfcAdapter = null,
-            isDialogShowingCheck = { false }
+            isDialogShowingCheck = { false },
+            disableRefreshSpinner = {},
+            resetSyncTimeout = {}
         )
         tc.pauseNfcScanning()
     }
@@ -303,12 +320,16 @@ class TagControllerUnitTest : BaseControllerTest() {
             activity = activity,
             db = db,
             scope = testScope,
+            readerManager = readerManager,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = tagControllerDialogFactory,
             toastProvider = toastProvider,
+            mainDispatcher = mainDispatcherRule.testDispatcher,
             nfcAdapter = null,
-            isDialogShowingCheck = { false }
+            isDialogShowingCheck = { false },
+            disableRefreshSpinner = {},
+            resetSyncTimeout = {}
         )
         tc.resumeNfcScanning()
     }

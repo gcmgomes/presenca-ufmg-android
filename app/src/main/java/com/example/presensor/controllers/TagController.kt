@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
+import com.example.presensor.ble.ReaderManager
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
@@ -15,6 +16,7 @@ import com.example.presensor.tools.providers.ToastProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,6 +24,7 @@ class TagController(
     private val activity: AppCompatActivity,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
+    private val readerManager: ReaderManager,
     private val sessionController: SessionController,
     private val sessionDialogFactory: SessionControllerDialogFactory,
     private val tagControllerDialogFactory: TagControllerDialogFactory,
@@ -29,12 +32,16 @@ class TagController(
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val nfcAdapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(activity),
     private val isDialogShowingCheck: () -> Boolean,
+    private val disableRefreshSpinner: () -> Unit,
+    private val resetSyncTimeout: () -> Unit,
 ) : NfcAdapter.ReaderCallback {
 
+    private var readerCollectionJob: Job? = null
     fun getNfcAdapter(): NfcAdapter? = nfcAdapter
 
     fun pauseNfcScanning() {
         nfcAdapter?.disableReaderMode(activity)
+        readerManager.setAppActive(false)
     }
 
     fun resumeNfcScanning() {
@@ -51,6 +58,10 @@ class TagController(
         nfcAdapter?.enableReaderMode(activity, this, readerFlags, options)
     }
 
+    fun resumeReader() {
+        readerManager.setAppActive(true)
+    }
+
     override fun onTagDiscovered(tag: Tag) {
         Log.d("onTagDiscovered", "Is a dialog open ${DialogFactory.isAnyDialogOpen()}")
         val rfid = tag.id.joinToString(":") { "%02X".format(it) }
@@ -59,11 +70,61 @@ class TagController(
         handleTagDiscovered(rfid, time)
     }
 
+    fun startReaderCollection() {
+        // Get the identity hash code of the OLD job before cancelling it
+        val oldJobId = readerCollectionJob?.let { System.identityHashCode(it).toString(16).uppercase() } ?: "NONE"
+
+        Log.d("TagController", "[Lifecycle] ---> startReaderCollection called.")
+        Log.d("TagController", "[Lifecycle] Cancelling previous Job: #$oldJobId")
+
+        // Cancel the previous collection job
+        readerCollectionJob?.cancel()
+
+        // Start the new collection
+        val newJob = scope.launch {
+            val thisJobId = System.identityHashCode(coroutineContext[Job]).toString(16).uppercase()
+            Log.d("TagController", "[Collector #$thisJobId] STARTED. Now actively listening to flow.")
+
+            try {
+                readerManager.rfidSwipeFlow.collect { (rawRfid, espTime) ->
+                    if (rawRfid == "SYNC_DONE") {
+                        withContext(mainDispatcher) {
+                            // Turn off the spinner on your layout!
+                            disableRefreshSpinner()
+                        }
+                        return@collect
+                    }
+
+                    withContext(mainDispatcher) {
+                        resetSyncTimeout()
+                    }
+
+                    val rfid = rawRfid.chunked(2).joinToString(":")
+                    val time = espTime * 1000 // moving from unix epoch time to milliseconds.
+                    val curTime = System.currentTimeMillis()
+                    Log.d("TagController", "[Collector #$thisJobId] Captured $rfid at $time. Current time is $curTime.")
+                    handleTagDiscovered(rfid, time)
+                }
+            } catch (e: Exception) {
+                Log.d("TagController", "[Collector #$thisJobId] Interrupted/Cancelled: ${e.message}")
+            } finally {
+                Log.d("TagController", "[Collector #$thisJobId] CLOSED.")
+            }
+        }
+
+        // Save reference to the new job
+        readerCollectionJob = newJob
+
+        val newJobId = System.identityHashCode(newJob).toString(16).uppercase()
+        Log.d("TagController", "[Lifecycle] Registered new Job: #$newJobId")
+    }
+
     /**
      * Entry-point for processing an incoming hardware tag discovery background pulse.
      */
     fun handleTagDiscovered(rfid: String, time: Long) {
         if (isDialogShowingCheck() || DialogFactory.isAnyDialogOpen()) return
+        Log.d("TagController", "Processing $rfid for timestamp $time.")
 
         scope.launch {
             val student = db.getStudentByRfid(rfid)

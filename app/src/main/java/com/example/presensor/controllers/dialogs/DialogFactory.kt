@@ -51,12 +51,17 @@ object DialogFactory {
 
 
     // Private helper extension that manages the state tracker centrally
-    fun AlertDialog.Builder.showWithSmartNfcReading(): AlertDialog {
+    fun AlertDialog.Builder.showWithSmartNfcReading(resumeReader: Boolean = false): AlertDialog {
         val dialog = this.create()
         dialog.setOnShowListener { isDialogOpen = true
             tagController?.pauseNfcScanning()}
-        dialog.setOnDismissListener { isDialogOpen = false
-        tagController?.resumeNfcScanning()}
+        dialog.setOnDismissListener {
+            isDialogOpen = false
+            tagController?.resumeNfcScanning()
+            if(resumeReader) {
+                tagController?.resumeReader()
+            }
+        }
         dialog.show()
         return dialog
     }

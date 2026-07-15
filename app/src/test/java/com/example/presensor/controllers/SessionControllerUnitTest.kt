@@ -5,6 +5,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.ImageView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
@@ -33,8 +34,10 @@ class SessionControllerUnitTest : BaseControllerTest() {
     private val dialogFactory: SessionControllerDialogFactory = mock()
     private val toastProvider: ToastProvider = mock()
     private val onSessionStateMutated: () -> Unit = mock()
+    private val onPulldown: () -> Unit = mock()
     
     private lateinit var attendanceContainer: LinearLayout
+    private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var txtSessionTitle: TextView
     private lateinit var txtSessionSubtitle: TextView
     private lateinit var viewSessionDetailAccent: View
@@ -46,6 +49,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
         super.setup()
         
         attendanceContainer = LinearLayout(activity)
+        swipeRefreshLayout = SwipeRefreshLayout(activity)
         txtSessionTitle = TextView(activity)
         txtSessionSubtitle = TextView(activity)
         viewSessionDetailAccent = View(activity)
@@ -59,6 +63,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
             db = db,
             layoutInflater = LayoutInflater.from(activity),
             attendanceContainer = attendanceContainer,
+            swipeRefreshLayout = swipeRefreshLayout,
             txtSessionTitle = txtSessionTitle,
             txtSessionSubtitle = txtSessionSubtitle,
             viewSessionDetailAccent = viewSessionDetailAccent,
@@ -69,7 +74,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
             dialogFactory = dialogFactory,
             toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
-            ioDispatcher = mainDispatcherRule.testDispatcher
+            ioDispatcher = mainDispatcherRule.testDispatcher,
+            onPulldown = onPulldown
         )
     }
 
@@ -349,6 +355,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
             db = db,
             layoutInflater = LayoutInflater.from(activity),
             attendanceContainer = attendanceContainer,
+            swipeRefreshLayout = swipeRefreshLayout,
             txtSessionTitle = txtSessionTitle,
             txtSessionSubtitle = txtSessionSubtitle,
             viewSessionDetailAccent = viewSessionDetailAccent,
@@ -357,7 +364,10 @@ class SessionControllerUnitTest : BaseControllerTest() {
             getColorForAccent = { 0 },
             onSessionStateMutated = {},
             dialogFactory = dialogFactory,
-            toastProvider = toastProvider
+            toastProvider = toastProvider,
+            mainDispatcher = mainDispatcherRule.testDispatcher,
+            ioDispatcher = mainDispatcherRule.testDispatcher,
+            onPulldown = {}
         )
         assert(sc.activeSession == null)
     }
