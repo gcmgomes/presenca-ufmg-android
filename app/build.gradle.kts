@@ -88,6 +88,7 @@ val jacocoTestReport by tasks.registering(JacocoReport::class) {
         include("**/SessionController.class")
         include("**/ImportSessionController.class")
         include("**/ImportStudentController.class")
+        include("**/DetailedCourseController.class")
         include("**/ble/ReaderManager.class")
         include("**/tools/providers/*.class")
     }

@@ -415,7 +415,9 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             lifecycleOwner = this,
             db = db,
             courseController = courseController,
-            getColorFromAttr = { attr -> getColorFromAttr(attr) }
+            getColorFromAttr = { attr -> getColorFromAttr(attr) },
+            mainDispatcher = Dispatchers.Main,
+            ioDispatcher = Dispatchers.IO
         )
 
 
