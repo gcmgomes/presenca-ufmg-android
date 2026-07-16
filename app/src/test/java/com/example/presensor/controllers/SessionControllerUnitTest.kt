@@ -392,6 +392,51 @@ class SessionControllerUnitTest : BaseControllerTest() {
     }
 
     @Test
+    fun cancelSyncTimeout_noActiveJob_worksFine() = runTest(mainDispatcherRule.testDispatcher) {
+        // This covers the branch where syncTimeoutJob is null in cancelSyncTimeout()
+        sessionController.cancelSyncTimeout()
+        advanceUntilIdle()
+        // No crash means success
+    }
+
+    @Test
+    fun openSessionView_clickLock_nullActiveSession_doesNothing() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        
+        // Setup listeners by opening a session
+        sessionController.openSessionView(insertedSession)
+        
+        // Manually clear the session to trigger the null branch in the listener
+        sessionController.clearActiveSession()
+        
+        imgMasterLock.performClick()
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+        
+        // Verify handleLockToggleSequence was NOT called for any session
+        // (If it was called, it would have changed something in the DB or shown a toast)
+        val updatedSession = db.getSessionById(insertedSession.id)
+        assert(updatedSession?.isLocked == false)
+    }
+
+    @Test
+    fun openSessionView_clickEdit_nullActiveSession_doesNothing() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        
+        sessionController.openSessionView(insertedSession)
+        sessionController.clearActiveSession()
+        
+        btnEditSession.performClick()
+        verifyNoInteractions(dialogFactory)
+    }
+
+    @Test
     fun showLayoutRefreshSpinner_togglesRefreshing() {
         sessionController.showLayoutRefreshSpinner(true)
         assert(swipeRefreshLayout.isRefreshing)

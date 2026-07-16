@@ -112,7 +112,14 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     // Tracks any active background job associated with the loading overlay for cancellation
     private var currentOverlayJob: Job? = null
 
-    private val readerManager: ReaderManager = ReaderManager(this)
+    private val readerManager: ReaderManager by lazy {
+        ReaderManager(
+            context = this,
+            scope = lifecycleScope,
+            mainDispatcher = Dispatchers.Main,
+            ioDispatcher = Dispatchers.IO
+        )
+    }
 
     override fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE

@@ -8,21 +8,28 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
 
 @SuppressLint("MissingPermission")
-class ReaderManager(private val context: Context) {
+class ReaderManager(
+    private val context: Context,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     companion object {
         private const val TAG = "ReaderManager"
@@ -50,8 +57,6 @@ class ReaderManager(private val context: Context) {
 
     private var bluetoothGatt: BluetoothGatt? = null
     private var isAppActiveState = false
-    private val scope = CoroutineScope(Dispatchers.IO)
-    private val handler = Handler(Looper.getMainLooper())
 
     // --- Exposed Reactive States ---
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
@@ -104,7 +109,6 @@ class ReaderManager(private val context: Context) {
 
     fun disconnect() {
         Log.d(TAG, "[Disconnect] Explicitly requested. Tearing down connection.")
-        handler.removeCallbacksAndMessages(null)
         try {
             bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
         } catch (e: Exception) {
@@ -180,7 +184,7 @@ class ReaderManager(private val context: Context) {
 
     // --- BLE Scan Callback ---
 
-    private val scanCallback = object : ScanCallback() {
+    internal val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             // --- THE SHIELD: Prevent duplicate connection triggers ---
             if (_connectionState.value == ConnectionState.CONNECTING ||
@@ -212,7 +216,7 @@ class ReaderManager(private val context: Context) {
 
     // --- BLE GATT Callback ---
 
-    private val gattCallback = object : BluetoothGattCallback() {
+    internal val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(TAG, "[GATT Callback] Error: status = $status, newState = $newState")
@@ -242,9 +246,13 @@ class ReaderManager(private val context: Context) {
 
                 _connectionState.value = ConnectionState.DISCONNECTED
 
-                // Clear pending reconnect tasks before scheduling a new one
-                handler.removeCallbacksAndMessages(null)
-                handler.postDelayed({ startConnecting() }, 3000)
+                // Reconnect after 3 seconds using coroutine
+                scope.launch {
+                    delay(3000)
+                    withContext(mainDispatcher) {
+                        startConnecting()
+                    }
+                }
             }
         }
 
@@ -271,13 +279,13 @@ class ReaderManager(private val context: Context) {
                 }
             }
 
-            // Sync sequence delay
-            handler.postDelayed({
+            // Sync sequence delay using coroutine
+            scope.launch {
+                delay(600)
                 syncSystemTime()
-                handler.postDelayed({
-                    writeAppModeState(isAppActiveState)
-                }, 300)
-            }, 600)
+                delay(300)
+                writeAppModeState(isAppActiveState)
+            }
         }
 
         // 1. Deprecated callback (for Android 12 and below)
