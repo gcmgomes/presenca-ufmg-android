@@ -10,6 +10,8 @@ import android.content.Context
 import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
+import com.example.presensor.tools.providers.ToastProvider
+import com.yourpackage.presensor.data.SecureStorageManager
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,9 +28,12 @@ import java.util.*
 @SuppressLint("MissingPermission")
 class ReaderManager(
     private val context: Context,
+    private val secureStorageManager: SecureStorageManager,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val toastProvider: ToastProvider,
+    private val toggleLoadingOverlay: (Boolean) -> Unit,
 ) {
 
     companion object {
@@ -41,12 +46,17 @@ class ReaderManager(
         private val CHAR_RFID_ACK_UUID = UUID.fromString("c485602d-1eb8-422f-981f-e053d71249b6")
         private val CHAR_APP_MODE_UUID = UUID.fromString("a29a0912-32b0-4dbf-9b16-43e936526131")
 
+        // Add the Auth UUID to companion object
+        private val CHAR_AUTH_UUID = UUID.fromString("f07b1d28-8681-4b13-91e8-6e54f7a7f6ff")
+
         // Client Characteristic Configuration Descriptor (CCCD)
         private val CCC_DESCRIPTOR_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
     private var lastProcessedTag: String? = null
     private var lastProcessedTime: Long = 0
+    var isBroadDiscoveryMode: Boolean = false
+    private var isAuthenticationFailure = false
 
     enum class ConnectionState { DISCONNECTED, SCANNING, CONNECTING, CONNECTED }
 
@@ -58,6 +68,8 @@ class ReaderManager(
     private var bluetoothGatt: BluetoothGatt? = null
     private var isAppActiveState = false
 
+    var onDeviceFoundListener: ((ScanResult) -> Unit)? = null
+
     // --- Exposed Reactive States ---
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState
@@ -67,6 +79,7 @@ class ReaderManager(
 
     // --- Public API ---
     fun startConnecting() {
+        isAuthenticationFailure = false
         val adapter = bluetoothAdapter
         if (adapter == null || !adapter.isEnabled) {
             Log.e(TAG, "[Init Error] Bluetooth is disabled or not supported.")
@@ -101,6 +114,7 @@ class ReaderManager(
 
         scanner.startScan(listOf(filter), settings, scanCallback)
     }
+
     fun setAppActive(active: Boolean) {
         isAppActiveState = active
         Log.d(TAG, "[App Mode Change] Updating app readiness state to: $active")
@@ -183,19 +197,41 @@ class ReaderManager(
     }
 
     // --- BLE Scan Callback ---
-
     internal val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            // --- THE SHIELD: Prevent duplicate connection triggers ---
             if (_connectionState.value == ConnectionState.CONNECTING ||
-                _connectionState.value == ConnectionState.CONNECTED) {
-                return // We are already connecting/connected. Drop this duplicate scan result!
+                _connectionState.value == ConnectionState.CONNECTED
+            ) {
+                return
             }
 
             val device = result.device
-            Log.i(TAG, "[Scan Found] Target device: ${device.name ?: "Unknown"} [${device.address}]")
+            val advertisedName = result.scanRecord?.deviceName ?: device.name ?: "Unknown"
+            val targetDeviceName = secureStorageManager.deviceName
 
-            // Mark state immediately to block subsequent scan result triggers
+            // 1. Report the found device to your dialog list right away
+            onDeviceFoundListener?.invoke(result)
+            Log.d(
+                TAG,
+                "[Scan Found] Detected Service Device: '$advertisedName' [${device.address}]"
+            )
+
+            // --- THE FIX: If building the list, STOP HERE. Do not connect automatically! ---
+            if (isBroadDiscoveryMode) {
+                return
+            }
+
+            // 2. Strict targeting filter for normal connection runs
+            if (advertisedName != targetDeviceName) {
+                Log.d(TAG, "[Scan Filter] Ignored '$advertisedName' due to strict targeting.")
+                return
+            }
+
+            Log.i(
+                TAG,
+                "[Scan Match!] Found target reader matching configuration: '$advertisedName'"
+            )
+
             _connectionState.value = ConnectionState.CONNECTING
 
             try {
@@ -231,7 +267,6 @@ class ReaderManager(
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.w(TAG, "[GATT Callback] Disconnected. Cleaning up and scheduling reconnect...")
 
-                // Use a local copy to close this specific gatt instance safely
                 try {
                     gatt.disconnect()
                     gatt.close()
@@ -239,14 +274,24 @@ class ReaderManager(
                     Log.e(TAG, "Security permission missing during callback close", e)
                 }
 
-                // If this callback belonged to our current active gatt, null it out
                 if (bluetoothGatt == gatt) {
                     bluetoothGatt = null
                 }
 
                 _connectionState.value = ConnectionState.DISCONNECTED
 
-                // Reconnect after 3 seconds using coroutine
+                // --- PROTECTIVE WALL: Do not auto-reconnect if auth failed ---
+                if (isAuthenticationFailure) {
+                    Log.i(
+                        TAG,
+                        "[GATT Callback] Auto-reconnect canceled due to authentication failure."
+                    )
+                    // Reset the flag so future intentional manual connection attempts can go through
+                    isAuthenticationFailure = false
+                    return
+                }
+
+                // Regular accidental disconnections still get the auto-reconnect logic
                 scope.launch {
                     delay(3000)
                     withContext(mainDispatcher) {
@@ -259,17 +304,20 @@ class ReaderManager(
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) return
 
-            Log.i(TAG, "[GATT Callback] Services discovered.")
+            Log.i(TAG, "[GATT Callback] Services discovered. Initializing notification chain...")
             val service = gatt.getService(SERVICE_UUID) ?: return
 
-            // Enable Notifications on RFID Data
+            // Kick off Step 1: Turn on RFID Data Notifications
             val rfidDataChar = service.getCharacteristic(CHAR_RFID_DATA_UUID)
             if (rfidDataChar != null) {
                 gatt.setCharacteristicNotification(rfidDataChar, true)
-                val descriptor = rfidDataChar.getDescriptor(CCC_DESCRIPTOR_UUID)
-                if (descriptor != null) {
+                rfidDataChar.getDescriptor(CCC_DESCRIPTOR_UUID)?.let { descriptor ->
+                    Log.d(TAG, "[GATT Queue] Writing RFID descriptor subscription...")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                        gatt.writeDescriptor(
+                            descriptor,
+                            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        )
                     } else {
                         @Suppress("DEPRECATION")
                         descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -278,19 +326,72 @@ class ReaderManager(
                     }
                 }
             }
+        }
 
-            // Sync sequence delay using coroutine
-            scope.launch {
-                delay(600)
-                syncSystemTime()
-                delay(300)
-                writeAppModeState(isAppActiveState)
+        override fun onDescriptorWrite(
+            gatt: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int
+        ) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "[GATT Callback] Descriptor write failed for UUID: ${descriptor.uuid}")
+                return
+            }
+
+            val service = gatt.getService(SERVICE_UUID) ?: return
+
+            // Check if the descriptor that just finished writing belongs to the RFID characteristic
+            if (descriptor.characteristic.uuid == CHAR_RFID_DATA_UUID) {
+                Log.i(
+                    TAG,
+                    "[GATT Chain] RFID subscription confirmed. Moving to AUTH subscription..."
+                )
+
+                // Step 2: Now that RFID is safely registered, subscribe to the AUTH characteristic
+                val authChar = service.getCharacteristic(CHAR_AUTH_UUID)
+                if (authChar != null) {
+                    gatt.setCharacteristicNotification(authChar, true)
+                    authChar.getDescriptor(CCC_DESCRIPTOR_UUID)?.let { authDescriptor ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            gatt.writeDescriptor(
+                                authDescriptor,
+                                BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            authDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            @Suppress("DEPRECATION")
+                            gatt.writeDescriptor(authDescriptor)
+                        }
+                    }
+                }
+            }
+            // Check if the descriptor that just finished belongs to the AUTH characteristic
+            else if (descriptor.characteristic.uuid == CHAR_AUTH_UUID) {
+                Log.i(
+                    TAG,
+                    "[GATT Chain] AUTH subscription confirmed. Triggering password challenge..."
+                )
+
+                // Step 3: Both descriptors are safely bound! Now fire your password verification
+                val authChar = service.getCharacteristic(CHAR_AUTH_UUID)
+                if (authChar != null) {
+                    scope.launch {
+                        delay(300) // Small safety window just to let the radio completely clear
+                        val passwordBytes = secureStorageManager.getAuthPasswordBytes()
+                        Log.i(TAG, "[Auth] Submitting password challenge bytes...")
+                        writeCharacteristicCompat(gatt, authChar, passwordBytes)
+                    }
+                }
             }
         }
 
         // 1. Deprecated callback (for Android 12 and below)
         @Deprecated("Used for older SDK compatibility")
-        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
             // Only process here if we are on Android 12 or below
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                 @Suppress("DEPRECATION")
@@ -309,10 +410,41 @@ class ReaderManager(
             }
         }
 
+        private var lastProcessedTimestamp: String? = null
+
         private fun processIncomingData(value: ByteArray?) {
             val data = value?.toString(Charsets.UTF_8) ?: return
+
+            // --- RESTORED GLOBAL INSTANCE LOGGING ---
             val instanceId = System.identityHashCode(this).toString(16).uppercase()
             Log.i(TAG, "[BLE Notification from $instanceId] Raw Payload: '$data'")
+
+            // --- Handle Authentication Verification ---
+            if (data == "SUCCESS") {
+                Log.i(TAG, "[Auth] Device authenticated successfully! Running post-auth sync...")
+                scope.launch(mainDispatcher) {
+                    toastProvider.showToast("Connection successful!")
+                    toggleLoadingOverlay(false)
+                }
+                scope.launch {
+                    syncSystemTime()
+                    delay(300)
+                    writeAppModeState(isAppActiveState)
+                }
+                return
+            }
+
+            if (data == "FAIL") {
+                Log.e(TAG, "[Auth Denied] Invalid password credential. Dropping connection link.")
+                isAuthenticationFailure = true
+                scope.launch(mainDispatcher) {
+                    toastProvider.showToast("Wrong password!")
+                    toggleLoadingOverlay(false)
+                }
+                secureStorageManager.clearCredentialsFor(secureStorageManager.deviceName)
+                disconnect()
+                return
+            }
 
             if (data == "DONE") {
                 Log.d(TAG, "ESP32 sent DONE signal. Backlog sync finished.")
@@ -322,6 +454,7 @@ class ReaderManager(
                 return
             }
 
+            // --- Handle Regular Tag Data Influx ---
             val parts = data.split(",")
             if (parts.size == 2) {
                 val tagId = parts[0]
@@ -329,17 +462,23 @@ class ReaderManager(
                 try {
                     val epochSec = timestampStr.toLong()
 
-                    // --- DEDUPLICATION CHECK ---
-                    val currentTime = System.currentTimeMillis()
-                    if (tagId == lastProcessedTag && currentTime == lastProcessedTime) {
-                        Log.d(TAG, "[Deduplication] Ignored duplicate tag notification for: $tagId")
-                        return // Drop this duplicate entry
+                    // --- ACCURATE STOP-AND-WAIT DEDUPLICATION ---
+                    if (tagId == lastProcessedTag && timestampStr == lastProcessedTimestamp) {
+                        Log.d(
+                            TAG,
+                            "[Deduplication] Retransmission detected for $tagId. Re-sending ACK to unstick ESP32."
+                        )
+                        scope.launch {
+                            writeAckToEsp32(tagId, timestampStr)
+                        }
+                        return
                     }
 
-                    // Update tracking variables
+                    // Update our tracking variables with the unique historical record markers
                     lastProcessedTag = tagId
-                    lastProcessedTime = currentTime
+                    lastProcessedTimestamp = timestampStr
 
+                    // Fresh new record! Process it normally
                     scope.launch {
                         _rfidSwipeFlow.emit(Pair(tagId, epochSec))
                         writeAckToEsp32(tagId, timestampStr)

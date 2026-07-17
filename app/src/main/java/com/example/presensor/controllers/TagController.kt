@@ -24,7 +24,7 @@ class TagController(
     private val activity: AppCompatActivity,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
-    private val readerManager: ReaderManager,
+    private val readerManager: ReaderManager?,
     private val sessionController: SessionController,
     private val sessionDialogFactory: SessionControllerDialogFactory,
     private val tagControllerDialogFactory: TagControllerDialogFactory,
@@ -41,7 +41,7 @@ class TagController(
 
     fun pauseNfcScanning() {
         nfcAdapter?.disableReaderMode(activity)
-        readerManager.setAppActive(false)
+        readerManager?.setAppActive(false)
     }
 
     fun resumeNfcScanning() {
@@ -59,7 +59,7 @@ class TagController(
     }
 
     fun resumeReader() {
-        readerManager.setAppActive(true)
+        readerManager?.setAppActive(true)
     }
 
     override fun onTagDiscovered(tag: Tag) {
@@ -86,7 +86,7 @@ class TagController(
             Log.d("TagController", "[Collector #$thisJobId] STARTED. Now actively listening to flow.")
 
             try {
-                readerManager.rfidSwipeFlow.collect { (rawRfid, espTime) ->
+                readerManager?.rfidSwipeFlow?.collect { (rawRfid, espTime) ->
                     if (rawRfid == "SYNC_DONE") {
                         withContext(mainDispatcher) {
                             // Turn off the spinner on your layout!

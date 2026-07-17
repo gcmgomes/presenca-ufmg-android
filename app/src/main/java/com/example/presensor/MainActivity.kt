@@ -27,9 +27,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -71,14 +73,17 @@ import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
 import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.controllers.ImportStudentController
+import com.example.presensor.services.ReaderStatusService
 import com.example.presensor.tools.providers.AndroidDataProcessorProvider
 import com.example.presensor.tools.providers.AndroidDialogProvider
 import com.example.presensor.tools.providers.AndroidPreviewProvider
 import com.example.presensor.tools.providers.DialogProvider
 import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.tools.providers.PreviewProvider
+import com.yourpackage.presensor.data.SecureStorageManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
@@ -112,14 +117,26 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     // Tracks any active background job associated with the loading overlay for cancellation
     private var currentOverlayJob: Job? = null
 
-    private val readerManager: ReaderManager by lazy {
-        ReaderManager(
-            context = this,
-            scope = lifecycleScope,
-            mainDispatcher = Dispatchers.Main,
-            ioDispatcher = Dispatchers.IO
-        )
+    companion object {
+        // These live globally in memory as long as the app process is running
+        private var secureStorageInstance: SecureStorageManager? = null
+
+        /**
+         * Clean thread-safe getters to initialize them exactly once
+         */
+        fun getSecureStorage(context: android.content.Context): SecureStorageManager {
+            return secureStorageInstance ?: synchronized(this) {
+                secureStorageInstance ?: SecureStorageManager(context.applicationContext).also {
+                    secureStorageInstance = it
+                }
+            }
+        }
     }
+
+    // Local handles for this specific activity instance to use
+    lateinit var secureStorage: SecureStorageManager
+    var readerManager: ReaderManager? = null
+
 
     override fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
@@ -140,7 +157,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 cloudSyncController.handleSignInResult(result.data) {
-                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT)
+                        .show()
 
                     // Mark that authentication is fully completed and ready to run
                     isCloudAuthSuccessPendingRun = true
@@ -200,47 +218,89 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
             Log.d("MainActivity", "All Bluetooth permissions granted. Starting connection...")
-            readerManager.startConnecting()
+
+            // SAFE ZONE: Initialize the channel right before connecting
+            initializeReaderStatusChannel()
+            readerManager?.startConnecting()
+            readerManager?.setAppActive(false)
         } else {
             Log.e("MainActivity", "Permissions denied by user.")
-            Toast.makeText(this, "Bluetooth permissions are required for Presensor to work!", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Bluetooth permissions are required for Presensor to work!",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     private fun checkAndRequestBluetoothPermissions() {
-        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ targets
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
+        val permissionsList = mutableListOf<String>()
+
+        // 1. Bluetooth Core Hardware Permissions
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissionsList.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissionsList.add(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            // Android 11 and below targets
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
+            permissionsList.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
-        val missingPermissions = requiredPermissions.filter {
+        // 2. Add Status Bar Icon Permission (Crucial for Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        val missingPermissions = permissionsList.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
         if (missingPermissions.isEmpty()) {
-            Log.d("MainActivity", "Permissions already granted. Connecting...")
-            readerManager.startConnecting()
-
-            readerManager.setAppActive(false)
+            Log.d("MainActivity", "Permissions already granted. Initializing pipeline...")
+            initializeReaderStatusChannel()
+            readerManager?.startConnecting()
+            readerManager?.setAppActive(false)
         } else {
             Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
         }
     }
 
+
+    /**
+     * Isolated helper to safely kick off the top-bar icon synchronization
+     */
+    private fun initializeReaderStatusChannel() {
+        // 1. Fire up the foreground service to anchor the status icon
+        ReaderStatusService.startService(this)
+
+        // 2. Start collecting the states to update the top-left area
+        lifecycleScope.launch {
+            readerManager?.connectionState?.collectLatest { state ->
+                ReaderStatusService.updateStatus(state)
+            }
+        }
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         WindowCompat.setDecorFitsSystemWindows(window, true)
+
+
+        val toastProvider = AndroidToastProvider(this)
+        secureStorage = getSecureStorage(this)
+
+        readerManager = ReaderManager(
+            context = this,
+            secureStorageManager = secureStorage,
+            scope = lifecycleScope,
+            mainDispatcher = Dispatchers.Main,
+            ioDispatcher = Dispatchers.IO,
+            toastProvider = toastProvider,
+            toggleLoadingOverlay = { flag -> toggleLoadingOverlay(flag) }
+        )
+
 
         val dbCallback = object : RoomDatabase.Callback() {
             override fun onOpen(db: SupportSQLiteDatabase) {
@@ -252,6 +312,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         }
 
         checkAndRequestBluetoothPermissions()
+
 
         loadingOverlay = findViewById(R.id.loadingOverlay)
 
@@ -297,7 +358,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
 
-        val toastProvider = AndroidToastProvider(this)
         val dataProcessorProvider = AndroidDataProcessorProvider()
         val previewProvider = AndroidPreviewProvider()
         val dialogProvider = AndroidDialogProvider(previewProvider)
@@ -344,6 +404,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
+        dashboardController.setupReaderSearch()
 
         // Initialize Session Controller
         sessionController = SessionController(
@@ -372,7 +433,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             },
             dialogFactory = sessionDialogFactory,
             toastProvider = AndroidToastProvider(this),
-            onPulldown = { readerManager.requestBacklogSync() }
+            onPulldown = { readerManager?.requestBacklogSync() }
         )
 
         // Initialize Tag Controller
@@ -398,8 +459,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             lifecycleOwner = this,
             selectedCourse = null,
             db = db,
-            onSessionSelected = { session -> openSessionView(session)
-                                readerManager.setAppActive(true)},
+            onSessionSelected = { session ->
+                openSessionView(session)
+                readerManager?.setAppActive(true)
+            },
             onToggleLockRequested = { session, _ ->
                 sessionController.handleLockToggleSequence(session)
                 courseController.refreshCourseUI()
@@ -444,7 +507,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
                 when (currentState) {
                     AppState.SESSION -> {
-                        readerManager.setAppActive(false)
+                        readerManager?.setAppActive(false)
                         sessionController.clearActiveSession()
                         currentState = AppState.COURSE
                         toggleAllViews(layoutCourseView = true)
@@ -584,7 +647,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
     override fun onDestroy() {
         super.onDestroy()
-        readerManager.disconnect()
+        readerManager?.disconnect()
     }
 
 }

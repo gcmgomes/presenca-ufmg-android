@@ -63,6 +63,7 @@ class AndroidTagControllerDialogFactory(
         onManualAttendance: () -> Unit,
         onReassignConfirmed: (Student) -> Unit
     ) {
+        if(DialogFactory.isAnyDialogOpen()) return
         val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
         val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
         val container = dialogView.findViewById<LinearLayout>(R.id.studentListContainer)
