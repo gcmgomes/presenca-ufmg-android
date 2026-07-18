@@ -80,14 +80,19 @@ import com.example.presensor.tools.providers.AndroidPreviewProvider
 import com.example.presensor.tools.providers.DialogProvider
 import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.tools.providers.PreviewProvider
-import com.yourpackage.presensor.data.SecureStorageManager
+import com.example.presensor.data.SecureStoreManager
+import com.example.presensor.controllers.ReaderConnectivityController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
-    private enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS }
+    companion object {
+        const val TAG = "MainActivity"
+        const val DATABASE_NAME = "presensor-db"
+        enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS, READER_MANAGEMENT }
+    }
 
     private var currentState = AppState.DASHBOARD
 
@@ -100,6 +105,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     private lateinit var tagController: TagController
     lateinit var importSessionController: ImportSessionController
     lateinit var importStudentController: ImportStudentController
+    lateinit var readerConnectivityController: ReaderConnectivityController
 
     lateinit var cloudSyncController: CloudSyncController
 
@@ -117,24 +123,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     // Tracks any active background job associated with the loading overlay for cancellation
     private var currentOverlayJob: Job? = null
 
-    companion object {
-        // These live globally in memory as long as the app process is running
-        private var secureStorageInstance: SecureStorageManager? = null
-
-        /**
-         * Clean thread-safe getters to initialize them exactly once
-         */
-        fun getSecureStorage(context: android.content.Context): SecureStorageManager {
-            return secureStorageInstance ?: synchronized(this) {
-                secureStorageInstance ?: SecureStorageManager(context.applicationContext).also {
-                    secureStorageInstance = it
-                }
-            }
-        }
-    }
-
-    // Local handles for this specific activity instance to use
-    lateinit var secureStorage: SecureStorageManager
+    lateinit var secureStoreManager: SecureStoreManager
     var readerManager: ReaderManager? = null
 
 
@@ -289,11 +278,11 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
 
         val toastProvider = AndroidToastProvider(this)
-        secureStorage = getSecureStorage(this)
+        secureStoreManager = SecureStoreManager(this)
 
         readerManager = ReaderManager(
             context = this,
-            secureStorageManager = secureStorage,
+            secureStoreManager = secureStoreManager,
             scope = lifecycleScope,
             mainDispatcher = Dispatchers.Main,
             ioDispatcher = Dispatchers.IO,
@@ -316,7 +305,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         loadingOverlay = findViewById(R.id.loadingOverlay)
 
-        db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "presensor-db")
+        db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, DATABASE_NAME)
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
 
         lifecycleScope.launch { db.preloadStudents() }
@@ -404,7 +393,13 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
-        dashboardController.setupReaderSearch()
+
+        readerConnectivityController = ReaderConnectivityController(
+            activity = this,
+            db = db,
+            secureStoreManager = secureStoreManager,
+            scope = lifecycleScope
+        )
 
         // Initialize Session Controller
         sessionController = SessionController(
@@ -528,6 +523,13 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                         courseController.refreshCourseUI()
                     }
 
+                    AppState.READER_MANAGEMENT -> {
+                        readerConnectivityController.stopDiscovery(fullDisconnect = false)
+                        currentState = AppState.DASHBOARD
+                        toggleAllViews(layoutDashboardView = true)
+                        dashboardController.refreshDashboard()
+                    }
+
                     AppState.DASHBOARD -> {
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
@@ -538,6 +540,12 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         }
         onBackPressedDispatcher.addCallback(this, currentBackCallback)
         dashboardController.refreshDashboard()
+    }
+
+    fun openReaderManagement() {
+        currentState = AppState.READER_MANAGEMENT
+        toggleAllViews(layoutReaderManagementView = true)
+        readerConnectivityController.setupReaderManagementView(findViewById<View>(R.id.layoutReaderManagementView))
     }
 
     private fun selectCourse(course: Course) {
@@ -553,12 +561,14 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         layoutDashboardView: Boolean = false,
         layoutCourseView: Boolean = false,
         layoutSessionView: Boolean = false,
-        layoutCourseStatisticsView: Boolean = false
+        layoutCourseStatisticsView: Boolean = false,
+        layoutReaderManagementView: Boolean = false
     ) {
         findViewById<View>(R.id.layoutDashboardView).isVisible = layoutDashboardView
         findViewById<View>(R.id.layoutCourseView).isVisible = layoutCourseView
         findViewById<View>(R.id.layoutSessionView).isVisible = layoutSessionView
         findViewById<View>(R.id.layoutCourseStatisticsView).isVisible = layoutCourseStatisticsView
+        findViewById<View>(R.id.layoutReaderManagementView).isVisible = layoutReaderManagementView
     }
 
     private fun openSessionView(session: Session) {

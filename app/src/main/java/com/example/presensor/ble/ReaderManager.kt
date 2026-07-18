@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
 import com.example.presensor.tools.providers.ToastProvider
-import com.yourpackage.presensor.data.SecureStorageManager
+import com.example.presensor.data.SecureStoreManager
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +28,7 @@ import java.util.*
 @SuppressLint("MissingPermission")
 class ReaderManager(
     private val context: Context,
-    private val secureStorageManager: SecureStorageManager,
+    private val secureStoreManager: SecureStoreManager,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -46,8 +46,10 @@ class ReaderManager(
         private val CHAR_RFID_ACK_UUID = UUID.fromString("c485602d-1eb8-422f-981f-e053d71249b6")
         private val CHAR_APP_MODE_UUID = UUID.fromString("a29a0912-32b0-4dbf-9b16-43e936526131")
 
-        // Add the Auth UUID to companion object
         private val CHAR_AUTH_UUID = UUID.fromString("f07b1d28-8681-4b13-91e8-6e54f7a7f6ff")
+
+        private val CHAR_CONFIG_UPDATE_UUID =
+            UUID.fromString("d117c60e-744d-4475-b6d9-aa3cf047ee2d")
 
         // Client Characteristic Configuration Descriptor (CCCD)
         private val CCC_DESCRIPTOR_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -57,6 +59,7 @@ class ReaderManager(
     private var lastProcessedTime: Long = 0
     var isBroadDiscoveryMode: Boolean = false
     private var isAuthenticationFailure = false
+    private var isAutoReconnectEnabled = true
 
     enum class ConnectionState { DISCONNECTED, SCANNING, CONNECTING, CONNECTED }
 
@@ -80,29 +83,44 @@ class ReaderManager(
     // --- Public API ---
     fun startConnecting() {
         isAuthenticationFailure = false
+        isAutoReconnectEnabled = true
         val adapter = bluetoothAdapter
         if (adapter == null || !adapter.isEnabled) {
             Log.e(TAG, "[Init Error] Bluetooth is disabled or not supported.")
             return
         }
 
-        // CRITICAL: Clean up any lingering connections before scanning!
-        if (bluetoothGatt != null) {
-            Log.d(TAG, "[Scan Prep] Cleaning up old GATT reference.")
+        // CRITICAL: Only clean up if we are NOT in broad discovery mode.
+        // If we are looking for a specific target, we reset the link.
+        if (bluetoothGatt != null && !isBroadDiscoveryMode) {
+            Log.d(TAG, "[Scan Prep] Cleaning up old GATT reference for targeted connection.")
             disconnect()
         }
 
-        if (_connectionState.value != ConnectionState.DISCONNECTED) {
+        if (_connectionState.value == ConnectionState.SCANNING ||
+            _connectionState.value == ConnectionState.CONNECTING ||
+            (_connectionState.value == ConnectionState.CONNECTED && !isBroadDiscoveryMode)
+        ) {
             return
         }
+
+        startScan()
+    }
+
+    fun startScan() {
+        val adapter = bluetoothAdapter ?: return
+        if (!adapter.isEnabled) return
 
         val scanner = adapter.bluetoothLeScanner ?: run {
             Log.e(TAG, "[Scan Error] BluetoothLeScanner is unavailable.")
             return
         }
 
-        Log.d(TAG, "[Scan] Starting targeted scanning for Presensor Service: $SERVICE_UUID")
-        _connectionState.value = ConnectionState.SCANNING
+        if (_connectionState.value == ConnectionState.DISCONNECTED) {
+            _connectionState.value = ConnectionState.SCANNING
+        }
+
+        Log.d(TAG, "[Scan] Starting BLE scanner. Broad Discovery: $isBroadDiscoveryMode")
 
         val filter = ScanFilter.Builder()
             .setServiceUuid(ParcelUuid(SERVICE_UUID))
@@ -121,13 +139,12 @@ class ReaderManager(
         writeAppModeState(active)
     }
 
-    fun disconnect() {
+    fun disconnect(disableAutoReconnect: Boolean = false) {
         Log.d(TAG, "[Disconnect] Explicitly requested. Tearing down connection.")
-        try {
-            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
-        } catch (e: Exception) {
-            Log.w(TAG, "[Cleanup] Failed to stop scan safely: ${e.message}")
+        if (disableAutoReconnect) {
+            isAutoReconnectEnabled = false
         }
+        stopScanning()
 
         bluetoothGatt?.let { gatt ->
             Log.d(TAG, "[Cleanup] Explicitly disconnecting and closing GATT: $gatt")
@@ -140,6 +157,31 @@ class ReaderManager(
         }
         bluetoothGatt = null
         _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    fun stopScanning() {
+        Log.d(TAG, "[Stop Scan] Explicitly requested.")
+        try {
+            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "[Stop Scan] Failed to stop scan safely: ${e.message}")
+        }
+        if (_connectionState.value == ConnectionState.SCANNING) {
+            _connectionState.value = ConnectionState.DISCONNECTED
+        }
+    }
+
+    val connectedDeviceAddress: String?
+        get() = bluetoothGatt?.device?.address
+
+    fun updateReaderConfig(newName: String, newPassword: String) {
+        val gatt = bluetoothGatt ?: return
+        val service = gatt.getService(SERVICE_UUID) ?: return
+        val charConfig = service.getCharacteristic(CHAR_CONFIG_UPDATE_UUID) ?: return
+
+        val payload = "$newName\t$newPassword"
+        Log.d(TAG, "[BLE Write] Sending Config Update to ESP32: '$newName' (password hidden)")
+        writeCharacteristicCompat(gatt, charConfig, payload.toByteArray(Charsets.UTF_8))
     }
 
     // --- Modern, Safe Write Helper ---
@@ -207,7 +249,7 @@ class ReaderManager(
 
             val device = result.device
             val advertisedName = result.scanRecord?.deviceName ?: device.name ?: "Unknown"
-            val targetDeviceName = secureStorageManager.deviceName
+            val targetDeviceName = secureStoreManager.deviceName
 
             // 1. Report the found device to your dialog list right away
             onDeviceFoundListener?.invoke(result)
@@ -280,14 +322,15 @@ class ReaderManager(
 
                 _connectionState.value = ConnectionState.DISCONNECTED
 
-                // --- PROTECTIVE WALL: Do not auto-reconnect if auth failed ---
-                if (isAuthenticationFailure) {
+                // --- PROTECTIVE WALL: Do not auto-reconnect if auth failed or explicitly disabled ---
+                if (isAuthenticationFailure || !isAutoReconnectEnabled) {
                     Log.i(
                         TAG,
-                        "[GATT Callback] Auto-reconnect canceled due to authentication failure."
+                        "[GATT Callback] Auto-reconnect canceled. Auth failure: $isAuthenticationFailure, Auto-reconnect enabled: $isAutoReconnectEnabled"
                     )
-                    // Reset the flag so future intentional manual connection attempts can go through
+                    // Reset the flags so future intentional manual connection attempts can go through
                     isAuthenticationFailure = false
+                    isAutoReconnectEnabled = true
                     return
                 }
 
@@ -378,7 +421,7 @@ class ReaderManager(
                 if (authChar != null) {
                     scope.launch {
                         delay(300) // Small safety window just to let the radio completely clear
-                        val passwordBytes = secureStorageManager.getAuthPasswordBytes()
+                        val passwordBytes = secureStoreManager.getAuthPasswordBytes()
                         Log.i(TAG, "[Auth] Submitting password challenge bytes...")
                         writeCharacteristicCompat(gatt, authChar, passwordBytes)
                     }
@@ -441,7 +484,7 @@ class ReaderManager(
                     toastProvider.showToast("Wrong password!")
                     toggleLoadingOverlay(false)
                 }
-                secureStorageManager.clearCredentialsFor(secureStorageManager.deviceName)
+                secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
                 disconnect()
                 return
             }

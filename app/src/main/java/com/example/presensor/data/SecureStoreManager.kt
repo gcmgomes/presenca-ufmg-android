@@ -1,4 +1,4 @@
-package com.yourpackage.presensor.data
+package com.example.presensor.data
 
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -7,12 +7,13 @@ import androidx.core.content.edit
 import org.json.JSONObject
 import android.util.Log
 
-class SecureStorageManager(context: Context) {
+class SecureStoreManager(context: Context) {
 
     companion object {
         private const val PREF_FILE_NAME = "presensor_secure_prefs"
         private const val KEY_CURRENT_DEVICE_NAME = "pref_ble_device_name"
         private const val KEY_READER_MAP_JSON = "pref_reader_credentials_map"
+        private const val KEY_IS_READER_ENABLED = "pref_is_reader_enabled"
 
         private const val DEFAULT_DEVICE_NAME = "Presensor_Reader"
     }
@@ -26,6 +27,16 @@ class SecureStorageManager(context: Context) {
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
+
+    /**
+     * Persists the user's preference for using a BLE reader.
+     * Defaults to false on new installations.
+     */
+    var isReaderEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_IS_READER_ENABLED, false)
+        set(value) {
+            sharedPreferences.edit { putBoolean(KEY_IS_READER_ENABLED, value) }
+        }
 
     /**
      * Keeps track of the currently selected active target device name.
@@ -52,7 +63,7 @@ class SecureStorageManager(context: Context) {
                 putString(KEY_READER_MAP_JSON, jsonObject.toString())
             }
         } catch (e: Exception) {
-            Log.e("SecureStorageManager", "Failed to save credentials for $name", e)
+            Log.e("SecureStoreManager", "Failed to save credentials for $name", e)
         }
     }
 
@@ -70,23 +81,30 @@ class SecureStorageManager(context: Context) {
     }
 
     /**
+     * Retrieves the plaintext password for a specific reader name.
+     */
+    fun getAuthPasswordFor(readerName: String): String? {
+        val currentMapJson = sharedPreferences.getString(KEY_READER_MAP_JSON, "{}") ?: "{}"
+        return try {
+            val jsonObject = JSONObject(currentMapJson)
+            if (jsonObject.has(readerName)) {
+                jsonObject.getString(readerName)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * Retrieves the password bytes for the current active device name.
      * Returns an empty byte array if no password match is found.
      */
     fun getAuthPasswordBytes(): ByteArray {
         val activeName = deviceName
-        val currentMapJson = sharedPreferences.getString(KEY_READER_MAP_JSON, "{}") ?: "{}"
-
-        return try {
-            val jsonObject = JSONObject(currentMapJson)
-            if (jsonObject.has(activeName)) {
-                jsonObject.getString(activeName).toByteArray(Charsets.UTF_8)
-            } else {
-                ByteArray(0) // No password stored yet
-            }
-        } catch (e: Exception) {
-            ByteArray(0)
-        }
+        val password = getAuthPasswordFor(activeName)
+        return password?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
     }
 
     /**
@@ -104,14 +122,14 @@ class SecureStorageManager(context: Context) {
                 sharedPreferences.edit {
                     putString(KEY_READER_MAP_JSON, jsonObject.toString())
                 }
-                Log.d("SecureStorageManager", "Successfully erased credentials for: $readerName")
+                Log.d("SecureStoreManager", "Successfully erased credentials for: $readerName")
                 true
             } else {
-                Log.d("SecureStorageManager", "No credentials found to erase for: $readerName")
+                Log.d("SecureStoreManager", "No credentials found to erase for: $readerName")
                 false
             }
         } catch (e: Exception) {
-            Log.e("SecureStorageManager", "Failed to clear credentials for $readerName", e)
+            Log.e("SecureStoreManager", "Failed to clear credentials for $readerName", e)
             false
         }
     }

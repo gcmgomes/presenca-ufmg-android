@@ -28,11 +28,11 @@ class StudentStatsAdapter(
     private val expandedStudentEmails = HashSet<String>()
 
     inner class StudentViewHolder(v: View) : RecyclerView.ViewHolder(v) {
-        val name: TextView = v.findViewById(R.id.txtStatStudentName)
-        val email: TextView = v.findViewById(R.id.txtStatStudentEmail)
-        val container: LinearLayout = v.findViewById(R.id.layoutExpandedSessions)
-        val percentage: TextView = v.findViewById(R.id.txtStatAttendancePercent)
-        val root: View = v.findViewById(R.id.cardStudentRoot)
+        val name: TextView = v.findViewById(R.id.txtPrimaryLabel)
+        val email: TextView = v.findViewById(R.id.txtSecondaryLabel)
+        val container: LinearLayout = v.findViewById(R.id.layoutExpandedContent)
+        val percentage: TextView = v.findViewById(R.id.txtStatValue)
+        val root: View = v.findViewById(R.id.cardStatRoot)
     }
 
     // Public API function invoked by the Main UI search loop

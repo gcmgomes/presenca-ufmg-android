@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
@@ -45,6 +46,8 @@ class ReaderManagerTest {
     private val bluetoothAdapter: BluetoothAdapter = mock()
     private val bluetoothLeScanner: BluetoothLeScanner = mock()
     private val bluetoothGatt: BluetoothGatt = mock()
+    private val secureStoreManager: com.example.presensor.data.SecureStoreManager = mock()
+    private val toastProvider: com.example.presensor.tools.providers.ToastProvider = mock()
 
     private val SERVICE_UUID = UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b")
     private val CHAR_RFID_DATA_UUID = UUID.fromString("e3223119-9445-4e7d-be6d-2308c02c011e")
@@ -58,12 +61,16 @@ class ReaderManagerTest {
         whenever(bluetoothManager.adapter).thenReturn(bluetoothAdapter)
         whenever(bluetoothAdapter.isEnabled).thenReturn(true)
         whenever(bluetoothAdapter.bluetoothLeScanner).thenReturn(bluetoothLeScanner)
+        whenever(secureStoreManager.deviceName).thenReturn("Presensor_Reader")
 
         readerManager = ReaderManager(
             context = context,
+            secureStoreManager = secureStoreManager,
             scope = testScope,
             mainDispatcher = testDispatcher,
-            ioDispatcher = testDispatcher
+            ioDispatcher = testDispatcher,
+            toastProvider = toastProvider,
+            toggleLoadingOverlay = {}
         )
     }
 
@@ -94,6 +101,7 @@ class ReaderManagerTest {
         
         val mockDevice: BluetoothDevice = mock()
         whenever(mockDevice.address).thenReturn("00:11:22:33:44:55")
+        whenever(mockDevice.name).thenReturn("Presensor_Reader")
         
         val scanResult: android.bluetooth.le.ScanResult = mock()
         whenever(scanResult.device).thenReturn(mockDevice)
@@ -137,39 +145,53 @@ class ReaderManagerTest {
     fun onServicesDiscovered_enablesNotificationsAndStartsHandshake() = testScope.runTest {
         val gattCallback = readerManager.gattCallback
         val mockService: BluetoothGattService = mock()
-        val mockChar: BluetoothGattCharacteristic = mock()
+        val rfidChar: BluetoothGattCharacteristic = mock()
+        val authChar: BluetoothGattCharacteristic = mock()
+        val descriptor: BluetoothGattDescriptor = mock()
         
-        // We need to set bluetoothGatt in ReaderManager for syncSystemTime to work
-        // ReaderManager sets it in onScanResult, but we can't easily set it here.
-        // Actually ReaderManager uses its internal bluetoothGatt variable.
-        // Let's look at startConnecting -> onScanResult
-        
+        whenever(rfidChar.uuid).thenReturn(UUID.fromString("e3223119-9445-4e7d-be6d-2308c02c011e"))
+        whenever(authChar.uuid).thenReturn(UUID.fromString("f07b1d28-8681-4b13-91e8-6e54f7a7f6ff"))
+        whenever(descriptor.characteristic).thenReturn(authChar)
+        whenever(descriptor.uuid).thenReturn(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+
         readerManager.startConnecting()
         val scanCallbackCaptor = argumentCaptor<ScanCallback>()
         verify(bluetoothLeScanner).startScan(any(), any(), scanCallbackCaptor.capture())
         val mockDevice: BluetoothDevice = mock()
+        whenever(mockDevice.name).thenReturn("Presensor_Reader")
         val scanResult: android.bluetooth.le.ScanResult = mock()
         whenever(scanResult.device).thenReturn(mockDevice)
         whenever(mockDevice.connectGatt(any(), any(), any())).thenReturn(bluetoothGatt)
         scanCallbackCaptor.firstValue.onScanResult(0, scanResult)
 
         whenever(bluetoothGatt.getService(any())).thenReturn(mockService)
-        whenever(mockService.getCharacteristic(any())).thenReturn(mockChar)
+        whenever(mockService.getCharacteristic(eq(UUID.fromString("e3223119-9445-4e7d-be6d-2308c02c011e")))).thenReturn(rfidChar)
+        whenever(mockService.getCharacteristic(eq(UUID.fromString("f07b1d28-8681-4b13-91e8-6e54f7a7f6ff")))).thenReturn(authChar)
+        whenever(rfidChar.getDescriptor(any())).thenReturn(descriptor)
         
         gattCallback.onServicesDiscovered(bluetoothGatt, BluetoothGatt.GATT_SUCCESS)
         
-        verify(bluetoothGatt).setCharacteristicNotification(mockChar, true)
+        verify(bluetoothGatt).setCharacteristicNotification(rfidChar, true)
         
-        // Handshake sequence
-        advanceTimeBy(601)
-        advanceUntilIdle()
+        // Simulate RFID descriptor write success
+        val rfidDescriptor: BluetoothGattDescriptor = mock()
+        whenever(rfidDescriptor.characteristic).thenReturn(rfidChar)
+        gattCallback.onDescriptorWrite(bluetoothGatt, rfidDescriptor, BluetoothGatt.GATT_SUCCESS)
         
-        // Verify writeCharacteristic
-        verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(mockChar))
+        verify(bluetoothGatt).setCharacteristicNotification(authChar, true)
+
+        // Simulate AUTH descriptor write success
+        gattCallback.onDescriptorWrite(bluetoothGatt, descriptor, BluetoothGatt.GATT_SUCCESS)
         
+        // Authentication challenge
         advanceTimeBy(301)
         advanceUntilIdle()
-        verify(bluetoothGatt, atLeast(2)).writeCharacteristic(eq(mockChar))
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(authChar), any(), any())
+        } else {
+            verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(authChar))
+        }
     }
 
     @Test
@@ -179,11 +201,14 @@ class ReaderManagerTest {
         val mockChar: BluetoothGattCharacteristic = mock()
         val mockService: BluetoothGattService = mock()
         
+        whenever(mockChar.uuid).thenReturn(UUID.fromString("c485602d-1eb8-422f-981f-e053d71249b6"))
+
         // Set up bluetoothGatt inside ReaderManager
         readerManager.startConnecting()
         val scanCallbackCaptor = argumentCaptor<ScanCallback>()
         verify(bluetoothLeScanner).startScan(any(), any(), scanCallbackCaptor.capture())
         val mockDevice: BluetoothDevice = mock()
+        whenever(mockDevice.name).thenReturn("Presensor_Reader")
         val scanResult: android.bluetooth.le.ScanResult = mock()
         whenever(scanResult.device).thenReturn(mockDevice)
         whenever(mockDevice.connectGatt(any(), any(), any())).thenReturn(bluetoothGatt)
@@ -197,10 +222,12 @@ class ReaderManagerTest {
             readerManager.rfidSwipeFlow.collect { rfidResults.add(it) }
         }
 
-        val charForNotification: BluetoothGattCharacteristic = mock()
-        whenever(charForNotification.value).thenReturn(data)
-        
-        gattCallback.onCharacteristicChanged(bluetoothGatt, charForNotification)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            gattCallback.onCharacteristicChanged(bluetoothGatt, mockChar, data)
+        } else {
+            whenever(mockChar.value).thenReturn(data)
+            gattCallback.onCharacteristicChanged(bluetoothGatt, mockChar)
+        }
         
         advanceUntilIdle()
         
@@ -208,7 +235,11 @@ class ReaderManagerTest {
         assert(rfidResults[0].first == "TAG123")
         assert(rfidResults[0].second == 1625097600L)
         
-        verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(mockChar))
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(mockChar), any(), any())
+        } else {
+            verify(bluetoothGatt, atLeastOnce()).writeCharacteristic(eq(mockChar))
+        }
         job.cancel()
     }
 

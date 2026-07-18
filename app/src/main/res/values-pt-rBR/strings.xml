@@ -194,4 +194,13 @@
     <string name="toast_csv_import_error">Erro na importação do CSV</string>
     <string name="label_student_email_column">E-mail do Aluno</string>
     <string name="label_student_name_column">Nome do Aluno</string>
+
+    <string name="label_use_reader">Usar Leitor</string>
+    <string name="header_known_devices">Leitores Conhecidos</string>
+    <string name="header_unknown_devices">Leitores Descobertos</string>
+    <string name="header_connected_devices">Leitores Conectados</string>
+    <string name="reader_list_title">Leitores Presensor</string>
+    <string name="rssi_format">%1$d dBm</string>
+    <string name="status_connecting">Conectando…</string>
+    <string name="status_connected">Conectado</string>
 </resources>

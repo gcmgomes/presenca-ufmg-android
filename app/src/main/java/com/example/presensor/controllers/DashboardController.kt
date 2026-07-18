@@ -1,34 +1,22 @@
 package com.example.presensor.controllers
 
 import android.app.Activity.RESULT_OK
-import android.bluetooth.le.ScanResult
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.RelativeLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import androidx.core.view.isGone
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import androidx.transition.ChangeBounds
 import androidx.transition.Fade
 import androidx.transition.TransitionManager
@@ -39,16 +27,10 @@ import com.example.presensor.MainUiBinder
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.MainActivity
 import com.example.presensor.cloud.DashboardCloudActions
-import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.MainActivity.AppState
 import com.example.presensor.adapters.ActionItem
 import com.example.presensor.adapters.ActionsPageAdapter
-import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
-import com.example.presensor.data.entities.Student
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.CoroutineScope
@@ -74,149 +56,9 @@ class DashboardController(
 
     private val cloudActions = DashboardCloudActions(activity) { refreshDashboard() }
 
-    private val discoveredDevices = mutableListOf<ScanResult>()
-    private var discoveryDialog: AlertDialog? = null
-
     init {
         setupSearchView()
     }
-
-    @androidx.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    fun setupReaderSearch() {
-        activity.readerManager?.onDeviceFoundListener = { result ->
-            activity.runOnUiThread { }
-            if (discoveredDevices.none { it.device.address == result.device.address }) {
-                discoveredDevices.add(result)
-                updateDiscoveryDialogList()
-            }
-        }
-    }
-
-    private fun startReaderDiscovery() {
-        discoveredDevices.clear()
-
-        activity.toggleLoadingOverlay(true)
-        // Turn on unfiltered discovery and start the scanner
-        activity.readerManager?.isBroadDiscoveryMode = true
-        activity.readerManager?.startConnecting()
-
-        // Build and show the initial loading/listing dialog
-        val builder = AlertDialog.Builder(activity)
-        builder.setTitle("Available Presensor Readers")
-        builder.setMessage("Searching for active readers...")
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            activity.readerManager?.disconnect()
-            dialog.dismiss()
-            activity.toggleLoadingOverlay(false)
-        }
-
-        discoveryDialog = builder.create()
-        discoveryDialog?.show()
-    }
-
-    @androidx.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-    private fun updateDiscoveryDialogList() {
-        val dialog = discoveryDialog ?: return
-        if (!dialog.isShowing) return
-
-        // Map scan results to clean display strings: "Name (MAC Address)"
-        val displayItems = discoveredDevices.map { result ->
-            val name = result.scanRecord?.deviceName ?: result.device.name ?: "Unknown Reader"
-            "$name\n[${result.device.address}]"
-        }.toTypedArray()
-
-        // Re-open the builder structure to swap the message out for a clickable list
-        val builder = AlertDialog.Builder(activity)
-        builder.setTitle("Available Presensor Readers")
-        builder.setItems(displayItems) { _, which ->
-            val chosenResult = discoveredDevices[which]
-            val chosenName =
-                chosenResult.scanRecord?.deviceName ?: chosenResult.device.name ?: "Unknown Reader"
-
-            handleReaderSelection(chosenName)
-        }
-        builder.setNegativeButton("Cancel") { _, _ ->
-            activity.readerManager?.disconnect()
-            activity.toggleLoadingOverlay(false)
-        }
-
-        // Swap the active dialog window seamlessly without a flickering overlay
-        discoveryDialog?.dismiss()
-        discoveryDialog = builder.create()
-        discoveryDialog?.show()
-    }
-
-    private fun handleReaderSelection(selectedName: String) {
-        // 1. Commit the target name to secure storage
-        activity.secureStorage.deviceName = selectedName
-
-        // 2. Evaluate if we need to collect a new password
-        if (!activity.secureStorage.hasPasswordFor(selectedName)) {
-            showPasswordPromptDialog(selectedName)
-        } else {
-            // Password already configured, safe to connect right away!
-            Log.d("handleReaderSelection", "Password already stored, connecting...")
-            connectToTargetReader()
-        }
-    }
-
-    private fun showPasswordPromptDialog(readerName: String) {
-        val builder = AlertDialog.Builder(activity)
-        builder.setTitle("Authenticate Connection")
-        builder.setMessage("Enter the access password for:\n'$readerName'")
-
-        val inputField = EditText(activity).apply {
-            inputType =
-                android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Reader Password"
-        }
-
-        val container = FrameLayout(activity)
-        val params = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            // Tip: Use pixel values or better, convert dps if scaling matters
-            leftMargin = 45
-            rightMargin = 45
-        }
-        inputField.layoutParams = params
-        container.addView(inputField)
-        builder.setView(container)
-
-        // Set listener to null here so it doesn't dismiss automatically
-        builder.setPositiveButton("Connect", null)
-
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            activity.readerManager?.disconnect()
-            dialog.dismiss()
-        }
-
-        // Create and show the dialog instance first
-        val alertDialog = builder.create()
-        alertDialog.show()
-
-        // Now capture the button from the living layout window and override its behavior
-        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val typedPassword = inputField.text.toString().trim() // Use trim() to catch spaces
-
-            if (typedPassword.isNotEmpty()) {
-                activity.secureStorage.saveReaderCredentials(readerName, typedPassword)
-                connectToTargetReader()
-                alertDialog.dismiss() // Safely exit only when valid
-            } else {
-                // Shake the field visually or give a localized warning message
-                inputField.error = "Password cannot be blank"
-            }
-        }
-    }
-
-    private fun connectToTargetReader() {
-        // Re-lock the scanning layer to strict target matching and kick off standard handshake
-        activity.readerManager?.isBroadDiscoveryMode = false
-        activity.readerManager?.startConnecting()
-    }
-
 
     private fun setupSearchView() {
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
@@ -291,7 +133,7 @@ class DashboardController(
                 "Reader list",
                 R.drawable.ic_person
             ) {
-                startReaderDiscovery()
+                activity.openReaderManagement()
             },
 
 

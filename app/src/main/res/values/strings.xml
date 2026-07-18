@@ -136,6 +136,9 @@
     <string name="action_yes">Yes</string>
     <string name="action_no">No</string>
     <string name="action_replace">Replace</string>
+    <string name="action_forget">Forget</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_edit">Edit</string>
 
     <string name="dialog_delete_course_title">Final Confirmation</string>
     <string name="dialog_delete_course_message">You are about to delete \'%1$s\'. This action is permanent. Please type DELETE below:</string>
@@ -198,4 +201,23 @@
     <string name="toast_csv_import_error">CSV Import error</string>
     <string name="label_student_email_column">Student Email</string>
     <string name="label_student_name_column">Student Name</string>
+
+    <string name="label_new_reader_name">New Reader Name</string>
+    <string name="label_old_password">Old Password</string>
+    <string name="label_new_password">New Password</string>
+    <string name="label_confirm_new_password">Confirm New Password</string>
+    <string name="error_passwords_mismatch">New passwords do not match</string>
+    <string name="error_incorrect_old_password">Old password is incorrect</string>
+    <string name="error_empty_password">Password cannot be empty</string>
+    <string name="toast_config_update_sent">Configuration update sent to reader</string>
+    <string name="dialog_reader_actions_title">Reader Actions</string>
+
+    <string name="label_use_reader">Use Reader</string>
+    <string name="header_known_devices">Known Devices</string>
+    <string name="header_unknown_devices">Discovered Devices</string>
+    <string name="header_connected_devices">Connected Devices</string>
+    <string name="reader_list_title">Presensor Readers</string>
+    <string name="rssi_format">%1$d dBm</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
 </resources>

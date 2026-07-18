@@ -28,6 +28,11 @@
             android:id="@+id/layoutCourseStatisticsView"
             layout="@layout/layout_course_statistics"
             android:visibility="gone" />
+
+        <include
+            android:id="@+id/layoutReaderManagementView"
+            layout="@layout/layout_reader_management"
+            android:visibility="gone" />
     </LinearLayout>
 
     <View
