@@ -68,9 +68,7 @@ class ReaderManagerTest {
             secureStoreManager = secureStoreManager,
             scope = testScope,
             mainDispatcher = testDispatcher,
-            ioDispatcher = testDispatcher,
-            toastProvider = toastProvider,
-            toggleLoadingOverlay = {}
+            ioDispatcher = testDispatcher
         )
     }
 
@@ -129,6 +127,9 @@ class ReaderManagerTest {
         // First get into a state where we can reconnect
         readerManager.startConnecting() 
         
+        // Simulate stopScan during connect attempt (non-broad mode) to reset isScanning
+        readerManager.stopScanning()
+
         gattCallback.onConnectionStateChange(bluetoothGatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_DISCONNECTED)
         
         assert(readerManager.connectionState.value == ReaderManager.ConnectionState.DISCONNECTED)

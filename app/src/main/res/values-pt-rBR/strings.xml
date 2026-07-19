@@ -48,6 +48,15 @@
     <string name="toast_cloud_attendance_sync_success">Presenças sincronizadas com sucesso na nuvem!</string>
     <string name="toast_cloud_sync_failed">Falha na sincronização na nuvem. Verifique as configurações de conectividade.</string>
 
+    <string name="dialog_cloud_schedule_import_title">Importar Cronograma das Planilhas</string>
+    <string name="dialog_cloud_schedule_import_subtitle">Escolha a Planilha do Google que contém o calendário de aulas:</string>
+    <string name="dialog_cloud_select_schedule_tab_title">Selecionar Aba do Cronograma</string>
+    <string name="dialog_cloud_select_schedule_tab_subtitle">Escolha a aba da planilha que contém as datas das aulas:</string>
+    <string name="dialog_cloud_export_attendance_title">Selecionar Planilha para Exportar Presença</string>
+    <string name="dialog_cloud_export_attendance_subtitle">Escolha a Planilha do Google para atualizar com os registros das aulas atuais:</string>
+    <string name="dialog_cloud_select_target_tab_title">Selecionar Aba de Destino</string>
+    <string name="dialog_cloud_select_target_tab_subtitle">Escolha a aba da planilha para mesclar as colunas da matriz de presença:</string>
+
     <string name="menu_cloud_student_import">Importar alunos</string>
     <string name="menu_cloud_database_import">Importar banco de dados</string>
     <string name="menu_cloud_database_export">Exportar banco de dados</string>
@@ -132,6 +141,9 @@
     <string name="action_yes">Sim</string>
     <string name="action_no">Não</string>
     <string name="action_replace">Substituir</string>
+    <string name="action_forget">Esquecer</string>
+    <string name="action_disconnect">Desconectar</string>
+    <string name="action_edit">Editar</string>
 
     <string name="dialog_delete_course_title">Confirmação Final</string>
     <string name="dialog_delete_course_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite DELETE abaixo:</string>
@@ -195,6 +207,16 @@
     <string name="label_student_email_column">E-mail do Aluno</string>
     <string name="label_student_name_column">Nome do Aluno</string>
 
+    <string name="label_new_reader_name">Novo Nome do Leitor</string>
+    <string name="label_old_password">Senha Antiga</string>
+    <string name="label_new_password">Nova Senha</string>
+    <string name="label_confirm_new_password">Confirmar Nova Senha</string>
+    <string name="error_passwords_mismatch">As novas senhas não coincidem</string>
+    <string name="error_incorrect_old_password">Senha antiga incorreta</string>
+    <string name="error_empty_password">A senha não pode estar vazia</string>
+    <string name="toast_config_update_sent">Atualização de configuração enviada ao leitor</string>
+    <string name="dialog_reader_actions_title">Ações do Leitor</string>
+
     <string name="label_use_reader">Usar Leitor</string>
     <string name="header_known_devices">Leitores Conhecidos</string>
     <string name="header_unknown_devices">Leitores Descobertos</string>
@@ -203,4 +225,5 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Conectando…</string>
     <string name="status_connected">Conectado</string>
+    <string name="message_enter_password">Digite a senha de acesso para:\n<b>%1$s</b></string>
 </resources>

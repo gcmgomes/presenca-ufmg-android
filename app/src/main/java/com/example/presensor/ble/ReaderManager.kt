@@ -10,7 +10,6 @@ import android.content.Context
 import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
-import com.example.presensor.tools.providers.ToastProvider
 import com.example.presensor.data.SecureStoreManager
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +24,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.*
 
+sealed class ReaderEvent {
+    object ConnectionSuccessful : ReaderEvent()
+    object AuthenticationFailed : ReaderEvent()
+    data class Error(val message: String) : ReaderEvent()
+}
+
 @SuppressLint("MissingPermission")
 class ReaderManager(
     private val context: Context,
@@ -32,8 +37,6 @@ class ReaderManager(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val toastProvider: ToastProvider,
-    private val toggleLoadingOverlay: (Boolean) -> Unit,
 ) {
 
     companion object {
@@ -70,6 +73,10 @@ class ReaderManager(
 
     private var bluetoothGatt: BluetoothGatt? = null
     private var isAppActiveState = false
+    private var pairingReceiver: BlePairingReceiver? = null
+    var lastConnectedRssi: Int? = null
+        private set
+    private var isScanning = false
 
     var onDeviceFoundListener: ((ScanResult) -> Unit)? = null
 
@@ -80,6 +87,9 @@ class ReaderManager(
     private val _rfidSwipeFlow = MutableSharedFlow<Pair<String, Long>>(replay = 0)
     val rfidSwipeFlow: SharedFlow<Pair<String, Long>> = _rfidSwipeFlow
 
+    private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 0)
+    val eventFlow: SharedFlow<ReaderEvent> = _eventFlow
+
     // --- Public API ---
     fun startConnecting() {
         isAuthenticationFailure = false
@@ -87,7 +97,20 @@ class ReaderManager(
         val adapter = bluetoothAdapter
         if (adapter == null || !adapter.isEnabled) {
             Log.e(TAG, "[Init Error] Bluetooth is disabled or not supported.")
+            scope.launch { _eventFlow.emit(ReaderEvent.Error("Bluetooth is disabled")) }
             return
+        }
+
+        // --- Hook up Pairing Receiver for automated bonding ---
+        if (!isBroadDiscoveryMode) {
+            val password = secureStoreManager.getAuthPasswordFor(secureStoreManager.deviceName)
+            if (password != null) {
+                pairingReceiver?.unregister(context)
+                pairingReceiver = BlePairingReceiver(password).apply {
+                    Log.d(TAG, "[Pairing] Registering automated pairing receiver for device.")
+                    register(context)
+                }
+            }
         }
 
         // CRITICAL: Only clean up if we are NOT in broad discovery mode.
@@ -116,6 +139,11 @@ class ReaderManager(
             return
         }
 
+        if (isScanning) {
+            Log.d(TAG, "[Scan] Scan already in progress. Ignoring request.")
+            return
+        }
+
         if (_connectionState.value == ConnectionState.DISCONNECTED) {
             _connectionState.value = ConnectionState.SCANNING
         }
@@ -130,7 +158,13 @@ class ReaderManager(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner.startScan(listOf(filter), settings, scanCallback)
+        try {
+            scanner.startScan(listOf(filter), settings, scanCallback)
+            isScanning = true
+        } catch (e: Exception) {
+            Log.e(TAG, "[Scan Error] Failed to start scan: ${e.message}")
+            isScanning = false
+        }
     }
 
     fun setAppActive(active: Boolean) {
@@ -145,6 +179,9 @@ class ReaderManager(
             isAutoReconnectEnabled = false
         }
         stopScanning()
+
+        pairingReceiver?.unregister(context)
+        pairingReceiver = null
 
         bluetoothGatt?.let { gatt ->
             Log.d(TAG, "[Cleanup] Explicitly disconnecting and closing GATT: $gatt")
@@ -166,6 +203,7 @@ class ReaderManager(
         } catch (e: Exception) {
             Log.w(TAG, "[Stop Scan] Failed to stop scan safely: ${e.message}")
         }
+        isScanning = false
         if (_connectionState.value == ConnectionState.SCANNING) {
             _connectionState.value = ConnectionState.DISCONNECTED
         }
@@ -182,6 +220,10 @@ class ReaderManager(
         val payload = "$newName\t$newPassword"
         Log.d(TAG, "[BLE Write] Sending Config Update to ESP32: '$newName' (password hidden)")
         writeCharacteristicCompat(gatt, charConfig, payload.toByteArray(Charsets.UTF_8))
+    }
+
+    fun requestRssiUpdate() {
+        bluetoothGatt?.readRemoteRssi()
     }
 
     // --- Modern, Safe Write Helper ---
@@ -258,6 +300,10 @@ class ReaderManager(
                 "[Scan Found] Detected Service Device: '$advertisedName' [${device.address}]"
             )
 
+            if (device.address == connectedDeviceAddress) {
+                lastConnectedRssi = result.rssi
+            }
+
             // --- THE FIX: If building the list, STOP HERE. Do not connect automatically! ---
             if (isBroadDiscoveryMode) {
                 return
@@ -278,6 +324,7 @@ class ReaderManager(
 
             try {
                 bluetoothAdapter?.bluetoothLeScanner?.stopScan(this)
+                isScanning = false
             } catch (e: SecurityException) {
                 Log.e(TAG, "[Security Exception] Scan permission missing during stop scan.", e)
             }
@@ -288,7 +335,9 @@ class ReaderManager(
 
         override fun onScanFailed(errorCode: Int) {
             Log.e(TAG, "[Scan Failed] BLE scanner failed with code: $errorCode")
+            isScanning = false
             _connectionState.value = ConnectionState.DISCONNECTED
+            scope.launch { _eventFlow.emit(ReaderEvent.Error("Scan failed: $errorCode")) }
         }
     }
 
@@ -348,6 +397,8 @@ class ReaderManager(
             if (status != BluetoothGatt.GATT_SUCCESS) return
 
             Log.i(TAG, "[GATT Callback] Services discovered. Initializing notification chain...")
+            gatt.readRemoteRssi() // Initial RSSI fetch
+
             val service = gatt.getService(SERVICE_UUID) ?: return
 
             // Kick off Step 1: Turn on RFID Data Notifications
@@ -453,6 +504,13 @@ class ReaderManager(
             }
         }
 
+        override fun onReadRemoteRssi(gatt: BluetoothGatt, rssi: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "[GATT] Remote RSSI update: $rssi dBm")
+                lastConnectedRssi = rssi
+            }
+        }
+
         private var lastProcessedTimestamp: String? = null
 
         private fun processIncomingData(value: ByteArray?) {
@@ -465,9 +523,8 @@ class ReaderManager(
             // --- Handle Authentication Verification ---
             if (data == "SUCCESS") {
                 Log.i(TAG, "[Auth] Device authenticated successfully! Running post-auth sync...")
-                scope.launch(mainDispatcher) {
-                    toastProvider.showToast("Connection successful!")
-                    toggleLoadingOverlay(false)
+                scope.launch {
+                    _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
                 }
                 scope.launch {
                     syncSystemTime()
@@ -480,9 +537,8 @@ class ReaderManager(
             if (data == "FAIL") {
                 Log.e(TAG, "[Auth Denied] Invalid password credential. Dropping connection link.")
                 isAuthenticationFailure = true
-                scope.launch(mainDispatcher) {
-                    toastProvider.showToast("Wrong password!")
-                    toggleLoadingOverlay(false)
+                scope.launch {
+                    _eventFlow.emit(ReaderEvent.AuthenticationFailed)
                 }
                 secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
                 disconnect()

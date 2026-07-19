@@ -285,9 +285,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             secureStoreManager = secureStoreManager,
             scope = lifecycleScope,
             mainDispatcher = Dispatchers.Main,
-            ioDispatcher = Dispatchers.IO,
-            toastProvider = toastProvider,
-            toggleLoadingOverlay = { flag -> toggleLoadingOverlay(flag) }
+            ioDispatcher = Dispatchers.IO
         )
 
 
@@ -524,7 +522,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                     }
 
                     AppState.READER_MANAGEMENT -> {
-                        readerConnectivityController.stopDiscovery(fullDisconnect = false)
+                        readerConnectivityController.teardownView()
                         currentState = AppState.DASHBOARD
                         toggleAllViews(layoutDashboardView = true)
                         dashboardController.refreshDashboard()

@@ -203,7 +203,7 @@
     <string name="label_student_name_column">Student Name</string>
 
     <string name="label_new_reader_name">New Reader Name</string>
-    <string name="label_old_password">Old Password</string>
+    <string name="label_old_password">Password</string>
     <string name="label_new_password">New Password</string>
     <string name="label_confirm_new_password">Confirm New Password</string>
     <string name="error_passwords_mismatch">New passwords do not match</string>
@@ -211,6 +211,7 @@
     <string name="error_empty_password">Password cannot be empty</string>
     <string name="toast_config_update_sent">Configuration update sent to reader</string>
     <string name="dialog_reader_actions_title">Reader Actions</string>
+    <string name="message_enter_password">Enter the access password for:\n<b>%1$s</b></string>
 
     <string name="label_use_reader">Use Reader</string>
     <string name="header_known_devices">Known Devices</string>

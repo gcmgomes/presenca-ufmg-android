@@ -3,12 +3,13 @@ package com.example.presensor.controllers
 import android.annotation.SuppressLint
 import android.bluetooth.le.ScanResult
 import android.graphics.Color
+import android.text.Html
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -17,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.MainActivity
 import com.example.presensor.R
+import com.example.presensor.ble.ReaderEvent
 import com.example.presensor.ble.ReaderManager
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.SecureStoreManager
@@ -41,6 +43,7 @@ class ReaderConnectivityController(
     private var adapter: DeviceListAdapter? = null
     private var statusJob: Job? = null
     private var refreshJob: Job? = null
+    private var eventJob: Job? = null
     private var connectingAddress: String? = null
     private var swipeRefreshLayout: SwipeRefreshLayout? = null
 
@@ -56,10 +59,12 @@ class ReaderConnectivityController(
 
         switchUseReader.isChecked = secureStoreManager.isReaderEnabled
         swipeRefreshLayout?.isEnabled = secureStoreManager.isReaderEnabled
-        
+
         adapter = DeviceListAdapter(
             onDeviceSelected = { name, address -> handleReaderSelection(name, address) },
-            onDeviceLongClicked = { name, address -> showReaderActionsDialog(name, address) }
+            onDisconnect = { activity.readerManager?.disconnect(disableAutoReconnect = true) },
+            onForget = { name, address -> handleForgetReader(name, address) },
+            onEdit = { name, address -> showEditReaderDialog(name, address) }
         )
         recyclerView.layoutManager = LinearLayoutManager(activity)
         recyclerView.adapter = adapter
@@ -71,6 +76,7 @@ class ReaderConnectivityController(
             swipeRefreshLayout?.isEnabled = isChecked
             if (isChecked) {
                 startDiscovery()
+                startRefreshLoop()
             } else {
                 stopDiscovery(fullDisconnect = true)
             }
@@ -94,10 +100,32 @@ class ReaderConnectivityController(
             }
         }
 
-        startRefreshLoop()
+        eventJob?.cancel()
+        eventJob = scope.launch(Dispatchers.Main) {
+            activity.readerManager?.eventFlow?.collect { event ->
+                handleReaderEvent(event)
+            }
+        }
 
         if (secureStoreManager.isReaderEnabled) {
             startDiscovery()
+            startRefreshLoop()
+        }
+    }
+
+    private fun handleReaderEvent(event: ReaderEvent) {
+        when (event) {
+            is ReaderEvent.ConnectionSuccessful -> {
+                Toast.makeText(activity, "Connection successful!", Toast.LENGTH_SHORT).show()
+            }
+
+            is ReaderEvent.AuthenticationFailed -> {
+                Toast.makeText(activity, "Wrong password!", Toast.LENGTH_SHORT).show()
+            }
+
+            is ReaderEvent.Error -> {
+                Toast.makeText(activity, event.message, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -106,6 +134,7 @@ class ReaderConnectivityController(
         refreshJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
                 delay(REFRESH_INTERVAL_MS)
+                activity.readerManager?.requestRssiUpdate()
                 pruneAndRefresh()
             }
         }
@@ -131,7 +160,7 @@ class ReaderConnectivityController(
                 val address = result.device.address
                 val isNew = !discoveredDevices.containsKey(address)
                 discoveredDevices[address] = result to System.currentTimeMillis()
-                
+
                 if (isNew) {
                     updateDeviceList()
                 }
@@ -152,8 +181,16 @@ class ReaderConnectivityController(
         connectingAddress = null
         updateDeviceList()
         refreshJob?.cancel()
-        adapter = null
+        refreshJob = null
+    }
+
+    fun teardownView() {
+        stopDiscovery(fullDisconnect = false)
         statusJob?.cancel()
+        statusJob = null
+        eventJob?.cancel()
+        eventJob = null
+        adapter = null
         swipeRefreshLayout = null
     }
 
@@ -164,15 +201,26 @@ class ReaderConnectivityController(
         }
 
         val connectedAddress = activity.readerManager?.connectedDeviceAddress
-        
+        val lastRssi = activity.readerManager?.lastConnectedRssi
+
         val connectedItems = mutableListOf<DeviceItem>()
         val knownItems = mutableListOf<DeviceItem>()
         val unknownItems = mutableListOf<DeviceItem>()
 
         if (connectedAddress != null) {
             val scanResult = discoveredDevices[connectedAddress]?.first
-            val name = scanResult?.scanRecord?.deviceName ?: scanResult?.device?.name ?: secureStoreManager.deviceName
-            connectedItems.add(DeviceItem(name, connectedAddress, scanResult?.rssi, isConnected = true, isConnecting = false))
+            val name = scanResult?.scanRecord?.deviceName ?: scanResult?.device?.name
+            ?: secureStoreManager.deviceName
+            val rssi = scanResult?.rssi ?: lastRssi
+            connectedItems.add(
+                DeviceItem(
+                    name,
+                    connectedAddress,
+                    rssi,
+                    isConnected = true,
+                    isConnecting = false
+                )
+            )
         }
 
         discoveredDevices.values.forEach { (result, _) ->
@@ -181,25 +229,31 @@ class ReaderConnectivityController(
 
             val name = result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
             val isConnecting = address == connectingAddress
-            
-            val item = DeviceItem(name, address, result.rssi, isConnected = false, isConnecting = isConnecting)
-            
+
+            val item = DeviceItem(
+                name,
+                address,
+                result.rssi,
+                isConnected = false,
+                isConnecting = isConnecting
+            )
+
             if (secureStoreManager.hasPasswordFor(name)) {
                 knownItems.add(item)
             } else {
                 unknownItems.add(item)
             }
         }
-        
+
         adapter?.submitList(connectedItems, knownItems, unknownItems)
     }
 
     private fun handleReaderSelection(name: String, address: String) {
         if (address == activity.readerManager?.connectedDeviceAddress) return
-        
+
         connectingAddress = address
         updateDeviceList()
-        
+
         secureStoreManager.deviceName = name
         if (!secureStoreManager.hasPasswordFor(name)) {
             showPasswordPromptDialog(name)
@@ -208,32 +262,19 @@ class ReaderConnectivityController(
         }
     }
 
-    private fun showReaderActionsDialog(name: String, address: String) {
-        val options = arrayOf(
-            activity.getString(R.string.action_disconnect),
-            activity.getString(R.string.action_forget),
-            activity.getString(R.string.action_edit)
-        )
-
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.dialog_reader_actions_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> activity.readerManager?.disconnect(disableAutoReconnect = true)
-                    1 -> {
-                        secureStoreManager.clearCredentialsFor(name)
-                        updateDeviceList()
-                    }
-                    2 -> showEditReaderDialog(name, address)
-                }
-            }
-            .show()
+    private fun handleForgetReader(name: String, address: String) {
+        if (address == activity.readerManager?.connectedDeviceAddress) {
+            activity.readerManager?.disconnect(disableAutoReconnect = true)
+        }
+        secureStoreManager.clearCredentialsFor(name)
+        updateDeviceList()
     }
 
     private fun showEditReaderDialog(readerName: String, address: String) {
         val isConnected = (address == activity.readerManager?.connectedDeviceAddress)
         if (!isConnected) {
-            Toast.makeText(activity, "Must be connected to edit configuration", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Must be connected to edit configuration", Toast.LENGTH_SHORT)
+                .show()
             return
         }
 
@@ -241,7 +282,8 @@ class ReaderConnectivityController(
         val inputName = dialogView.findViewById<TextInputEditText>(R.id.editReaderName)
         val inputOldPass = dialogView.findViewById<TextInputEditText>(R.id.editOldPassword)
         val inputNewPass = dialogView.findViewById<TextInputEditText>(R.id.editNewPassword)
-        val inputConfirmPass = dialogView.findViewById<TextInputEditText>(R.id.editConfirmNewPassword)
+        val inputConfirmPass =
+            dialogView.findViewById<TextInputEditText>(R.id.editConfirmNewPassword)
 
         inputName.setText(readerName)
 
@@ -264,9 +306,15 @@ class ReaderConnectivityController(
 
             when {
                 newName.isEmpty() -> inputName.error = activity.getString(R.string.error_empty_name)
-                oldPass != storedPass -> inputOldPass.error = activity.getString(R.string.error_incorrect_old_password)
-                newPass.isEmpty() -> inputNewPass.error = activity.getString(R.string.error_empty_password)
-                newPass != confirmPass -> inputConfirmPass.error = activity.getString(R.string.error_passwords_mismatch)
+                oldPass != storedPass -> inputOldPass.error =
+                    activity.getString(R.string.error_incorrect_old_password)
+
+                newPass.isEmpty() -> inputNewPass.error =
+                    activity.getString(R.string.error_empty_password)
+
+                newPass != confirmPass -> inputConfirmPass.error =
+                    activity.getString(R.string.error_passwords_mismatch)
+
                 else -> {
                     // Send to BLE
                     activity.readerManager?.updateReaderConfig(newName, newPass)
@@ -274,8 +322,9 @@ class ReaderConnectivityController(
                     secureStoreManager.clearCredentialsFor(readerName)
                     secureStoreManager.saveReaderCredentials(newName, newPass)
                     secureStoreManager.deviceName = newName
-                    
-                    Toast.makeText(activity, R.string.toast_config_update_sent, Toast.LENGTH_SHORT).show()
+
+                    Toast.makeText(activity, R.string.toast_config_update_sent, Toast.LENGTH_SHORT)
+                        .show()
                     dialog.dismiss()
                     updateDeviceList()
                 }
@@ -284,43 +333,30 @@ class ReaderConnectivityController(
     }
 
     private fun showPasswordPromptDialog(readerName: String) {
-        val builder = AlertDialog.Builder(activity)
-        builder.setTitle(R.string.title_assign_tag)
-        builder.setMessage("Enter the access password for:\n'$readerName'")
+        val dialogView =
+            LayoutInflater.from(activity).inflate(R.layout.dialog_reader_password, null)
+        val inputField = dialogView.findViewById<TextInputEditText>(R.id.editReaderPassword)
 
-        val inputField = EditText(activity).apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Reader Password"
-        }
 
-        val container = FrameLayout(activity)
-        val params = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            leftMargin = 45
-            rightMargin = 45
-        }
-        inputField.layoutParams = params
-        container.addView(inputField)
-        builder.setView(container)
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle("Insert password for $readerName")
+            .setView(dialogView)
+            .setPositiveButton("Connect", null)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setOnCancelListener {
+                connectingAddress = null
+                updateDeviceList()
+            }
+            .create()
 
-        builder.setPositiveButton("Connect", null)
-        builder.setNegativeButton(R.string.action_cancel) { dialog, _ ->
-            connectingAddress = null
-            updateDeviceList()
-            dialog.dismiss()
-        }
+        dialog.show()
 
-        val alertDialog = builder.create()
-        alertDialog.show()
-
-        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val typedPassword = inputField.text.toString().trim()
             if (typedPassword.isNotEmpty()) {
                 secureStoreManager.saveReaderCredentials(readerName, typedPassword)
                 connectToTargetReader()
-                alertDialog.dismiss()
+                dialog.dismiss()
             } else {
                 inputField.error = "Password cannot be blank"
             }
@@ -342,17 +378,24 @@ class ReaderConnectivityController(
 
     private class DeviceListAdapter(
         private val onDeviceSelected: (String, String) -> Unit,
-        private val onDeviceLongClicked: (String, String) -> Unit
+        private val onDisconnect: () -> Unit,
+        private val onForget: (String, String) -> Unit,
+        private val onEdit: (String, String) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
         private var items = mutableListOf<Any>()
+        private var expandedAddress: String? = null
 
         companion object {
             private const val TYPE_HEADER = 0
             private const val TYPE_DEVICE = 1
         }
 
-        fun submitList(connected: List<DeviceItem>, known: List<DeviceItem>, unknown: List<DeviceItem>) {
+        fun submitList(
+            connected: List<DeviceItem>,
+            known: List<DeviceItem>,
+            unknown: List<DeviceItem>
+        ) {
             items.clear()
             if (connected.isNotEmpty()) {
                 items.add("CONNECTED")
@@ -393,7 +436,7 @@ class ReaderConnectivityController(
             } else if (holder is DeviceViewHolder && item is DeviceItem) {
                 holder.txtName.text = item.name
                 holder.txtMac.text = item.address
-                
+
                 // Set Connection Accent
                 if (item.isConnected) {
                     holder.viewAccent.setBackgroundColor(Color.parseColor("#4CAF50")) // Material Green
@@ -403,7 +446,8 @@ class ReaderConnectivityController(
 
                 // Set Signal Icon and Text
                 if (item.isConnecting) {
-                    holder.txtValue.text = holder.itemView.context.getString(R.string.status_connecting)
+                    holder.txtValue.text =
+                        holder.itemView.context.getString(R.string.status_connecting)
                     holder.imgSignal.visibility = View.GONE
                 } else {
                     holder.imgSignal.visibility = View.VISIBLE
@@ -416,13 +460,58 @@ class ReaderConnectivityController(
                     holder.imgSignal.setImageResource(iconRes)
                     holder.txtValue.text = rssiText
                 }
-                
+
+                // Inline Actions Expansion
+                if (expandedAddress == item.address) {
+                    populateActions(holder, item)
+                    holder.container.visibility = View.VISIBLE
+                } else {
+                    holder.container.visibility = View.GONE
+                }
+
                 holder.itemView.setOnClickListener { onDeviceSelected(item.name, item.address) }
                 holder.itemView.setOnLongClickListener {
-                    onDeviceLongClicked(item.name, item.address)
+                    val oldExpanded = expandedAddress
+                    expandedAddress = if (expandedAddress == item.address) null else item.address
+
+                    notifyItemChanged(position)
+                    val oldPos =
+                        items.indexOfFirst { it is DeviceItem && it.address == oldExpanded }
+                    if (oldPos != -1) notifyItemChanged(oldPos)
+
                     true
                 }
             }
+        }
+
+        private fun populateActions(holder: DeviceViewHolder, item: DeviceItem) {
+            holder.container.removeAllViews()
+            val inflater = LayoutInflater.from(holder.itemView.context)
+            val actionView =
+                inflater.inflate(R.layout.layout_reader_actions_inline, holder.container, false)
+
+            actionView.findViewById<View>(R.id.btnInlineDisconnect).setOnClickListener {
+                onDisconnect()
+                val pos = holder.adapterPosition
+                expandedAddress = null
+                if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos)
+            }
+
+            actionView.findViewById<View>(R.id.btnInlineForget).setOnClickListener {
+                onForget(item.name, item.address)
+                val pos = holder.adapterPosition
+                expandedAddress = null
+                if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos)
+            }
+
+            actionView.findViewById<View>(R.id.btnInlineEdit).setOnClickListener {
+                onEdit(item.name, item.address)
+                val pos = holder.adapterPosition
+                expandedAddress = null
+                if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos)
+            }
+
+            holder.container.addView(actionView)
         }
 
         override fun getItemCount(): Int = items.size
@@ -437,6 +526,7 @@ class ReaderConnectivityController(
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)
             val imgSignal: ImageView = v.findViewById(R.id.imgSignalIcon)
             val viewAccent: View = v.findViewById(R.id.viewConnectionAccent)
+            val container: LinearLayout = v.findViewById(R.id.layoutExpandedContent)
         }
     }
 }
