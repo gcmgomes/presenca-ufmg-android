@@ -144,6 +144,7 @@
     <string name="action_forget">Esquecer</string>
     <string name="action_disconnect">Desconectar</string>
     <string name="action_edit">Editar</string>
+    <string name="action_inventory">Estoque</string>
 
     <string name="dialog_delete_course_title">Confirmação Final</string>
     <string name="dialog_delete_course_message">Você está prestes a excluir \'%1$s\'. Esta ação é permanente. Por favor, digite DELETE abaixo:</string>
@@ -226,4 +227,6 @@
     <string name="status_connecting">Conectando…</string>
     <string name="status_connected">Conectado</string>
     <string name="message_enter_password">Digite a senha de acesso para:\n<b>%1$s</b></string>
+    <string name="inventory_dialog_title">Inventário do Leitor</string>
+    <string name="inventory_empty_message">Nenhum item pendente encontrado no leitor.</string>
 </resources>

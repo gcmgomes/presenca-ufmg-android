@@ -139,6 +139,7 @@
     <string name="action_forget">Forget</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_edit">Edit</string>
+    <string name="action_inventory">Inventory</string>
 
     <string name="dialog_delete_course_title">Final Confirmation</string>
     <string name="dialog_delete_course_message">You are about to delete \'%1$s\'. This action is permanent. Please type DELETE below:</string>
@@ -221,4 +222,6 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
+    <string name="inventory_dialog_title">Reader Inventory</string>
+    <string name="inventory_empty_message">No backlogged items found on reader.</string>
 </resources>

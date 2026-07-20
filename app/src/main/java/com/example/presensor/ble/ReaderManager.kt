@@ -54,6 +54,9 @@ class ReaderManager(
         private val CHAR_CONFIG_UPDATE_UUID =
             UUID.fromString("d117c60e-744d-4475-b6d9-aa3cf047ee2d")
 
+        private val CHAR_INVENTORY_UUID =
+            UUID.fromString("b59a681c-81db-4db6-9e96-a19f96da6041")
+
         // Client Characteristic Configuration Descriptor (CCCD)
         private val CCC_DESCRIPTOR_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
@@ -86,6 +89,9 @@ class ReaderManager(
 
     private val _rfidSwipeFlow = MutableSharedFlow<Pair<String, Long>>(replay = 0)
     val rfidSwipeFlow: SharedFlow<Pair<String, Long>> = _rfidSwipeFlow
+
+    private val _inventoryFlow = MutableSharedFlow<Pair<String, Long>>(replay = 0)
+    val inventoryFlow: SharedFlow<Pair<String, Long>> = _inventoryFlow
 
     private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 0)
     val eventFlow: SharedFlow<ReaderEvent> = _eventFlow
@@ -224,6 +230,32 @@ class ReaderManager(
 
     fun requestRssiUpdate() {
         bluetoothGatt?.readRemoteRssi()
+    }
+
+    fun requestInventory() {
+        Log.i(TAG, "[Inventory] requestInventory() called.")
+        val gatt = bluetoothGatt
+        if (gatt == null) {
+            Log.e(TAG, "[Inventory Error] Cannot request: bluetoothGatt is null")
+            return
+        }
+        val service = gatt.getService(SERVICE_UUID)
+        if (service == null) {
+            Log.e(TAG, "[Inventory Error] Cannot request: Service $SERVICE_UUID not found")
+            return
+        }
+        val charInventory = service.getCharacteristic(CHAR_INVENTORY_UUID)
+        if (charInventory == null) {
+            Log.e(TAG, "[Inventory Error] Cannot request: Characteristic $CHAR_INVENTORY_UUID not found in service")
+            // Log all available characteristics for debugging
+            service.characteristics.forEach { 
+                Log.d(TAG, "  Found characteristic: ${it.uuid}")
+            }
+            return
+        }
+
+        Log.i(TAG, "[Inventory] Sending 'GET' command to ESP32...")
+        writeCharacteristicCompat(gatt, charInventory, "GET".toByteArray(Charsets.UTF_8))
     }
 
     // --- Modern, Safe Write Helper ---
@@ -410,26 +442,49 @@ class ReaderManager(
             Log.i(TAG, "[GATT Callback] Services discovered. Initializing notification chain...")
             gatt.readRemoteRssi() // Initial RSSI fetch
 
-            val service = gatt.getService(SERVICE_UUID) ?: return
+            // Start the subscription chain from the beginning
+            proceedToNextSubscriptionStep(gatt, null)
+        }
 
-            // Kick off Step 1: Turn on RFID Data Notifications
-            val rfidDataChar = service.getCharacteristic(CHAR_RFID_DATA_UUID)
-            if (rfidDataChar != null) {
-                gatt.setCharacteristicNotification(rfidDataChar, true)
-                rfidDataChar.getDescriptor(CCC_DESCRIPTOR_UUID)?.let { descriptor ->
-                    Log.d(TAG, "[GATT Queue] Writing RFID descriptor subscription...")
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        gatt.writeDescriptor(
-                            descriptor,
-                            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        )
-                    } else {
-                        @Suppress("DEPRECATION")
-                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        @Suppress("DEPRECATION")
-                        gatt.writeDescriptor(descriptor)
-                    }
+        private fun proceedToNextSubscriptionStep(gatt: BluetoothGatt, lastUuid: UUID?) {
+            val service = gatt.getService(SERVICE_UUID) ?: return
+            
+            val nextUuid = when (lastUuid) {
+                null -> CHAR_RFID_DATA_UUID
+                CHAR_RFID_DATA_UUID -> CHAR_AUTH_UUID
+                CHAR_AUTH_UUID -> CHAR_INVENTORY_UUID
+                CHAR_INVENTORY_UUID -> {
+                    triggerPasswordChallenge(gatt, service)
+                    return
                 }
+                else -> return
+            }
+
+            val char = service.getCharacteristic(nextUuid)
+            if (char != null) {
+                Log.d(TAG, "[GATT Chain] Subscribing to $nextUuid...")
+                subscribeToNotifications(gatt, char)
+            } else {
+                Log.w(TAG, "[GATT Chain] Optional characteristic $nextUuid missing. Skipping...")
+                proceedToNextSubscriptionStep(gatt, nextUuid)
+            }
+        }
+
+        private fun subscribeToNotifications(gatt: BluetoothGatt, char: BluetoothGattCharacteristic) {
+            gatt.setCharacteristicNotification(char, true)
+            val descriptor = char.getDescriptor(CCC_DESCRIPTOR_UUID)
+            if (descriptor != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    @Suppress("DEPRECATION")
+                    gatt.writeDescriptor(descriptor)
+                }
+            } else {
+                Log.w(TAG, "[GATT Chain] CCCD Descriptor missing for ${char.uuid}. Proceeding manually...")
+                proceedToNextSubscriptionStep(gatt, char.uuid)
             }
         }
 
@@ -440,54 +495,17 @@ class ReaderManager(
         ) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(TAG, "[GATT Callback] Descriptor write failed for UUID: ${descriptor.uuid}")
-                return
             }
+            proceedToNextSubscriptionStep(gatt, descriptor.characteristic.uuid)
+        }
 
-            val service = gatt.getService(SERVICE_UUID) ?: return
-
-            // Check if the descriptor that just finished writing belongs to the RFID characteristic
-            if (descriptor.characteristic.uuid == CHAR_RFID_DATA_UUID) {
-                Log.i(
-                    TAG,
-                    "[GATT Chain] RFID subscription confirmed. Moving to AUTH subscription..."
-                )
-
-                // Step 2: Now that RFID is safely registered, subscribe to the AUTH characteristic
-                val authChar = service.getCharacteristic(CHAR_AUTH_UUID)
-                if (authChar != null) {
-                    gatt.setCharacteristicNotification(authChar, true)
-                    authChar.getDescriptor(CCC_DESCRIPTOR_UUID)?.let { authDescriptor ->
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            gatt.writeDescriptor(
-                                authDescriptor,
-                                BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            authDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            @Suppress("DEPRECATION")
-                            gatt.writeDescriptor(authDescriptor)
-                        }
-                    }
-                }
-            }
-            // Check if the descriptor that just finished belongs to the AUTH characteristic
-            else if (descriptor.characteristic.uuid == CHAR_AUTH_UUID) {
-                Log.i(
-                    TAG,
-                    "[GATT Chain] AUTH subscription confirmed. Triggering password challenge..."
-                )
-
-                // Step 3: Both descriptors are safely bound! Now fire your password verification
-                val authChar = service.getCharacteristic(CHAR_AUTH_UUID)
-                if (authChar != null) {
-                    scope.launch {
-                        delay(300) // Small safety window just to let the radio completely clear
-                        val passwordBytes = secureStoreManager.getAuthPasswordBytes()
-                        Log.i(TAG, "[Auth] Submitting password challenge bytes...")
-                        writeCharacteristicCompat(gatt, authChar, passwordBytes)
-                    }
-                }
+        private fun triggerPasswordChallenge(gatt: BluetoothGatt, service: BluetoothGattService) {
+            val authChar = service.getCharacteristic(CHAR_AUTH_UUID) ?: return
+            scope.launch {
+                delay(300) 
+                val passwordBytes = secureStoreManager.getAuthPasswordBytes()
+                Log.i(TAG, "[Auth] Submitting password challenge bytes...")
+                writeCharacteristicCompat(gatt, authChar, passwordBytes)
             }
         }
 
@@ -500,7 +518,7 @@ class ReaderManager(
             // Only process here if we are on Android 12 or below
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                 @Suppress("DEPRECATION")
-                processIncomingData(characteristic.value)
+                processIncomingData(characteristic.value, characteristic.uuid)
             }
         }
 
@@ -511,7 +529,7 @@ class ReaderManager(
             value: ByteArray
         ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                processIncomingData(value)
+                processIncomingData(value, characteristic.uuid)
             }
         }
 
@@ -524,7 +542,7 @@ class ReaderManager(
 
         private var lastProcessedTimestamp: String? = null
 
-        private fun processIncomingData(value: ByteArray?) {
+        private fun processIncomingData(value: ByteArray?, charUuid: UUID) {
             // Convert to string and aggressively sanitize (trim and strip null terminators)
             val data = value?.toString(Charsets.UTF_8)
                 ?.replace("\u0000", "")
@@ -532,73 +550,88 @@ class ReaderManager(
 
             // --- RESTORED GLOBAL INSTANCE LOGGING ---
             val instanceId = System.identityHashCode(this).toString(16).uppercase()
-            Log.i(TAG, "[BLE Notification from $instanceId] Raw Payload: '$data'")
+            Log.i(TAG, "[BLE Notification from $instanceId] Raw Payload: '$data' (from $charUuid)")
 
             // --- Handle Authentication Verification ---
-            if (data == "SUCCESS") {
-                Log.i(TAG, "[Auth] Device authenticated successfully! Running post-auth sync...")
-                scope.launch {
-                    _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
-                }
-                scope.launch {
-                    syncSystemTime()
-                    delay(300)
-                    writeAppModeState(isAppActiveState)
-                }
-                return
-            }
-
-            if (data == "FAIL") {
-                Log.e(TAG, "[Auth Denied] Invalid password credential. Dropping connection link.")
-                isAuthenticationFailure = true
-                scope.launch {
-                    _eventFlow.emit(ReaderEvent.AuthenticationFailed)
-                }
-                secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
-                disconnect()
-                return
-            }
-
-            if (data == "DONE") {
-                Log.d(TAG, "ESP32 sent DONE signal. Backlog sync finished.")
-                scope.launch {
-                    _rfidSwipeFlow.emit(Pair("SYNC_DONE", 0L))
-                }
-                return
-            }
-
-            // --- Handle Regular Tag Data Influx ---
-            val parts = data.split(",")
-            if (parts.size == 2) {
-                val tagId = parts[0].trim()
-                val timestampStr = parts[1].trim()
-                try {
-                    val epochSec = timestampStr.toLong()
-
-                    // --- ACCURATE STOP-AND-WAIT DEDUPLICATION ---
-                    if (tagId == lastProcessedTag && timestampStr == lastProcessedTimestamp) {
-                        Log.d(
-                            TAG,
-                            "[Deduplication] Retransmission detected for $tagId. Re-sending ACK to unstick ESP32."
-                        )
-                        writeAckToEsp32(tagId, timestampStr)
-                        return
-                    }
-
-                    // Update our tracking variables with the unique historical record markers
-                    lastProcessedTag = tagId
-                    lastProcessedTimestamp = timestampStr
-
-                    // Fresh new record! Process it normally
+            if (charUuid == CHAR_AUTH_UUID) {
+                if (data == "SUCCESS") {
+                    Log.i(TAG, "[Auth] Device authenticated successfully! Running post-auth sync...")
                     scope.launch {
-                        _rfidSwipeFlow.emit(Pair(tagId, epochSec))
+                        _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
                     }
-                    writeAckToEsp32(tagId, timestampStr)
-                } catch (e: NumberFormatException) {
-                    Log.e(TAG, "[Parser Error] Failed parsing timestamp: '$timestampStr' in data '$data'", e)
+                    scope.launch {
+                        syncSystemTime()
+                        delay(300)
+                        writeAppModeState(isAppActiveState)
+                    }
+                    return
                 }
-            } else {
-                Log.w(TAG, "[Protocol Warning] Received invalid packet format: '$data'")
+
+                if (data == "FAIL") {
+                    Log.e(TAG, "[Auth Denied] Invalid password credential. Dropping connection link.")
+                    isAuthenticationFailure = true
+                    scope.launch {
+                        _eventFlow.emit(ReaderEvent.AuthenticationFailed)
+                    }
+                    secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
+                    disconnect()
+                    return
+                }
+            }
+
+            if (charUuid == CHAR_RFID_DATA_UUID || charUuid == CHAR_INVENTORY_UUID) {
+                if (data == "DONE") {
+                    Log.d(TAG, "ESP32 sent DONE signal. Sync finished.")
+                    scope.launch {
+                        if (charUuid == CHAR_RFID_DATA_UUID) {
+                            _rfidSwipeFlow.emit(Pair("SYNC_DONE", 0L))
+                        } else {
+                            _inventoryFlow.emit(Pair("SYNC_DONE", 0L))
+                        }
+                    }
+                    return
+                }
+
+                // --- Handle Regular Tag Data Influx ---
+                val parts = data.split(",")
+                if (parts.size == 2) {
+                    val tagId = parts[0].trim()
+                    val timestampStr = parts[1].trim()
+                    try {
+                        val epochSec = timestampStr.toLong()
+
+                        if (charUuid == CHAR_RFID_DATA_UUID) {
+                            // --- ACCURATE STOP-AND-WAIT DEDUPLICATION ---
+                            if (tagId == lastProcessedTag && timestampStr == lastProcessedTimestamp) {
+                                Log.d(
+                                    TAG,
+                                    "[Deduplication] Retransmission detected for $tagId. Re-sending ACK to unstick ESP32."
+                                )
+                                writeAckToEsp32(tagId, timestampStr)
+                                return
+                            }
+
+                            // Update our tracking variables with the unique historical record markers
+                            lastProcessedTag = tagId
+                            lastProcessedTimestamp = timestampStr
+
+                            // Fresh new record! Process it normally
+                            scope.launch {
+                                _rfidSwipeFlow.emit(Pair(tagId, epochSec))
+                            }
+                            writeAckToEsp32(tagId, timestampStr)
+                        } else {
+                            // Inventory - No ACK needed, just emit
+                            scope.launch {
+                                _inventoryFlow.emit(Pair(tagId, epochSec))
+                            }
+                        }
+                    } catch (e: NumberFormatException) {
+                        Log.e(TAG, "[Parser Error] Failed parsing timestamp: '$timestampStr' in data '$data'")
+                    }
+                } else {
+                    Log.w(TAG, "[Protocol Warning] Received invalid packet format: '$data'")
+                }
             }
         }
     }

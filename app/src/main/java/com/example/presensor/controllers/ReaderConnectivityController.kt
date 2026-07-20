@@ -31,6 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @SuppressLint("MissingPermission")
 class ReaderConnectivityController(
@@ -44,6 +47,7 @@ class ReaderConnectivityController(
     private var statusJob: Job? = null
     private var refreshJob: Job? = null
     private var eventJob: Job? = null
+    private var inventoryJob: Job? = null
     private var connectingAddress: String? = null
     private var swipeRefreshLayout: SwipeRefreshLayout? = null
 
@@ -64,7 +68,11 @@ class ReaderConnectivityController(
             onDeviceSelected = { name, address -> handleReaderSelection(name, address) },
             onDisconnect = { activity.readerManager?.disconnect(disableAutoReconnect = true) },
             onForget = { name, address -> handleForgetReader(name, address) },
-            onEdit = { name, address -> showEditReaderDialog(name, address) }
+            onEdit = { name, address -> showEditReaderDialog(name, address) },
+            onInventory = { 
+                android.util.Log.d("ReaderConnectivityController", "Inventory button clicked!")
+                handleInventoryRequest() 
+            }
         )
         recyclerView.layoutManager = LinearLayoutManager(activity)
         recyclerView.adapter = adapter
@@ -190,6 +198,8 @@ class ReaderConnectivityController(
         statusJob = null
         eventJob?.cancel()
         eventJob = null
+        inventoryJob?.cancel()
+        inventoryJob = null
         adapter = null
         swipeRefreshLayout = null
     }
@@ -363,6 +373,35 @@ class ReaderConnectivityController(
         }
     }
 
+    private fun handleInventoryRequest() {
+        val inventoryItems = mutableListOf<String>()
+        val dateFormat = SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault())
+
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.inventory_dialog_title)
+            .setMessage("Fetching inventory...")
+            .setPositiveButton(R.string.action_ok, null)
+            .show()
+
+        inventoryJob?.cancel()
+        inventoryJob = scope.launch(Dispatchers.Main) {
+            activity.readerManager?.inventoryFlow?.collect { (tagId, timestamp) ->
+                if (tagId == "SYNC_DONE") {
+                    if (inventoryItems.isEmpty()) {
+                        dialog.setMessage(activity.getString(R.string.inventory_empty_message))
+                    }
+                    inventoryJob?.cancel()
+                } else {
+                    val dateStr = dateFormat.format(Date(timestamp * 1000L))
+                    inventoryItems.add("• $tagId\n  [$dateStr]")
+                    dialog.setMessage(inventoryItems.joinToString("\n\n"))
+                }
+            }
+        }
+
+        activity.readerManager?.requestInventory()
+    }
+
     private fun connectToTargetReader() {
         activity.readerManager?.isBroadDiscoveryMode = false
         activity.readerManager?.startConnecting()
@@ -380,7 +419,8 @@ class ReaderConnectivityController(
         private val onDeviceSelected: (String, String) -> Unit,
         private val onDisconnect: () -> Unit,
         private val onForget: (String, String) -> Unit,
-        private val onEdit: (String, String) -> Unit
+        private val onEdit: (String, String) -> Unit,
+        private val onInventory: () -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
         private var items = mutableListOf<Any>()
@@ -509,6 +549,10 @@ class ReaderConnectivityController(
                 val pos = holder.adapterPosition
                 expandedAddress = null
                 if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos)
+            }
+
+            actionView.findViewById<View>(R.id.btnInlineInventory).setOnClickListener {
+                onInventory()
             }
 
             holder.container.addView(actionView)
