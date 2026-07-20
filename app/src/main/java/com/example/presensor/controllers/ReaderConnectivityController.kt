@@ -141,8 +141,13 @@ class ReaderConnectivityController(
         refreshJob?.cancel()
         refreshJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
+                // Trigger a burst discovery and RSSI update
+                if (secureStoreManager.isReaderEnabled) {
+                    startDiscovery()
+                    activity.readerManager?.requestRssiUpdate()
+                }
+                
                 delay(REFRESH_INTERVAL_MS)
-                activity.readerManager?.requestRssiUpdate()
                 pruneAndRefresh()
             }
         }
@@ -153,6 +158,7 @@ class ReaderConnectivityController(
         val iterator = discoveredDevices.entries.iterator()
         while (iterator.hasNext()) {
             val entry = iterator.next()
+            // Prune devices not seen for 20 seconds
             if (now - entry.value.second > STALE_THRESHOLD_MS) {
                 iterator.remove()
             }
@@ -161,7 +167,7 @@ class ReaderConnectivityController(
     }
 
     private fun startDiscovery() {
-        discoveredDevices.clear()
+        // Start a burst scan
         activity.readerManager?.isBroadDiscoveryMode = true
         activity.readerManager?.onDeviceFoundListener = { result ->
             activity.runOnUiThread {
@@ -175,11 +181,21 @@ class ReaderConnectivityController(
             }
         }
         activity.readerManager?.startScan()
+        
+        // Auto-stop the scan after a burst period (e.g., 6 seconds) 
+        // to prevent log swamping and save battery.
+        scope.launch {
+            delay(6000)
+            activity.readerManager?.stopScanning()
+        }
+        
         updateDeviceList()
     }
 
     fun stopDiscovery(fullDisconnect: Boolean) {
         activity.readerManager?.onDeviceFoundListener = null
+        activity.readerManager?.isBroadDiscoveryMode = false
+        
         if (fullDisconnect) {
             activity.readerManager?.disconnect()
         } else {
@@ -194,6 +210,7 @@ class ReaderConnectivityController(
 
     fun teardownView() {
         stopDiscovery(fullDisconnect = false)
+        activity.readerManager?.isBroadDiscoveryMode = false
         statusJob?.cancel()
         statusJob = null
         eventJob?.cancel()

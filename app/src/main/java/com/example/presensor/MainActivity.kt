@@ -210,7 +210,9 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
             // SAFE ZONE: Initialize the channel right before connecting
             initializeReaderStatusChannel()
-            readerManager?.startConnecting()
+            if (secureStoreManager.isReaderEnabled) {
+                readerManager?.startConnecting()
+            }
             readerManager?.setAppActive(false)
         } else {
             Log.e("MainActivity", "Permissions denied by user.")
@@ -245,7 +247,9 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         if (missingPermissions.isEmpty()) {
             Log.d("MainActivity", "Permissions already granted. Initializing pipeline...")
             initializeReaderStatusChannel()
-            readerManager?.startConnecting()
+            if (secureStoreManager.isReaderEnabled) {
+                readerManager?.startConnecting()
+            }
             readerManager?.setAppActive(false)
         } else {
             Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")

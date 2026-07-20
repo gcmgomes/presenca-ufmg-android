@@ -188,6 +188,7 @@ class ReaderManager(
 
         pairingReceiver?.unregister(context)
         pairingReceiver = null
+        isBroadDiscoveryMode = false
 
         bluetoothGatt?.let { gatt ->
             Log.d(TAG, "[Cleanup] Explicitly disconnecting and closing GATT: $gatt")
@@ -338,10 +339,6 @@ class ReaderManager(
 
             // 1. Report the found device to your dialog list right away
             onDeviceFoundListener?.invoke(result)
-            Log.d(
-                TAG,
-                "[Scan Found] Detected Service Device: '$advertisedName' [${device.address}]"
-            )
 
             if (device.address == connectedDeviceAddress) {
                 lastConnectedRssi = result.rssi
