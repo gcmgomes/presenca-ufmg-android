@@ -230,21 +230,22 @@ class ReaderManager(
     private fun writeCharacteristicCompat(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
-        payload: ByteArray
+        payload: ByteArray,
+        writeType: Int = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // Android 13+ modern API
             gatt.writeCharacteristic(
                 characteristic,
                 payload,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                writeType
             )
         } else {
             // Deprecated fallback for older Android versions
             @Suppress("DEPRECATION")
             characteristic.value = payload
             @Suppress("DEPRECATION")
-            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            characteristic.writeType = writeType
             @Suppress("DEPRECATION")
             gatt.writeCharacteristic(characteristic)
         }
@@ -275,9 +276,19 @@ class ReaderManager(
         val service = gatt.getService(SERVICE_UUID) ?: return
         val charAck = service.getCharacteristic(CHAR_RFID_ACK_UUID) ?: return
 
-        val payload = "$tagId,$timestamp"
-        Log.d(TAG, "[BLE Write-ACK] Acknowledging receipt of: $payload")
-        writeCharacteristicCompat(gatt, charAck, payload.toByteArray(Charsets.UTF_8))
+        // Dispatch to background and add a small delay to avoid GATT congestion/collision
+        scope.launch {
+            delay(50) 
+            val payload = "$tagId,$timestamp"
+            Log.d(TAG, "[BLE Write-ACK] Sending handshake to ESP32: '$payload'")
+            
+            writeCharacteristicCompat(
+                gatt, 
+                charAck, 
+                payload.toByteArray(Charsets.UTF_8), 
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            )
+        }
     }
 
     // --- BLE Scan Callback ---
@@ -514,7 +525,10 @@ class ReaderManager(
         private var lastProcessedTimestamp: String? = null
 
         private fun processIncomingData(value: ByteArray?) {
-            val data = value?.toString(Charsets.UTF_8) ?: return
+            // Convert to string and aggressively sanitize (trim and strip null terminators)
+            val data = value?.toString(Charsets.UTF_8)
+                ?.replace("\u0000", "")
+                ?.trim() ?: return
 
             // --- RESTORED GLOBAL INSTANCE LOGGING ---
             val instanceId = System.identityHashCode(this).toString(16).uppercase()
@@ -556,8 +570,8 @@ class ReaderManager(
             // --- Handle Regular Tag Data Influx ---
             val parts = data.split(",")
             if (parts.size == 2) {
-                val tagId = parts[0]
-                val timestampStr = parts[1]
+                val tagId = parts[0].trim()
+                val timestampStr = parts[1].trim()
                 try {
                     val epochSec = timestampStr.toLong()
 
@@ -567,9 +581,7 @@ class ReaderManager(
                             TAG,
                             "[Deduplication] Retransmission detected for $tagId. Re-sending ACK to unstick ESP32."
                         )
-                        scope.launch {
-                            writeAckToEsp32(tagId, timestampStr)
-                        }
+                        writeAckToEsp32(tagId, timestampStr)
                         return
                     }
 
@@ -580,11 +592,13 @@ class ReaderManager(
                     // Fresh new record! Process it normally
                     scope.launch {
                         _rfidSwipeFlow.emit(Pair(tagId, epochSec))
-                        writeAckToEsp32(tagId, timestampStr)
                     }
+                    writeAckToEsp32(tagId, timestampStr)
                 } catch (e: NumberFormatException) {
-                    Log.e(TAG, "[Parser Error] Failed parsing timestamp: $timestampStr", e)
+                    Log.e(TAG, "[Parser Error] Failed parsing timestamp: '$timestampStr' in data '$data'", e)
                 }
+            } else {
+                Log.w(TAG, "[Protocol Warning] Received invalid packet format: '$data'")
             }
         }
     }
