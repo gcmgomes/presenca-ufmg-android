@@ -33,6 +33,11 @@
             android:id="@+id/layoutReaderManagementView"
             layout="@layout/layout_reader_management"
             android:visibility="gone" />
+
+        <include
+            android:id="@+id/layoutDeviceManagerView"
+            layout="@layout/layout_device_manager"
+            android:visibility="gone" />
     </LinearLayout>
 
     <View

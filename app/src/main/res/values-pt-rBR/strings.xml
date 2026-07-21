@@ -47,6 +47,7 @@
     <string name="toast_cloud_student_import_empty">Nenhuma linha válida de alunos encontrada na aba selecionada.</string>
     <string name="toast_cloud_attendance_sync_success">Presenças sincronizadas com sucesso na nuvem!</string>
     <string name="toast_cloud_sync_failed">Falha na sincronização na nuvem. Verifique as configurações de conectividade.</string>
+    <string name="toast_device_communication_time_out">O tempo de comunicação com o dispositivo expirou.</string>
 
     <string name="dialog_cloud_schedule_import_title">Importar Cronograma das Planilhas</string>
     <string name="dialog_cloud_schedule_import_subtitle">Escolha a Planilha do Google que contém o calendário de aulas:</string>
@@ -102,6 +103,9 @@
     <string name="stats_students">Alunos</string>
     <string name="stats_sessions">Aulas</string>
     <string name="stats_attendance">Presença</string>
+    <string name="stats_files">Arquivos</string>
+    <string name="stats_device_time">Hora do Leitor</string>
+    <string name="stats_battery">Bateria</string>
 
     <string name="label_tag_id">ID da Tag: %1$s</string>
     <string name="title_assign_tag">Atribuir Tag: %1$s</string>
@@ -144,6 +148,7 @@
     <string name="action_forget">Esquecer</string>
     <string name="action_disconnect">Desconectar</string>
     <string name="action_edit">Editar</string>
+    <string name="action_sync_time">Sinc. Hora</string>
     <string name="action_inventory">Estoque</string>
 
     <string name="dialog_delete_course_title">Confirmação Final</string>
@@ -226,6 +231,8 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Conectando…</string>
     <string name="status_connected">Conectado</string>
+    <string name="label_device_mac">MAC: %1$s</string>
+    <string name="label_unknown_student">Desconhecido</string>
     <string name="message_enter_password">Digite a senha de acesso para:\n<b>%1$s</b></string>
     <string name="inventory_dialog_title">Inventário do Leitor</string>
     <string name="inventory_empty_message">Nenhum item pendente encontrado no leitor.</string>

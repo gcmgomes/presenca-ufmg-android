@@ -64,6 +64,7 @@ class ReaderManagerTest {
         whenever(bluetoothAdapter.isEnabled).thenReturn(true)
         whenever(bluetoothAdapter.bluetoothLeScanner).thenReturn(bluetoothLeScanner)
         whenever(secureStoreManager.deviceName).thenReturn("Presensor_Reader")
+        whenever(secureStoreManager.getAuthPasswordFor(any())).thenReturn("password123")
 
         readerManager = ReaderManager(
             context = context,

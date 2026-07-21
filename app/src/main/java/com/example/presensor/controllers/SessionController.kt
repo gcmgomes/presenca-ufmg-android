@@ -24,6 +24,7 @@ import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.controllers.dialogs.DialogFactory.showWithSmartNfcReading
 import com.example.presensor.data.entities.Course
 import com.example.presensor.tools.providers.ToastProvider
 import kotlinx.coroutines.CoroutineDispatcher
@@ -142,7 +143,11 @@ class SessionController(
 
                 records.forEach { record ->
                     val rowView =
-                        layoutInflater.inflate(R.layout.item_attendance_row, attendanceContainer, false)
+                        layoutInflater.inflate(
+                            R.layout.item_attendance_row,
+                            attendanceContainer,
+                            false
+                        )
                     rowView.findViewById<TextView>(R.id.txtStudentInfo).text = record.studentName
                     rowView.findViewById<TextView>(R.id.txtTimestamp).text =
                         TimeUtils.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
@@ -320,9 +325,7 @@ class SessionController(
                     .setTitle(context.getString(R.string.title_manual_attendance))
                     .setView(dialogView)
                     .setNegativeButton(context.getString(R.string.action_cancel), null)
-                    .create()
-
-                manualDialog.show()
+                    .showWithSmartNfcReading()
 
                 edtSearch.addTextChangedListener { refreshAbsenteeList(it.toString()) }
             }

@@ -62,12 +62,34 @@ class ReaderManager(
     }
 
     private var lastProcessedTag: String? = null
-    private var lastProcessedTime: Long = 0
+    private var lastProcessedTimestamp: String? = null
     var isBroadDiscoveryMode: Boolean = false
     private var isAuthenticationFailure = false
     private var isAutoReconnectEnabled = true
 
+    // --- Targeted Connection Context (Captured at startConnecting call) ---
+    private data class ConnectionContext(
+        val deviceName: String,
+        val passwordBytes: ByteArray
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is ConnectionContext) return false
+            if (deviceName != other.deviceName) return false
+            return passwordBytes.contentEquals(other.passwordBytes)
+        }
+
+        override fun hashCode(): Int {
+            var result = deviceName.hashCode()
+            result = 31 * result + passwordBytes.contentHashCode()
+            return result
+        }
+    }
+
+    private var activeConnectionContext: ConnectionContext? = null
+
     enum class ConnectionState { DISCONNECTED, SCANNING, CONNECTING, CONNECTED }
+    enum class AppMode { IDLE, ACTIVE, MANAGEMENT }
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -75,11 +97,13 @@ class ReaderManager(
     }
 
     private var bluetoothGatt: BluetoothGatt? = null
-    private var isAppActiveState = false
+    private var currentAppMode = AppMode.IDLE
     private var pairingReceiver: BlePairingReceiver? = null
     var lastConnectedRssi: Int? = null
         private set
     private var isScanning = false
+    var isAuthenticated = false
+        private set
 
     var onDeviceFoundListener: ((ScanResult) -> Unit)? = null
 
@@ -93,47 +117,81 @@ class ReaderManager(
     private val _inventoryFlow = MutableSharedFlow<Pair<String, Long>>(replay = 0)
     val inventoryFlow: SharedFlow<Pair<String, Long>> = _inventoryFlow
 
+    private val _metricsFlow = MutableSharedFlow<Pair<Long, Int>>(replay = 0)
+    val metricsFlow: SharedFlow<Pair<Long, Int>> = _metricsFlow
+
     private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 0)
     val eventFlow: SharedFlow<ReaderEvent> = _eventFlow
 
-    // --- Public API ---
-    fun startConnecting() {
+    fun isInManagementMode(): Boolean = currentAppMode == ReaderManager.AppMode.MANAGEMENT
+
+    /**
+     * Initiates a targeted connection to a specific reader.
+     * @param deviceName The name of the reader to target.
+     * @param password The password to use for authentication.
+     */
+    fun startConnecting(deviceName: String, password: String) {
+        val passBytes = password.toByteArray(Charsets.UTF_8)
+        Log.i(
+            TAG,
+            "[Connect Flow] startConnecting() triggered for '$deviceName' (Pass length: ${passBytes.size})"
+        )
+
+        // 1. Reset all state for this fresh attempt
+        isAuthenticated = false
         isAuthenticationFailure = false
         isAutoReconnectEnabled = true
+
+        // 2. Capture the exact credentials into an immutable context for this lifecycle
+        this.activeConnectionContext = ConnectionContext(deviceName, passBytes)
+
         val adapter = bluetoothAdapter
         if (adapter == null || !adapter.isEnabled) {
-            Log.e(TAG, "[Init Error] Bluetooth is disabled or not supported.")
+            Log.e(TAG, "[Connect Flow Error] Bluetooth is disabled.")
             scope.launch { _eventFlow.emit(ReaderEvent.Error("Bluetooth is disabled")) }
             return
         }
 
-        // --- Hook up Pairing Receiver for automated bonding ---
-        if (!isBroadDiscoveryMode) {
-            val password = secureStoreManager.getAuthPasswordFor(secureStoreManager.deviceName)
-            if (password != null) {
-                pairingReceiver?.unregister(context)
-                pairingReceiver = BlePairingReceiver(password).apply {
-                    Log.d(TAG, "[Pairing] Registering automated pairing receiver for device.")
-                    register(context)
-                }
-            }
+        // 3. Register automated pairing handler
+        pairingReceiver?.unregister(context)
+        pairingReceiver = BlePairingReceiver(password).apply {
+            Log.d(TAG, "[Connect Flow] Registering automated pairing receiver for '$deviceName'")
+            register(context)
         }
 
-        // CRITICAL: Only clean up if we are NOT in broad discovery mode.
-        // If we are looking for a specific target, we reset the link.
-        if (bluetoothGatt != null && !isBroadDiscoveryMode) {
-            Log.d(TAG, "[Scan Prep] Cleaning up old GATT reference for targeted connection.")
+        // 4. Cleanup any existing link if we are switching targets
+        if (bluetoothGatt != null) {
+            Log.i(TAG, "[Connect Flow] Active GATT detected. Disconnecting to target new reader.")
             disconnect()
         }
 
         if (_connectionState.value == ConnectionState.SCANNING ||
-            _connectionState.value == ConnectionState.CONNECTING ||
-            (_connectionState.value == ConnectionState.CONNECTED && !isBroadDiscoveryMode)
+            _connectionState.value == ConnectionState.CONNECTING
         ) {
+            Log.d(
+                TAG,
+                "[Connect Flow] Already in state ${_connectionState.value}. Ignoring request."
+            )
             return
         }
 
+        Log.i(TAG, "[Connect Flow] Initiating target search (Scanning)...")
         startScan()
+    }
+
+    /**
+     * Internal/Auto-Reconnect version. Uses stored credentials.
+     */
+    fun startConnecting() {
+        val name = secureStoreManager.deviceName
+        val password = secureStoreManager.getAuthPasswordFor(name)
+
+        if (password != null) {
+            Log.i(TAG, "[Auto-Connect] Using stored credentials for '$name'")
+            startConnecting(name, password)
+        } else {
+            Log.e(TAG, "[Auto-Connect] Failed: No stored password for '$name'")
+        }
     }
 
     fun startScan() {
@@ -154,8 +212,6 @@ class ReaderManager(
             _connectionState.value = ConnectionState.SCANNING
         }
 
-        Log.d(TAG, "[Scan] Starting BLE scanner. Broad Discovery: $isBroadDiscoveryMode")
-
         val filter = ScanFilter.Builder()
             .setServiceUuid(ParcelUuid(SERVICE_UUID))
             .build()
@@ -173,10 +229,10 @@ class ReaderManager(
         }
     }
 
-    fun setAppActive(active: Boolean) {
-        isAppActiveState = active
-        Log.d(TAG, "[App Mode Change] Updating app readiness state to: $active")
-        writeAppModeState(active)
+    fun setAppMode(mode: AppMode, caller: String) {
+        currentAppMode = mode
+        Log.i(TAG, "[Command] Requesting App Mode change to: $mode (Caller: $caller)")
+        writeAppModeState(mode)
     }
 
     fun disconnect(disableAutoReconnect: Boolean = false) {
@@ -189,6 +245,7 @@ class ReaderManager(
         pairingReceiver?.unregister(context)
         pairingReceiver = null
         isBroadDiscoveryMode = false
+        isAuthenticated = false
 
         bluetoothGatt?.let { gatt ->
             Log.d(TAG, "[Cleanup] Explicitly disconnecting and closing GATT: $gatt")
@@ -220,12 +277,24 @@ class ReaderManager(
         get() = bluetoothGatt?.device?.address
 
     fun updateReaderConfig(newName: String, newPassword: String) {
-        val gatt = bluetoothGatt ?: return
-        val service = gatt.getService(SERVICE_UUID) ?: return
-        val charConfig = service.getCharacteristic(CHAR_CONFIG_UPDATE_UUID) ?: return
+        val gatt = bluetoothGatt ?: run {
+            Log.e(TAG, "[Command Error] Cannot update config: bluetoothGatt is null")
+            return
+        }
+        val service = gatt.getService(SERVICE_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot update config: Service not found")
+            return
+        }
+        val charConfig = service.getCharacteristic(CHAR_CONFIG_UPDATE_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot update config: Characteristic missing")
+            return
+        }
 
         val payload = "$newName\t$newPassword"
-        Log.d(TAG, "[BLE Write] Sending Config Update to ESP32: '$newName' (password hidden)")
+        Log.i(
+            TAG,
+            "[Command] Sending Reader Config Update: '$newName' [Payload size: ${payload.length}]"
+        )
         writeCharacteristicCompat(gatt, charConfig, payload.toByteArray(Charsets.UTF_8))
     }
 
@@ -233,75 +302,112 @@ class ReaderManager(
         bluetoothGatt?.readRemoteRssi()
     }
 
+    fun syncTime() {
+        val gatt = bluetoothGatt ?: run {
+            Log.e(TAG, "[Command Error] Cannot sync time: bluetoothGatt is null")
+            return
+        }
+        val service = gatt.getService(SERVICE_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot sync time: Service not found")
+            return
+        }
+        val charTimeSync = service.getCharacteristic(CHAR_TIME_SYNC_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot sync time: Characteristic missing")
+            return
+        }
+
+        val epochString = (System.currentTimeMillis() / 1000).toString()
+        Log.i(TAG, "[Command] Sending Time Sync: $epochString")
+        writeCharacteristicCompat(gatt, charTimeSync, epochString.toByteArray(Charsets.UTF_8))
+    }
+
     fun requestInventory() {
-        Log.i(TAG, "[Inventory] requestInventory() called.")
+        Log.i(TAG, "[Command] requestInventory() triggered.")
         val gatt = bluetoothGatt
         if (gatt == null) {
-            Log.e(TAG, "[Inventory Error] Cannot request: bluetoothGatt is null")
+            Log.e(TAG, "[Command Error] Cannot request inventory: bluetoothGatt is null")
             return
         }
         val service = gatt.getService(SERVICE_UUID)
         if (service == null) {
-            Log.e(TAG, "[Inventory Error] Cannot request: Service $SERVICE_UUID not found")
+            Log.e(TAG, "[Command Error] Cannot request inventory: Service $SERVICE_UUID not found")
             return
         }
         val charInventory = service.getCharacteristic(CHAR_INVENTORY_UUID)
         if (charInventory == null) {
-            Log.e(TAG, "[Inventory Error] Cannot request: Characteristic $CHAR_INVENTORY_UUID not found in service")
-            // Log all available characteristics for debugging
-            service.characteristics.forEach { 
-                Log.d(TAG, "  Found characteristic: ${it.uuid}")
-            }
+            Log.e(
+                TAG,
+                "[Command Error] Cannot request inventory: Characteristic $CHAR_INVENTORY_UUID not found"
+            )
             return
         }
 
-        Log.i(TAG, "[Inventory] Sending 'GET' command to ESP32...")
+        Log.i(TAG, "[Command] Dispatching 'GET' to CHAR_INVENTORY...")
         writeCharacteristicCompat(gatt, charInventory, "GET".toByteArray(Charsets.UTF_8))
     }
 
-    // --- Modern, Safe Write Helper ---
+    fun deleteBacklogItem(tagId: String, timestamp: Long) {
+        Log.i(TAG, "[Command] deleteBacklogItem() triggered for $tagId at $timestamp")
+        val gatt = bluetoothGatt ?: run {
+            Log.e(TAG, "[Command Error] Cannot delete: bluetoothGatt is null")
+            return
+        }
+        val service = gatt.getService(SERVICE_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot delete: Service not found")
+            return
+        }
+        val charInventory = service.getCharacteristic(CHAR_INVENTORY_UUID) ?: run {
+            Log.e(TAG, "[Command Error] Cannot delete: Characteristic missing")
+            return
+        }
+
+        // Format per ESP32 InventoryCallback: 'DEL,TagID,Timestamp'
+        val cleanTagId = tagId.replace(":", "")
+        val payload = "DEL,$cleanTagId,$timestamp"
+
+        Log.i(TAG, "[Command] Dispatching deletion payload: '$payload'")
+        writeCharacteristicCompat(gatt, charInventory, payload.toByteArray(Charsets.UTF_8))
+    }
+
     private fun writeCharacteristicCompat(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
         payload: ByteArray,
         writeType: Int = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
     ) {
+        val payloadStr = String(payload, Charsets.UTF_8)
+        Log.d(TAG, "[GATT Write] Executing write to ${characteristic.uuid}. Payload: '$payloadStr'")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ modern API
-            gatt.writeCharacteristic(
-                characteristic,
-                payload,
-                writeType
-            )
+            val result = gatt.writeCharacteristic(characteristic, payload, writeType)
+            if (result != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "[GATT Write Error] Tiramisu+ write failed with code $result")
+            }
         } else {
-            // Deprecated fallback for older Android versions
             @Suppress("DEPRECATION")
             characteristic.value = payload
             @Suppress("DEPRECATION")
             characteristic.writeType = writeType
             @Suppress("DEPRECATION")
-            gatt.writeCharacteristic(characteristic)
+            val result = gatt.writeCharacteristic(characteristic)
+            if (!result) {
+                Log.e(TAG, "[GATT Write Error] Legacy write failed (returned false)")
+            }
         }
     }
 
-    private fun writeAppModeState(active: Boolean) {
+    private fun writeAppModeState(mode: AppMode) {
         val gatt = bluetoothGatt ?: return
         val service = gatt.getService(SERVICE_UUID) ?: return
         val charAppMode = service.getCharacteristic(CHAR_APP_MODE_UUID) ?: return
 
-        val payload = if (active) "1" else "0"
-        Log.d(TAG, "[BLE Write] Setting ESP32 CHAR_APP_MODE to '$payload'")
+        val payload = when (mode) {
+            AppMode.IDLE -> "IDLE"
+            AppMode.ACTIVE -> "ACTIVE"
+            AppMode.MANAGEMENT -> "MANAGEMENT"
+        }
+        Log.i(TAG, "[Command] Writing App Mode payload: '$payload'")
         writeCharacteristicCompat(gatt, charAppMode, payload.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun syncSystemTime() {
-        val gatt = bluetoothGatt ?: return
-        val service = gatt.getService(SERVICE_UUID) ?: return
-        val charTimeSync = service.getCharacteristic(CHAR_TIME_SYNC_UUID) ?: return
-
-        val epochString = (System.currentTimeMillis() / 1000).toString()
-        Log.d(TAG, "[BLE Write] Sending Time Sync to ESP32: $epochString")
-        writeCharacteristicCompat(gatt, charTimeSync, epochString.toByteArray(Charsets.UTF_8))
     }
 
     private fun writeAckToEsp32(tagId: String, timestamp: String) {
@@ -309,22 +415,19 @@ class ReaderManager(
         val service = gatt.getService(SERVICE_UUID) ?: return
         val charAck = service.getCharacteristic(CHAR_RFID_ACK_UUID) ?: return
 
-        // Dispatch to background and add a small delay to avoid GATT congestion/collision
         scope.launch {
-            delay(50) 
+            delay(50)
             val payload = "$tagId,$timestamp"
             Log.d(TAG, "[BLE Write-ACK] Sending handshake to ESP32: '$payload'")
-            
             writeCharacteristicCompat(
-                gatt, 
-                charAck, 
-                payload.toByteArray(Charsets.UTF_8), 
+                gatt,
+                charAck,
+                payload.toByteArray(Charsets.UTF_8),
                 BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             )
         }
     }
 
-    // --- BLE Scan Callback ---
     internal val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (_connectionState.value == ConnectionState.CONNECTING ||
@@ -335,31 +438,26 @@ class ReaderManager(
 
             val device = result.device
             val advertisedName = result.scanRecord?.deviceName ?: device.name ?: "Unknown"
-            val targetDeviceName = secureStoreManager.deviceName
 
-            // 1. Report the found device to your dialog list right away
-            onDeviceFoundListener?.invoke(result)
-
-            if (device.address == connectedDeviceAddress) {
-                lastConnectedRssi = result.rssi
-            }
-
-            // --- THE FIX: If building the list, STOP HERE. Do not connect automatically! ---
-            if (isBroadDiscoveryMode) {
+            // CRITICAL FIX: Only connect in targeted mode if we have a valid context
+            val context = activeConnectionContext
+            if (isBroadDiscoveryMode || context == null) {
+                onDeviceFoundListener?.invoke(result)
                 return
             }
 
-            // 2. Strict targeting filter for normal connection runs
-            if (advertisedName != targetDeviceName) {
-                Log.d(TAG, "[Scan Filter] Ignored '$advertisedName' due to strict targeting.")
+            if (advertisedName != context.deviceName) {
+                Log.v(
+                    TAG,
+                    "[Connect Flow] Scan mismatch: '$advertisedName' != '${context.deviceName}'"
+                )
                 return
             }
 
             Log.i(
                 TAG,
-                "[Scan Match!] Found target reader matching configuration: '$advertisedName'"
+                "[Connect Flow] MATCH FOUND! Targeting '$advertisedName' [${device.address}]"
             )
-
             _connectionState.value = ConnectionState.CONNECTING
 
             try {
@@ -369,8 +467,7 @@ class ReaderManager(
                 Log.e(TAG, "[Security Exception] Scan permission missing during stop scan.", e)
             }
 
-            Log.d(TAG, "[Connection] Initiating single GATT connection to ${device.address}")
-            bluetoothGatt = device.connectGatt(context, false, gattCallback)
+            bluetoothGatt = device.connectGatt(this@ReaderManager.context, false, gattCallback)
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -380,8 +477,6 @@ class ReaderManager(
             scope.launch { _eventFlow.emit(ReaderEvent.Error("Scan failed: $errorCode")) }
         }
     }
-
-    // --- BLE GATT Callback ---
 
     internal val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -396,8 +491,7 @@ class ReaderManager(
                 _connectionState.value = ConnectionState.CONNECTED
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                Log.w(TAG, "[GATT Callback] Disconnected. Cleaning up and scheduling reconnect...")
-
+                Log.w(TAG, "[GATT Callback] Disconnected.")
                 try {
                     gatt.disconnect()
                     gatt.close()
@@ -411,19 +505,12 @@ class ReaderManager(
 
                 _connectionState.value = ConnectionState.DISCONNECTED
 
-                // --- PROTECTIVE WALL: Do not auto-reconnect if auth failed or explicitly disabled ---
                 if (isAuthenticationFailure || !isAutoReconnectEnabled) {
-                    Log.i(
-                        TAG,
-                        "[GATT Callback] Auto-reconnect canceled. Auth failure: $isAuthenticationFailure, Auto-reconnect enabled: $isAutoReconnectEnabled"
-                    )
-                    // Reset the flags so future intentional manual connection attempts can go through
                     isAuthenticationFailure = false
                     isAutoReconnectEnabled = true
                     return
                 }
 
-                // Regular accidental disconnections still get the auto-reconnect logic
                 scope.launch {
                     delay(3000)
                     withContext(mainDispatcher) {
@@ -437,15 +524,13 @@ class ReaderManager(
             if (status != BluetoothGatt.GATT_SUCCESS) return
 
             Log.i(TAG, "[GATT Callback] Services discovered. Initializing notification chain...")
-            gatt.readRemoteRssi() // Initial RSSI fetch
-
-            // Start the subscription chain from the beginning
+            gatt.readRemoteRssi()
             proceedToNextSubscriptionStep(gatt, null)
         }
 
         private fun proceedToNextSubscriptionStep(gatt: BluetoothGatt, lastUuid: UUID?) {
             val service = gatt.getService(SERVICE_UUID) ?: return
-            
+
             val nextUuid = when (lastUuid) {
                 null -> CHAR_RFID_DATA_UUID
                 CHAR_RFID_DATA_UUID -> CHAR_AUTH_UUID
@@ -454,6 +539,7 @@ class ReaderManager(
                     triggerPasswordChallenge(gatt, service)
                     return
                 }
+
                 else -> return
             }
 
@@ -467,12 +553,18 @@ class ReaderManager(
             }
         }
 
-        private fun subscribeToNotifications(gatt: BluetoothGatt, char: BluetoothGattCharacteristic) {
+        private fun subscribeToNotifications(
+            gatt: BluetoothGatt,
+            char: BluetoothGattCharacteristic
+        ) {
             gatt.setCharacteristicNotification(char, true)
             val descriptor = char.getDescriptor(CCC_DESCRIPTOR_UUID)
             if (descriptor != null) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    gatt.writeDescriptor(
+                        descriptor,
+                        BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    )
                 } else {
                     @Suppress("DEPRECATION")
                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -480,7 +572,10 @@ class ReaderManager(
                     gatt.writeDescriptor(descriptor)
                 }
             } else {
-                Log.w(TAG, "[GATT Chain] CCCD Descriptor missing for ${char.uuid}. Proceeding manually...")
+                Log.w(
+                    TAG,
+                    "[GATT Chain] CCCD Descriptor missing for ${char.uuid}. Proceeding manually..."
+                )
                 proceedToNextSubscriptionStep(gatt, char.uuid)
             }
         }
@@ -491,42 +586,42 @@ class ReaderManager(
             status: Int
         ) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.e(TAG, "[GATT Callback] Descriptor write failed for UUID: ${descriptor.uuid}")
+                Log.e(
+                    TAG,
+                    "[GATT Callback] Descriptor write failed for UUID: ${descriptor.uuid} with status $status"
+                )
             }
             proceedToNextSubscriptionStep(gatt, descriptor.characteristic.uuid)
         }
 
         private fun triggerPasswordChallenge(gatt: BluetoothGatt, service: BluetoothGattService) {
             val authChar = service.getCharacteristic(CHAR_AUTH_UUID) ?: return
+            val bytesToSend = activeConnectionContext?.passwordBytes ?: ByteArray(0)
+
+            Log.i(TAG, "[Auth Flow] Submitting password challenge (${bytesToSend.size} bytes)...")
+
             scope.launch {
-                delay(300) 
-                val passwordBytes = secureStoreManager.getAuthPasswordBytes()
-                Log.i(TAG, "[Auth] Submitting password challenge bytes...")
-                writeCharacteristicCompat(gatt, authChar, passwordBytes)
+                delay(300)
+                writeCharacteristicCompat(gatt, authChar, bytesToSend)
             }
         }
 
-        // 1. Deprecated callback (for Android 12 and below)
-        @Deprecated("Used for older SDK compatibility")
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic
-        ) {
-            // Only process here if we are on Android 12 or below
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                @Suppress("DEPRECATION")
-                processIncomingData(characteristic.value, characteristic.uuid)
-            }
-        }
-
-        // 2. Modern callback (for Android 13+)
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                processIncomingData(value, characteristic.uuid)
+            processIncomingData(value, characteristic.uuid)
+        }
+
+        @Deprecated("Used for older SDK compatibility")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                @Suppress("DEPRECATION")
+                processIncomingData(characteristic.value, characteristic.uuid)
             }
         }
 
@@ -537,39 +632,30 @@ class ReaderManager(
             }
         }
 
-        private var lastProcessedTimestamp: String? = null
-
         private fun processIncomingData(value: ByteArray?, charUuid: UUID) {
-            // Convert to string and aggressively sanitize (trim and strip null terminators)
-            val data = value?.toString(Charsets.UTF_8)
-                ?.replace("\u0000", "")
-                ?.trim() ?: return
-
-            // --- RESTORED GLOBAL INSTANCE LOGGING ---
+            val data = value?.toString(Charsets.UTF_8)?.replace("\u0000", "")?.trim() ?: return
             val instanceId = System.identityHashCode(this).toString(16).uppercase()
             Log.i(TAG, "[BLE Notification from $instanceId] Raw Payload: '$data' (from $charUuid)")
 
-            // --- Handle Authentication Verification ---
             if (charUuid == CHAR_AUTH_UUID) {
                 if (data == "SUCCESS") {
-                    Log.i(TAG, "[Auth] Device authenticated successfully! Running post-auth sync...")
+                    Log.i(TAG, "[Auth] Device authenticated successfully!")
+                    isAuthenticated = true
                     scope.launch {
                         _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
-                    }
-                    scope.launch {
-                        syncSystemTime()
+                        syncTime()
                         delay(300)
-                        writeAppModeState(isAppActiveState)
+                        writeAppModeState(currentAppMode)
                     }
                     return
                 }
-
                 if (data == "FAIL") {
-                    Log.e(TAG, "[Auth Denied] Invalid password credential. Dropping connection link.")
+                    Log.e(TAG, "[Auth Denied] Invalid password credential.")
                     isAuthenticationFailure = true
-                    scope.launch {
-                        _eventFlow.emit(ReaderEvent.AuthenticationFailed)
-                    }
+                    isAuthenticated = false
+                    isAutoReconnectEnabled =
+                        false // CRITICAL: Stop the "every other time" retry loop
+                    scope.launch { _eventFlow.emit(ReaderEvent.AuthenticationFailed) }
                     secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
                     disconnect()
                     return
@@ -578,7 +664,7 @@ class ReaderManager(
 
             if (charUuid == CHAR_RFID_DATA_UUID || charUuid == CHAR_INVENTORY_UUID) {
                 if (data == "DONE") {
-                    Log.d(TAG, "ESP32 sent DONE signal. Sync finished.")
+                    Log.d(TAG, "ESP32 sent DONE signal.")
                     scope.launch {
                         if (charUuid == CHAR_RFID_DATA_UUID) {
                             _rfidSwipeFlow.emit(Pair("SYNC_DONE", 0L))
@@ -589,7 +675,32 @@ class ReaderManager(
                     return
                 }
 
-                // --- Handle Regular Tag Data Influx ---
+                if (charUuid == CHAR_INVENTORY_UUID && data == "DEL_OK") {
+                    Log.i(TAG, "[Management] Item deleted successfully from reader.")
+                    scope.launch { _inventoryFlow.emit(Pair("DEL_OK", 0L)) }
+                    return
+                }
+
+                if (charUuid == CHAR_INVENTORY_UUID && data == "DEL_ERR") {
+                    Log.e(TAG, "[Management Error] Failed to delete item from reader.")
+                    scope.launch { _inventoryFlow.emit(Pair("DEL_ERR", 0L)) }
+                    return
+                }
+
+                if (charUuid == CHAR_INVENTORY_UUID && data.startsWith("INFO,")) {
+                    val parts = data.split(",")
+                    if (parts.size == 3) {
+                        try {
+                            val epoch = parts[1].trim().toLong()
+                            val battery = parts[2].trim().toInt()
+                            scope.launch { _metricsFlow.emit(Pair(epoch, battery)) }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "[Parser Error] Failed parsing INFO frame: $data")
+                        }
+                    }
+                    return
+                }
+
                 val parts = data.split(",")
                 if (parts.size == 2) {
                     val tagId = parts[0].trim()
@@ -598,36 +709,23 @@ class ReaderManager(
                         val epochSec = timestampStr.toLong()
 
                         if (charUuid == CHAR_RFID_DATA_UUID) {
-                            // --- ACCURATE STOP-AND-WAIT DEDUPLICATION ---
                             if (tagId == lastProcessedTag && timestampStr == lastProcessedTimestamp) {
-                                Log.d(
-                                    TAG,
-                                    "[Deduplication] Retransmission detected for $tagId. Re-sending ACK to unstick ESP32."
-                                )
                                 writeAckToEsp32(tagId, timestampStr)
                                 return
                             }
-
-                            // Update our tracking variables with the unique historical record markers
                             lastProcessedTag = tagId
                             lastProcessedTimestamp = timestampStr
-
-                            // Fresh new record! Process it normally
-                            scope.launch {
-                                _rfidSwipeFlow.emit(Pair(tagId, epochSec))
-                            }
+                            scope.launch { _rfidSwipeFlow.emit(Pair(tagId, epochSec)) }
                             writeAckToEsp32(tagId, timestampStr)
                         } else {
-                            // Inventory - No ACK needed, just emit
-                            scope.launch {
-                                _inventoryFlow.emit(Pair(tagId, epochSec))
-                            }
+                            scope.launch { _inventoryFlow.emit(Pair(tagId, epochSec)) }
                         }
                     } catch (e: NumberFormatException) {
-                        Log.e(TAG, "[Parser Error] Failed parsing timestamp: '$timestampStr' in data '$data'")
+                        Log.e(
+                            TAG,
+                            "[Parser Error] Failed parsing timestamp: '$timestampStr' in data '$data'"
+                        )
                     }
-                } else {
-                    Log.w(TAG, "[Protocol Warning] Received invalid packet format: '$data'")
                 }
             }
         }
@@ -635,20 +733,12 @@ class ReaderManager(
 
     fun requestBacklogSync() {
         val gatt = bluetoothGatt
-        if (gatt == null || _connectionState.value != ConnectionState.CONNECTED) {
-            Log.w(TAG, "[Sync Cancelled] Cannot request sync: No active BLE connection.")
-            return
-        }
-
+        if (gatt == null || _connectionState.value != ConnectionState.CONNECTED) return
         val service = gatt.getService(SERVICE_UUID)
         val charAppMode = service?.getCharacteristic(CHAR_APP_MODE_UUID)
-
         if (charAppMode != null) {
-            val command = "SYNC"
-            Log.i(TAG, "[Pull-to-Refresh] Sending '$command' command to ESP32...")
-            writeCharacteristicCompat(gatt, charAppMode, command.toByteArray(Charsets.UTF_8))
-        } else {
-            Log.e(TAG, "[Pull-to-Refresh Error] Command characteristic not found.")
+            Log.i(TAG, "[Sync] Requesting SYNC...")
+            writeCharacteristicCompat(gatt, charAppMode, "SYNC".toByteArray(Charsets.UTF_8))
         }
     }
 }

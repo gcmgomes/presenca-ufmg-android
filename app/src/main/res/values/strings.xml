@@ -46,6 +46,7 @@
     <string name="toast_cloud_student_import_empty">No valid student rows found in the selected sheet.</string>
     <string name="toast_cloud_attendance_sync_success">Attendance synced successfully to Cloud!</string>
     <string name="toast_cloud_sync_failed">Cloud sync failed. Check connectivity configurations.</string>
+    <string name="toast_device_communication_time_out">Device communication timed out.</string>
 
     <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
     <string name="toast_cloud_auth_pre_fetch_failed">Failed to authorize cloud session</string>
@@ -98,6 +99,9 @@
     <string name="stats_students">Students</string>
     <string name="stats_sessions">Sessions</string>
     <string name="stats_attendance">Attendance</string>
+    <string name="stats_files">Files</string>
+    <string name="stats_device_time">Device Time</string>
+    <string name="stats_battery">Battery</string>
 
     <string name="label_tag_id">Tag ID: %1$s</string>
     <string name="title_assign_tag">Assign Tag: %1$s</string>
@@ -139,6 +143,7 @@
     <string name="action_forget">Forget</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_edit">Edit</string>
+    <string name="action_sync_time">Sync Time</string>
     <string name="action_inventory">Inventory</string>
 
     <string name="dialog_delete_course_title">Final Confirmation</string>
@@ -222,6 +227,8 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
+    <string name="label_device_mac">MAC: %1$s</string>
+    <string name="label_unknown_student">Unknown</string>
     <string name="inventory_dialog_title">Reader Inventory</string>
     <string name="inventory_empty_message">No backlogged items found on reader.</string>
 </resources>

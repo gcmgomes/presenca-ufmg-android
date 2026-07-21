@@ -91,7 +91,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     companion object {
         const val TAG = "MainActivity"
         const val DATABASE_NAME = "presensor-db"
-        enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS, READER_MANAGEMENT }
+
+        enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS, READER_MANAGEMENT, DEVICE_MANAGER }
     }
 
     private var currentState = AppState.DASHBOARD
@@ -213,7 +214,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             if (secureStoreManager.isReaderEnabled) {
                 readerManager?.startConnecting()
             }
-            readerManager?.setAppActive(false)
+            readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.e("MainActivity", "Permissions denied by user.")
             Toast.makeText(
@@ -250,7 +251,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             if (secureStoreManager.isReaderEnabled) {
                 readerManager?.startConnecting()
             }
-            readerManager?.setAppActive(false)
+            readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
@@ -458,7 +459,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             db = db,
             onSessionSelected = { session ->
                 openSessionView(session)
-                readerManager?.setAppActive(true)
+                readerManager?.setAppMode(
+                    ReaderManager.AppMode.ACTIVE,
+                    "MainActivity Session Selection"
+                )
             },
             onToggleLockRequested = { session, _ ->
                 sessionController.handleLockToggleSequence(session)
@@ -504,7 +508,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
                 when (currentState) {
                     AppState.SESSION -> {
-                        readerManager?.setAppActive(false)
+                        readerManager?.setAppMode(
+                            ReaderManager.AppMode.IDLE,
+                            "MainActivity back button from session"
+                        )
                         sessionController.clearActiveSession()
                         currentState = AppState.COURSE
                         toggleAllViews(layoutCourseView = true)
@@ -526,10 +533,16 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                     }
 
                     AppState.READER_MANAGEMENT -> {
-                        readerConnectivityController.teardownView()
+                        readerConnectivityController.teardownDiscovery()
                         currentState = AppState.DASHBOARD
                         toggleAllViews(layoutDashboardView = true)
                         dashboardController.refreshDashboard()
+                    }
+
+                    AppState.DEVICE_MANAGER -> {
+                        readerConnectivityController.teardownView()
+                        currentState = AppState.READER_MANAGEMENT
+                        toggleAllViews(layoutReaderManagementView = true)
                     }
 
                     AppState.DASHBOARD -> {
@@ -547,7 +560,30 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     fun openReaderManagement() {
         currentState = AppState.READER_MANAGEMENT
         toggleAllViews(layoutReaderManagementView = true)
-        readerConnectivityController.setupReaderManagementView(findViewById<View>(R.id.layoutReaderManagementView))
+        readerConnectivityController.setupReaderList(findViewById<View>(R.id.layoutReaderManagementView))
+    }
+
+    fun openDeviceManager() {
+        android.util.Log.i(
+            "MainActivity",
+            "[UI Flow] openDeviceManager() triggered. State -> DEVICE_MANAGER"
+        )
+        currentState = AppState.DEVICE_MANAGER
+        toggleAllViews(layoutDeviceManagerView = true)
+
+        val managerView = findViewById<View>(R.id.layoutDeviceManagerView)
+        if (managerView != null) {
+            android.util.Log.i(
+                "MainActivity",
+                "[UI Flow] layoutDeviceManagerView found. ID: ${managerView.id}. Initializing controller..."
+            )
+            readerConnectivityController.setupReaderManagementView(managerView)
+        } else {
+            android.util.Log.e(
+                "MainActivity",
+                "[UI Flow Error] layoutDeviceManagerView NOT FOUND in main layout!"
+            )
+        }
     }
 
     private fun selectCourse(course: Course) {
@@ -564,13 +600,15 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         layoutCourseView: Boolean = false,
         layoutSessionView: Boolean = false,
         layoutCourseStatisticsView: Boolean = false,
-        layoutReaderManagementView: Boolean = false
+        layoutReaderManagementView: Boolean = false,
+        layoutDeviceManagerView: Boolean = false
     ) {
         findViewById<View>(R.id.layoutDashboardView).isVisible = layoutDashboardView
         findViewById<View>(R.id.layoutCourseView).isVisible = layoutCourseView
         findViewById<View>(R.id.layoutSessionView).isVisible = layoutSessionView
         findViewById<View>(R.id.layoutCourseStatisticsView).isVisible = layoutCourseStatisticsView
         findViewById<View>(R.id.layoutReaderManagementView).isVisible = layoutReaderManagementView
+        findViewById<View>(R.id.layoutDeviceManagerView).isVisible = layoutDeviceManagerView
     }
 
     private fun openSessionView(session: Session) {

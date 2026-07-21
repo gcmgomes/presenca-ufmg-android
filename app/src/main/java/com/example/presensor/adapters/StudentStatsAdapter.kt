@@ -43,7 +43,7 @@ class StudentStatsAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StudentViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_student_stat_card, parent, false)
+            .inflate(R.layout.item_stat_card, parent, false)
         return StudentViewHolder(view)
     }
 

@@ -41,7 +41,6 @@ class TagController(
 
     fun pauseNfcScanning() {
         nfcAdapter?.disableReaderMode(activity)
-        readerManager?.setAppActive(false)
     }
 
     fun resumeNfcScanning() {
@@ -59,7 +58,7 @@ class TagController(
     }
 
     fun resumeReader() {
-        readerManager?.setAppActive(true)
+        readerManager?.setAppMode(ReaderManager.AppMode.ACTIVE, "TagController Resume")
     }
 
     override fun onTagDiscovered(tag: Tag) {
@@ -72,7 +71,9 @@ class TagController(
 
     fun startReaderCollection() {
         // Get the identity hash code of the OLD job before cancelling it
-        val oldJobId = readerCollectionJob?.let { System.identityHashCode(it).toString(16).uppercase() } ?: "NONE"
+        val oldJobId =
+            readerCollectionJob?.let { System.identityHashCode(it).toString(16).uppercase() }
+                ?: "NONE"
 
         Log.d("TagController", "[Lifecycle] ---> startReaderCollection called.")
         Log.d("TagController", "[Lifecycle] Cancelling previous Job: #$oldJobId")
@@ -83,7 +84,10 @@ class TagController(
         // Start the new collection
         val newJob = scope.launch {
             val thisJobId = System.identityHashCode(coroutineContext[Job]).toString(16).uppercase()
-            Log.d("TagController", "[Collector #$thisJobId] STARTED. Now actively listening to flow.")
+            Log.d(
+                "TagController",
+                "[Collector #$thisJobId] STARTED. Now actively listening to flow."
+            )
 
             try {
                 readerManager?.rfidSwipeFlow?.collect { (rawRfid, espTime) ->
@@ -102,11 +106,17 @@ class TagController(
                     val rfid = rawRfid.chunked(2).joinToString(":")
                     val time = espTime * 1000 // moving from unix epoch time to milliseconds.
                     val curTime = System.currentTimeMillis()
-                    Log.d("TagController", "[Collector #$thisJobId] Captured $rfid at $time. Current time is $curTime.")
+                    Log.d(
+                        "TagController",
+                        "[Collector #$thisJobId] Captured $rfid at $time. Current time is $curTime."
+                    )
                     handleTagDiscovered(rfid, time)
                 }
             } catch (e: Exception) {
-                Log.d("TagController", "[Collector #$thisJobId] Interrupted/Cancelled: ${e.message}")
+                Log.d(
+                    "TagController",
+                    "[Collector #$thisJobId] Interrupted/Cancelled: ${e.message}"
+                )
             } finally {
                 Log.d("TagController", "[Collector #$thisJobId] CLOSED.")
             }
@@ -197,7 +207,12 @@ class TagController(
                 scope.launch {
                     db.insertStudents(listOf(Student(email = email, name = name, rfid = rfid)))
                     withContext(mainDispatcher) {
-                        toastProvider.showToast(activity.getString(R.string.toast_student_registered_success, name))
+                        toastProvider.showToast(
+                            activity.getString(
+                                R.string.toast_student_registered_success,
+                                name
+                            )
+                        )
                         dialog.dismiss()
                     }
                 }
