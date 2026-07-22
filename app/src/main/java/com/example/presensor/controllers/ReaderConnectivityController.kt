@@ -13,6 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.toColorInt
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -55,6 +56,8 @@ class ReaderConnectivityController(
 
     private var connectingAddress: String? = null
     private var backlogItems = mutableListOf<BacklogItem>()
+    private val receivedInSync = mutableSetOf<BacklogItem>()
+    private var isSyncInProgress = false
     private var swipeRefreshLayout: SwipeRefreshLayout? = null
 
     // Dashboard Views
@@ -378,6 +381,14 @@ class ReaderConnectivityController(
             activity.readerManager?.inventoryFlow?.collect { (rawTagId, timestamp) ->
 
                 if (rawTagId == "SYNC_DONE") {
+                    if (isSyncInProgress) {
+                        // Remove items that are no longer on the device
+                        val removed = backlogItems.removeAll { it !in receivedInSync }
+                        if (removed) {
+                            backlogAdapter?.submitList(backlogItems.toList())
+                        }
+                        isSyncInProgress = false
+                    }
                     swipeRefreshLayout?.isRefreshing = false
                     txtStatFiles?.text = backlogItems.size.toString()
                 } else if (rawTagId == "DEL_OK") {
@@ -391,8 +402,18 @@ class ReaderConnectivityController(
                         db.getStudentByRfid(tagId)?.name
                             ?: activity.getString(R.string.label_unknown_student)
                     }
-                    backlogItems.add(BacklogItem(tagId, studentName, timestamp))
-                    backlogAdapter?.submitList(backlogItems.toList())
+                    val item = BacklogItem(tagId, studentName, timestamp)
+                    
+                    if (isSyncInProgress) {
+                        receivedInSync.add(item)
+                    }
+
+                    if (!backlogItems.contains(item)) {
+                        backlogItems.add(item)
+                        // Sort descending so newer items are at the top and "push" others down
+                        backlogItems.sortByDescending { it.timestamp }
+                        backlogAdapter?.submitList(backlogItems.toList())
+                    }
                     txtStatFiles?.text = backlogItems.size.toString()
                 }
             }
@@ -406,19 +427,15 @@ class ReaderConnectivityController(
             TAG,
             "[Management] ---> refreshManagementData() entry point triggered. (Caller: $caller)"
         )
-        backlogItems.clear()
-        backlogAdapter?.submitList(emptyList())
-        txtStatFiles?.text = "0"
+        // --- UI Refinement: Do not clear the list immediately to avoid "blink" ---
+        // Instead, we mark the start of a sync and merge the items as they come.
+        receivedInSync.clear()
+        isSyncInProgress = true
+        
+        txtStatFiles?.text = backlogItems.size.toString()
 
         scope.launch {
             try {
-                // 1. Explicitly ensure we are in MANAGEMENT mode first
-                android.util.Log.d(
-                    TAG,
-                    "[Management Flow] Step 1: Setting AppMode to MANAGEMENT (via $caller)"
-                )
-                activity.readerManager?.setAppMode(ReaderManager.AppMode.MANAGEMENT, caller)
-
                 // 2. Tactical delay to allow ESP32 to process state transition
                 android.util.Log.d(TAG, "[Management Flow] Step 1.5: Waiting 500ms...")
                 delay(500)
@@ -432,6 +449,7 @@ class ReaderConnectivityController(
                 withContext(Dispatchers.Main) {
                     if (swipeRefreshLayout?.isRefreshing == true) {
                         swipeRefreshLayout?.isRefreshing = false
+                        isSyncInProgress = false
                         android.util.Log.w(TAG, "[Management Flow] Inventory fetch timed out.")
                         logAndToast(R.string.toast_device_communication_time_out)
                     }
@@ -443,6 +461,7 @@ class ReaderConnectivityController(
                 )
                 withContext(Dispatchers.Main) {
                     swipeRefreshLayout?.isRefreshing = false
+                    isSyncInProgress = false
                 }
             }
         }
@@ -471,6 +490,12 @@ class ReaderConnectivityController(
         activity.readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "Management Dashboard Exit")
         metricsJob?.cancel()
         inventoryJob?.cancel()
+        
+        // --- CRITICAL FIX: Clear state so re-entry starts fresh ---
+        backlogItems.clear()
+        receivedInSync.clear()
+        isSyncInProgress = false
+
         backlogAdapter = null
         swipeRefreshLayout = null
     }
@@ -603,22 +628,50 @@ class ReaderConnectivityController(
         private val onDeviceLongClicked: (String, String) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         private var items = mutableListOf<Any>()
+
         fun submitList(
             connected: List<DeviceItem>,
             known: List<DeviceItem>,
             unknown: List<DeviceItem>
         ) {
-            items.clear()
+            val newList = mutableListOf<Any>()
             if (connected.isNotEmpty()) {
-                items.add("CONNECTED"); items.addAll(connected)
+                newList.add("CONNECTED")
+                newList.addAll(connected)
             }
             if (known.isNotEmpty()) {
-                items.add("KNOWN"); items.addAll(known)
+                newList.add("KNOWN")
+                newList.addAll(known)
             }
             if (unknown.isNotEmpty()) {
-                items.add("UNKNOWN"); items.addAll(unknown)
+                newList.add("UNKNOWN")
+                newList.addAll(unknown)
             }
-            notifyDataSetChanged()
+
+            val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = items.size
+                override fun getNewListSize(): Int = newList.size
+
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                    val old = items[oldItemPosition]
+                    val new = newList[newItemPosition]
+                    return if (old is String && new is String) {
+                        old == new
+                    } else if (old is DeviceItem && new is DeviceItem) {
+                        old.address == new.address
+                    } else {
+                        false
+                    }
+                }
+
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                    return items[oldItemPosition] == newList[newItemPosition]
+                }
+            })
+
+            items.clear()
+            items.addAll(newList)
+            diffResult.dispatchUpdatesTo(this)
         }
 
         override fun getItemViewType(position: Int) = if (items[position] is String) 0 else 1
@@ -689,9 +742,27 @@ class ReaderConnectivityController(
     private class BacklogAdapter(
         private val onItemLongClicked: (BacklogItem) -> Unit
     ) : RecyclerView.Adapter<BacklogAdapter.ViewHolder>() {
-        private var items = listOf<BacklogItem>()
+        private var items = mutableListOf<BacklogItem>()
+
         fun submitList(newItems: List<BacklogItem>) {
-            items = newItems; notifyDataSetChanged()
+            val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize(): Int = items.size
+                override fun getNewListSize(): Int = newItems.size
+
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                    val old = items[oldItemPosition]
+                    val new = newItems[newItemPosition]
+                    return old.tagId == new.tagId && old.timestamp == new.timestamp
+                }
+
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                    return items[oldItemPosition] == newItems[newItemPosition]
+                }
+            })
+
+            items.clear()
+            items.addAll(newItems)
+            diffResult.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(
