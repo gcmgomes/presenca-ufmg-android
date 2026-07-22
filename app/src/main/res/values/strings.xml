@@ -142,6 +142,7 @@
     <string name="action_replace">Replace</string>
     <string name="action_forget">Forget</string>
     <string name="action_disconnect">Disconnect</string>
+    <string name="action_connect">Connect</string>
     <string name="action_edit">Edit</string>
     <string name="action_sync_time">Sync Time</string>
     <string name="action_inventory">Inventory</string>
@@ -172,6 +173,8 @@
 
     <string name="toast_database_export_success">Database exported successfully</string>
     <string name="toast_database_export_failed">Failed to export database</string>
+    <string name="toast_backlog_deleted_success">Attendance record removed from reader</string>
+    <string name="toast_backlog_delete_failed">Failed to remove record from reader</string>
     <string name="category_local_operations">Local CSV</string>
     <string name="category_cloud_operations">Drive Sheet</string>
 
@@ -227,6 +230,7 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
     <string name="label_device_mac">MAC: %1$s</string>
     <string name="label_unknown_student">Unknown</string>
     <string name="inventory_dialog_title">Reader Inventory</string>

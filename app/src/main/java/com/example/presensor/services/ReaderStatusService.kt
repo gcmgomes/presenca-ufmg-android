@@ -14,6 +14,7 @@ class ReaderStatusService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "reader_status_channel"
+        private const val ACTION_STOP = "STOP_SERVICE"
 
         // Single reference to look up the active instance
         private var instance: ReaderStatusService? = null
@@ -33,6 +34,13 @@ class ReaderStatusService : Service() {
                 context.startService(intent)
             }
         }
+
+        fun stopService(context: Context) {
+            val intent = Intent(context, ReaderStatusService::class.java).apply {
+                action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
     }
 
     override fun onCreate() {
@@ -46,7 +54,7 @@ class ReaderStatusService : Service() {
         val (icon, text) = when (state) {
             ConnectionState.CONNECTED -> Pair(
                 R.drawable.ic_reader_connected,
-                "Presensor Reader: Connected"
+                "Presensor Reader: Ready"
             )
 
             ConnectionState.SCANNING -> Pair(
@@ -56,7 +64,7 @@ class ReaderStatusService : Service() {
 
             ConnectionState.CONNECTING -> Pair(
                 R.drawable.ic_reader_disconnected,
-                "Presensor Reader: Connecting..."
+                "Presensor Reader: Connecting/Authenticating..."
             )
 
             ConnectionState.DISCONNECTED -> Pair(
@@ -90,7 +98,19 @@ class ReaderStatusService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {

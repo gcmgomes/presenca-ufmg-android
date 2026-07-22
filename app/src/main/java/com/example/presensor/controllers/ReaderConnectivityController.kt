@@ -59,6 +59,8 @@ class ReaderConnectivityController(
     private val receivedInSync = mutableSetOf<BacklogItem>()
     private var isSyncInProgress = false
     private var swipeRefreshLayout: SwipeRefreshLayout? = null
+    private var dashboardUIJob: Job? = null
+    private var currentDashboardAddress: String? = null
 
     // Dashboard Views
     private var txtDeviceName: TextView? = null
@@ -103,9 +105,13 @@ class ReaderConnectivityController(
             secureStoreManager.isReaderEnabled = isChecked
             listRefresh?.isEnabled = isChecked
             if (isChecked) {
+                com.example.presensor.services.ReaderStatusService.startService(activity)
                 startDiscovery()
                 startRefreshLoop()
+                // Default behavior: attempt to auto-reconnect to the last known device
+                activity.readerManager?.startConnecting()
             } else {
+                com.example.presensor.services.ReaderStatusService.stopService(activity)
                 teardownDiscovery(fullDisconnect = true)
             }
         }
@@ -150,19 +156,47 @@ class ReaderConnectivityController(
             activity.readerManager?.stopScanning()
             activity.readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "Discovery Teardown")
         }
-        discoveredDevices.clear()
-        connectingAddress = null
-        updateDeviceList()
+        // CRITICAL FIX: Only clear the list if we are doing a FULL disconnect/shutdown
+        if (fullDisconnect) {
+            discoveredDevices.clear()
+            updateDeviceList()
+        }
         refreshJob?.cancel()
         refreshJob = null
     }
 
     private fun startDiscovery() {
-        discoveredDevices.clear()
+        // --- UI Fix: Do not clear the map here. ---
+        // Clearing here caused devices to "disappear" during refresh cycles.
+        // We rely on pruneAndRefresh() to remove stale items.
+
         activity.readerManager?.isBroadDiscoveryMode = true
         activity.readerManager?.onDeviceFoundListener = { result ->
             activity.runOnUiThread {
                 val address = result.device.address
+                val advertisedName =
+                    result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
+
+                // --- PROACTIVE AUTO-CONNECT ---
+                // If this is the last used device and it's not currently connected, trigger a targeted link.
+                if (advertisedName == secureStoreManager.deviceName &&
+                    activity.readerManager?.connectionState?.value == ReaderManager.ConnectionState.SCANNING &&
+                    activity.readerManager?.isAutoReconnectedEnabled() == true
+                ) {
+
+                    val password = secureStoreManager.getAuthPasswordFor(advertisedName)
+                    if (password != null) {
+                        android.util.Log.i(
+                            TAG,
+                            "[Auto-Connect] Proactively linking with '$advertisedName' discovered in list."
+                        )
+                        connectingAddress = address
+                        activity.readerManager?.startConnecting(advertisedName, password)
+                        updateDeviceList()
+                        return@runOnUiThread
+                    }
+                }
+
                 val isNew = !discoveredDevices.containsKey(address)
                 discoveredDevices[address] = result to System.currentTimeMillis()
                 if (isNew) updateDeviceList()
@@ -193,9 +227,15 @@ class ReaderConnectivityController(
 
     private fun pruneAndRefresh() {
         val now = System.currentTimeMillis()
+        val connectedAddress = activity.readerManager?.connectedDeviceAddress
+        
         val iterator = discoveredDevices.entries.iterator()
         while (iterator.hasNext()) {
             val entry = iterator.next()
+            // CRITICAL FIX: Do not prune the device we are currently connected to.
+            // If we prune it while connected, it will vanish from the list the moment we disconnect.
+            if (entry.key == connectedAddress) continue
+            
             if (now - entry.value.second > STALE_THRESHOLD_MS) iterator.remove()
         }
         updateDeviceList()
@@ -208,7 +248,7 @@ class ReaderConnectivityController(
         }
 
         val connectedAddress = activity.readerManager?.connectedDeviceAddress
-        val isAuth = activity.readerManager?.isAuthenticated ?: false
+        val isAuth = activity.readerManager?.isAuthenticated?.value ?: false
         val lastRssi = activity.readerManager?.lastConnectedRssi
 
         val connectedItems = mutableListOf<DeviceItem>()
@@ -256,9 +296,15 @@ class ReaderConnectivityController(
             "[Connect Flow] handleReaderSelection triggered for '$name' at $address"
         )
 
-        // 1. If already connected AND authenticated, do nothing
-        if (address == activity.readerManager?.connectedDeviceAddress && activity.readerManager?.isAuthenticated == true) {
-            android.util.Log.d(TAG, "[Connect Flow] Already connected and authenticated.")
+        // 1. If already connected AND authenticated, DISCONNECT on simple tap (User Request)
+        if (address == activity.readerManager?.connectedDeviceAddress && activity.readerManager?.isAuthenticated?.value == true) {
+            android.util.Log.d(TAG, "[Connect Flow] Already connected. Tapping to DISCONNECT.")
+            activity.readerManager?.disconnect(disableAutoReconnect = true)
+            logAndToast(R.string.status_disconnected)
+            
+            // --- UI Fix: Immediately resume discovery so the device re-appears as 'Known' instantly ---
+            startDiscovery()
+            updateDeviceList()
             return
         }
 
@@ -300,22 +346,25 @@ class ReaderConnectivityController(
     private fun handleReaderLongClick(name: String, address: String) {
         android.util.Log.d(TAG, "[UI] handleReaderLongClick for '$name' at $address")
         secureStoreManager.deviceName = name
-        activity.openDeviceManager()
+        activity.openDeviceManager(address)
     }
 
     // --- Device Management (Dashboard) ---
 
-    fun setupReaderManagementView(rootView: View) {
+    fun setupReaderManagementView(rootView: View, address: String? = null) {
         android.util.Log.i(
             TAG,
             "[Management] setupReaderManagementView START. Root ID: ${rootView.id}"
         )
+
+        currentDashboardAddress = address ?: activity.readerManager?.connectedDeviceAddress
 
         txtDeviceName = rootView.findViewById(R.id.txtDeviceName)
         txtDeviceMac = rootView.findViewById(R.id.txtDeviceMac)
         txtStatFiles = rootView.findViewById(R.id.txtStatFilesCount)
         txtStatTime = rootView.findViewById(R.id.txtStatDeviceTime)
         txtStatBattery = rootView.findViewById(R.id.txtStatBattery)
+        val viewAccent = rootView.findViewById<View>(R.id.viewDeviceDetailAccent)
 
         // CRITICAL FIX: Ensure we are finding the refresh layout relative to this rootView
         swipeRefreshLayout =
@@ -337,14 +386,17 @@ class ReaderConnectivityController(
             val address = activity.readerManager?.connectedDeviceAddress
             if (address != null) showEditReaderDialog(secureStoreManager.deviceName, address)
         }
+
         rootView.findViewById<View>(R.id.btnSyncTime).setOnClickListener {
-            activity.readerManager?.syncTime()
-            logAndToast(R.string.action_sync_time)
+            if (activity.readerManager?.isAuthenticated?.value == true) {
+                activity.readerManager?.syncTime()
+                logAndToast(R.string.action_sync_time)
+            } else {
+                Toast.makeText(activity, R.string.toast_tag_not_registered, Toast.LENGTH_SHORT)
+                    .show() // Fallback
+            }
         }
-        rootView.findViewById<View>(R.id.btnDisconnect).setOnClickListener {
-            activity.readerManager?.disconnect(disableAutoReconnect = true)
-            resetDashboardUI()
-        }
+
         rootView.findViewById<View>(R.id.btnForget).setOnClickListener {
             val name = secureStoreManager.deviceName
             activity.readerManager?.disconnect(disableAutoReconnect = true)
@@ -353,19 +405,69 @@ class ReaderConnectivityController(
         }
 
         swipeRefreshLayout?.setOnRefreshListener {
-            // EMERGENCY LOG: This must show up if the listener works
-            android.util.Log.e(TAG, "[CRITICAL] Pull-to-refresh TRIGGERED. Entry point hit.")
-            refreshManagementData("Manual Pull-to-Refresh")
+            if (activity.readerManager?.isAuthenticated?.value == true) {
+                android.util.Log.e(TAG, "[CRITICAL] Pull-to-refresh TRIGGERED. Entry point hit.")
+                refreshManagementData("Manual Pull-to-Refresh")
+            } else {
+                swipeRefreshLayout?.isRefreshing = false
+                Toast.makeText(activity, R.string.toast_cloud_sync_failed, Toast.LENGTH_SHORT)
+                    .show()
+            }
         }
 
         updateHeader()
-        activity.readerManager?.setAppMode(
-            ReaderManager.AppMode.MANAGEMENT,
-            "Management Dashboard Setup"
-        )
 
-        swipeRefreshLayout?.isRefreshing = true
-        refreshManagementData("Automatic Dashboard Init")
+        // --- REACTIVE DASHBOARD UI ---
+        dashboardUIJob?.cancel()
+        dashboardUIJob = scope.launch(Dispatchers.Main) {
+            // Observe both connection state and authentication via combine
+            kotlinx.coroutines.flow.combine(
+                activity.readerManager!!.connectionState,
+                activity.readerManager!!.isAuthenticated
+            ) { state, auth -> state == ReaderManager.ConnectionState.CONNECTED && auth }
+                .collect { isActuallyReady ->
+                    android.util.Log.d(TAG, "[Management] UI Update -> Ready: $isActuallyReady")
+
+                    // 1. Accent color
+                    viewAccent?.setBackgroundColor(if (isActuallyReady) "#4CAF50".toColorInt() else Color.TRANSPARENT)
+
+                    // 2. Action buttons (Disconnect/Connect toggle)
+                    val btnDisconnect = rootView.findViewById<LinearLayout>(R.id.btnDisconnect)
+                    val imgDisconnect = btnDisconnect.getChildAt(0) as? ImageView
+                    val txtDisconnect = btnDisconnect.getChildAt(1) as? TextView
+
+                    if (isActuallyReady) {
+                        txtDisconnect?.text = activity.getString(R.string.action_disconnect)
+                        imgDisconnect?.setImageResource(R.drawable.ic_reader_disconnected)
+                        btnDisconnect.setOnClickListener {
+                            activity.readerManager?.disconnect(disableAutoReconnect = true)
+                            resetDashboardUI()
+                        }
+                    } else {
+                        txtDisconnect?.text = activity.getString(R.string.action_connect)
+                        imgDisconnect?.setImageResource(R.drawable.ic_reader_connected)
+                        btnDisconnect.setOnClickListener {
+                            val targetAddr = currentDashboardAddress
+                                ?: activity.readerManager?.connectedDeviceAddress ?: ""
+                            handleReaderSelection(secureStoreManager.deviceName, targetAddr)
+                        }
+                    }
+
+                    // 3. Trigger management setup ONLY when it transition to ready
+                    if (isActuallyReady) {
+                        activity.readerManager?.setAppMode(
+                            ReaderManager.AppMode.MANAGEMENT,
+                            "Management Dashboard Reactivation"
+                        )
+                        swipeRefreshLayout?.isRefreshing = true
+                        refreshManagementData("Dashboard State Transition")
+                    } else {
+                        txtStatFiles?.text = "--"
+                        txtStatTime?.text = "--"
+                        txtStatBattery?.text = "--%"
+                    }
+                }
+        }
 
         metricsJob?.cancel()
         metricsJob = scope.launch(Dispatchers.Main) {
@@ -392,10 +494,10 @@ class ReaderConnectivityController(
                     swipeRefreshLayout?.isRefreshing = false
                     txtStatFiles?.text = backlogItems.size.toString()
                 } else if (rawTagId == "DEL_OK") {
-                    logAndToast(R.string.toast_course_deleted_success) // Reusing "deleted success" toast
+                    logAndToast(R.string.toast_backlog_deleted_success)
                     refreshManagementData("Post-Deletion Refresh")
                 } else if (rawTagId == "DEL_ERR") {
-                    logAndToast(R.string.toast_cloud_sync_failed)
+                    logAndToast(R.string.toast_backlog_delete_failed)
                 } else {
                     val tagId = rawTagId.chunked(2).joinToString(":")
                     val studentName = withContext(Dispatchers.IO) {
@@ -403,7 +505,7 @@ class ReaderConnectivityController(
                             ?: activity.getString(R.string.label_unknown_student)
                     }
                     val item = BacklogItem(tagId, studentName, timestamp)
-                    
+
                     if (isSyncInProgress) {
                         receivedInSync.add(item)
                     }
@@ -418,8 +520,6 @@ class ReaderConnectivityController(
                 }
             }
         }
-
-        refreshManagementData("Automatic Dashboard Init")
     }
 
     private fun refreshManagementData(caller: String) {
@@ -431,7 +531,7 @@ class ReaderConnectivityController(
         // Instead, we mark the start of a sync and merge the items as they come.
         receivedInSync.clear()
         isSyncInProgress = true
-        
+
         txtStatFiles?.text = backlogItems.size.toString()
 
         scope.launch {
@@ -490,7 +590,9 @@ class ReaderConnectivityController(
         activity.readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "Management Dashboard Exit")
         metricsJob?.cancel()
         inventoryJob?.cancel()
-        
+        dashboardUIJob?.cancel()
+        currentDashboardAddress = null
+
         // --- CRITICAL FIX: Clear state so re-entry starts fresh ---
         backlogItems.clear()
         receivedInSync.clear()
@@ -664,7 +766,10 @@ class ReaderConnectivityController(
                     }
                 }
 
-                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                override fun areContentsTheSame(
+                    oldItemPosition: Int,
+                    newItemPosition: Int
+                ): Boolean {
                     return items[oldItemPosition] == newList[newItemPosition]
                 }
             })
@@ -757,7 +862,10 @@ class ReaderConnectivityController(
                     return old.tagId == new.tagId && old.timestamp == new.timestamp
                 }
 
-                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                override fun areContentsTheSame(
+                    oldItemPosition: Int,
+                    newItemPosition: Int
+                ): Boolean {
                     return items[oldItemPosition] == newItems[newItemPosition]
                 }
             })
@@ -775,10 +883,10 @@ class ReaderConnectivityController(
             val item = items[position]
             holder.txtName.text = item.studentName
             holder.txtTag.text = item.tagId
-            
+
             val date = Date(item.timestamp * 1000L)
             holder.txtTime.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(date)
-            
+
             // Use system's local date format (e.g., dd/MM/yyyy for pt-BR)
             val df = android.text.format.DateFormat.getDateFormat(holder.itemView.context)
             holder.txtDate.text = df.format(date)

@@ -263,13 +263,28 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
      * Isolated helper to safely kick off the top-bar icon synchronization
      */
     private fun initializeReaderStatusChannel() {
-        // 1. Fire up the foreground service to anchor the status icon
-        ReaderStatusService.startService(this)
+        // 1. Fire up the foreground service to anchor the status icon ONLY if enabled
+        if (secureStoreManager.isReaderEnabled) {
+            ReaderStatusService.startService(this)
+        }
 
         // 2. Start collecting the states to update the top-left area
         lifecycleScope.launch {
-            readerManager?.connectionState?.collectLatest { state ->
-                ReaderStatusService.updateStatus(state)
+            kotlinx.coroutines.flow.combine(
+                readerManager!!.connectionState,
+                readerManager!!.isAuthenticated
+            ) { state, auth ->
+                // Map to CONNECTED only if both GATT is up and AUTH is successful
+                if (state == ReaderManager.ConnectionState.CONNECTED && auth) {
+                    ReaderManager.ConnectionState.CONNECTED
+                } else if (state == ReaderManager.ConnectionState.CONNECTED) {
+                    // Raw link is up, but still authenticating
+                    ReaderManager.ConnectionState.CONNECTING
+                } else {
+                    state
+                }
+            }.collectLatest { effectiveState ->
+                ReaderStatusService.updateStatus(effectiveState)
             }
         }
     }
@@ -563,7 +578,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         readerConnectivityController.setupReaderList(findViewById<View>(R.id.layoutReaderManagementView))
     }
 
-    fun openDeviceManager() {
+    fun openDeviceManager(address: String? = null) {
         android.util.Log.i(
             "MainActivity",
             "[UI Flow] openDeviceManager() triggered. State -> DEVICE_MANAGER"
@@ -577,7 +592,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 "MainActivity",
                 "[UI Flow] layoutDeviceManagerView found. ID: ${managerView.id}. Initializing controller..."
             )
-            readerConnectivityController.setupReaderManagementView(managerView)
+            readerConnectivityController.setupReaderManagementView(managerView, address)
         } else {
             android.util.Log.e(
                 "MainActivity",

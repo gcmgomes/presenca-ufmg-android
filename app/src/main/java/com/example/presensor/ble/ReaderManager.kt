@@ -65,7 +65,10 @@ class ReaderManager(
     private var lastProcessedTimestamp: String? = null
     var isBroadDiscoveryMode: Boolean = false
     private var isAuthenticationFailure = false
-    private var isAutoReconnectEnabled = true
+    private var _isAutoReconnectEnabled = true
+
+    fun isAutoReconnectedEnabled() = _isAutoReconnectEnabled
+
 
     // --- Targeted Connection Context (Captured at startConnecting call) ---
     private data class ConnectionContext(
@@ -102,8 +105,9 @@ class ReaderManager(
     var lastConnectedRssi: Int? = null
         private set
     private var isScanning = false
-    var isAuthenticated = false
-        private set
+
+    private val _isAuthenticated = MutableStateFlow(false)
+    val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
 
     var onDeviceFoundListener: ((ScanResult) -> Unit)? = null
 
@@ -137,13 +141,14 @@ class ReaderManager(
             "[Connect Flow] startConnecting() triggered for '$deviceName' (Pass length: ${passBytes.size})"
         )
 
-        // 1. Reset all state for this fresh attempt
-        isAuthenticated = false
+        // 1. Reset all state and capture context for this fresh attempt immediately
+        _isAuthenticated.value = false
         isAuthenticationFailure = false
-        isAutoReconnectEnabled = true
-
-        // 2. Capture the exact credentials into an immutable context for this lifecycle
+        _isAutoReconnectEnabled = true
         this.activeConnectionContext = ConnectionContext(deviceName, passBytes)
+
+        // 2. Explicitly EXIT broad discovery mode to ensure targeted matching in scanCallback
+        isBroadDiscoveryMode = false
 
         val adapter = bluetoothAdapter
         if (adapter == null || !adapter.isEnabled) {
@@ -165,9 +170,8 @@ class ReaderManager(
             disconnect()
         }
 
-        if (_connectionState.value == ConnectionState.SCANNING ||
-            _connectionState.value == ConnectionState.CONNECTING
-        ) {
+        // 5. State check: Skip scan call ONLY if we are already in the middle of a targeted handshake
+        if (_connectionState.value == ConnectionState.CONNECTING) {
             Log.d(
                 TAG,
                 "[Connect Flow] Already in state ${_connectionState.value}. Ignoring request."
@@ -175,7 +179,7 @@ class ReaderManager(
             return
         }
 
-        Log.i(TAG, "[Connect Flow] Initiating target search (Scanning)...")
+        Log.i(TAG, "[Connect Flow] Initiating/Resuming target search (Scanning)...")
         startScan()
     }
 
@@ -238,14 +242,14 @@ class ReaderManager(
     fun disconnect(disableAutoReconnect: Boolean = false) {
         Log.d(TAG, "[Disconnect] Explicitly requested. Tearing down connection.")
         if (disableAutoReconnect) {
-            isAutoReconnectEnabled = false
+            _isAutoReconnectEnabled = false
         }
-        stopScanning()
+        stopScanning() // Restoring: Ensure tests pass and radio is released
 
         pairingReceiver?.unregister(context)
         pairingReceiver = null
         isBroadDiscoveryMode = false
-        isAuthenticated = false
+        _isAuthenticated.value = false
 
         bluetoothGatt?.let { gatt ->
             Log.d(TAG, "[Cleanup] Explicitly disconnecting and closing GATT: $gatt")
@@ -505,9 +509,9 @@ class ReaderManager(
 
                 _connectionState.value = ConnectionState.DISCONNECTED
 
-                if (isAuthenticationFailure || !isAutoReconnectEnabled) {
+                if (isAuthenticationFailure || !_isAutoReconnectEnabled) {
                     isAuthenticationFailure = false
-                    isAutoReconnectEnabled = true
+                    _isAutoReconnectEnabled = true
                     return
                 }
 
@@ -640,7 +644,7 @@ class ReaderManager(
             if (charUuid == CHAR_AUTH_UUID) {
                 if (data == "SUCCESS") {
                     Log.i(TAG, "[Auth] Device authenticated successfully!")
-                    isAuthenticated = true
+                    _isAuthenticated.value = true
                     scope.launch {
                         _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
                         syncTime()
@@ -652,8 +656,8 @@ class ReaderManager(
                 if (data == "FAIL") {
                     Log.e(TAG, "[Auth Denied] Invalid password credential.")
                     isAuthenticationFailure = true
-                    isAuthenticated = false
-                    isAutoReconnectEnabled =
+                    _isAuthenticated.value = false
+                    _isAutoReconnectEnabled =
                         false // CRITICAL: Stop the "every other time" retry loop
                     scope.launch { _eventFlow.emit(ReaderEvent.AuthenticationFailed) }
                     secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)

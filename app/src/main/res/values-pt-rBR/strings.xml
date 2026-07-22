@@ -147,6 +147,7 @@
     <string name="action_replace">Substituir</string>
     <string name="action_forget">Esquecer</string>
     <string name="action_disconnect">Desconectar</string>
+    <string name="action_connect">Conectar</string>
     <string name="action_edit">Editar</string>
     <string name="action_sync_time">Sinc. Hora</string>
     <string name="action_inventory">Estoque</string>
@@ -176,6 +177,8 @@
 
     <string name="toast_database_export_success">Banco de dados exportado com sucesso</string>
     <string name="toast_database_export_failed">Falha ao exportar banco de dados</string>
+    <string name="toast_backlog_deleted_success">Registro de presença removido do leitor</string>
+    <string name="toast_backlog_delete_failed">Falha ao remover registro do leitor</string>
     <string name="category_local_operations">CSV - Dispositivo</string>
     <string name="category_cloud_operations">Planilha - Google Drive</string>
 
@@ -231,6 +234,7 @@
     <string name="rssi_format">%1$d dBm</string>
     <string name="status_connecting">Conectando…</string>
     <string name="status_connected">Conectado</string>
+    <string name="status_disconnected">Desconectado</string>
     <string name="label_device_mac">MAC: %1$s</string>
     <string name="label_unknown_student">Desconhecido</string>
     <string name="message_enter_password">Digite a senha de acesso para:\n<b>%1$s</b></string>
