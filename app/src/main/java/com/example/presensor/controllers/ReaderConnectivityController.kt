@@ -701,6 +701,7 @@ class ReaderConnectivityController(
 
                 // --- UI Fix: Connection accent now purely based on hardware state ---
                 holder.viewAccent.setBackgroundColor(if (item.isConnected) "#4CAF50".toColorInt() else Color.TRANSPARENT)
+                holder.txtValueSecondary.visibility = View.GONE
 
                 if (item.isConnecting) {
                     holder.txtValue.text =
@@ -734,6 +735,7 @@ class ReaderConnectivityController(
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtMac: TextView = v.findViewById(R.id.txtSecondaryLabel)
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)
+            val txtValueSecondary: TextView = v.findViewById(R.id.txtStatValueSecondary)
             val imgSignal: ImageView = v.findViewById(R.id.imgSignalIcon)
             val viewAccent: View = v.findViewById(R.id.viewConnectionAccent)
         }
@@ -773,10 +775,14 @@ class ReaderConnectivityController(
             val item = items[position]
             holder.txtName.text = item.studentName
             holder.txtTag.text = item.tagId
-            holder.txtDate.text = SimpleDateFormat(
-                "dd/MM HH:mm:ss",
-                Locale.getDefault()
-            ).format(Date(item.timestamp * 1000L))
+            
+            val date = Date(item.timestamp * 1000L)
+            holder.txtTime.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(date)
+            
+            // Use system's local date format (e.g., dd/MM/yyyy for pt-BR)
+            val df = android.text.format.DateFormat.getDateFormat(holder.itemView.context)
+            holder.txtDate.text = df.format(date)
+            holder.txtDate.visibility = View.VISIBLE
 
             holder.itemView.setOnLongClickListener {
                 onItemLongClicked(item)
@@ -788,7 +794,8 @@ class ReaderConnectivityController(
         class ViewHolder(v: View) : RecyclerView.ViewHolder(v) {
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtTag: TextView = v.findViewById(R.id.txtSecondaryLabel)
-            val txtDate: TextView = v.findViewById(R.id.txtStatValue)
+            val txtTime: TextView = v.findViewById(R.id.txtStatValue)
+            val txtDate: TextView = v.findViewById(R.id.txtStatValueSecondary)
         }
     }
 }

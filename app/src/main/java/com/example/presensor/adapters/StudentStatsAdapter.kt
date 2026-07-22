@@ -32,6 +32,7 @@ class StudentStatsAdapter(
         val email: TextView = v.findViewById(R.id.txtSecondaryLabel)
         val container: LinearLayout = v.findViewById(R.id.layoutExpandedContent)
         val percentage: TextView = v.findViewById(R.id.txtStatValue)
+        val secondary: TextView = v.findViewById(R.id.txtStatValueSecondary)
         val root: View = v.findViewById(R.id.cardStatRoot)
     }
 
@@ -53,6 +54,7 @@ class StudentStatsAdapter(
         val student = activeStudents[position]
         holder.name.text = student.name
         holder.email.text = student.email
+        holder.secondary.visibility = View.GONE
 
         val studentAttendanceSet = allAttendance.filter { it.studentEmail == student.email }.map { it.sessionId }.distinct()
         holder.percentage.text = if (sessionIds.isNotEmpty()) "${100 * studentAttendanceSet.size / sessionIds.size}%" else "123%"
