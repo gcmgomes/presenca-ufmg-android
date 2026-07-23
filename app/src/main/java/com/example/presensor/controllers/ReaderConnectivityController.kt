@@ -91,8 +91,8 @@ class ReaderConnectivityController(
         val recyclerView = rootView.findViewById<RecyclerView>(R.id.readerRecyclerView)
         val listRefresh = rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshReader)
 
-        switchUseReader.isChecked = secureStoreManager.isReaderEnabled
-        listRefresh?.isEnabled = secureStoreManager.isReaderEnabled
+        switchUseReader.isChecked = activity.readerManager?.isReaderEnabled?.value ?: false
+        listRefresh?.isEnabled = activity.readerManager?.isReaderEnabled?.value ?: false
 
         listAdapter = DeviceListAdapter(
             onDeviceSelected = { name, address -> handleReaderSelection(name, address) },
@@ -104,10 +104,9 @@ class ReaderConnectivityController(
         updateDeviceList()
 
         switchUseReader.setOnCheckedChangeListener { _, isChecked ->
-            secureStoreManager.isReaderEnabled = isChecked
+            activity.readerManager?.setReaderEnabled(isChecked)
             listRefresh?.isEnabled = isChecked
             if (isChecked) {
-                com.example.presensor.services.ReaderStatusService.startService(activity)
                 startRefreshLoop()
                 
                 // --- UI FIX: Unified Start Path ---
@@ -121,7 +120,6 @@ class ReaderConnectivityController(
                     startDiscovery()
                 }
             } else {
-                com.example.presensor.services.ReaderStatusService.stopService(activity)
                 teardownDiscovery(fullDisconnect = true)
             }
         }
@@ -146,12 +144,21 @@ class ReaderConnectivityController(
 
         eventJob?.cancel()
         eventJob = scope.launch(Dispatchers.Main) {
+            launch {
+                activity.readerManager?.isReaderEnabled?.collect { enabled ->
+                    switchUseReader.isChecked = enabled
+                    listRefresh?.isEnabled = enabled
+                    if (!enabled) {
+                        updateDeviceList()
+                    }
+                }
+            }
             activity.readerManager?.eventFlow?.collect { event ->
                 handleReaderEvent(event)
             }
         }
 
-        if (secureStoreManager.isReaderEnabled) {
+        if (activity.readerManager?.isReaderEnabled?.value == true) {
             startDiscovery()
             startRefreshLoop()
         }
@@ -226,7 +233,7 @@ class ReaderConnectivityController(
         refreshJob?.cancel()
         refreshJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
-                if (secureStoreManager.isReaderEnabled) {
+                if (activity.readerManager?.isReaderEnabled?.value == true) {
                     // Increase interval to 20 seconds to stay safely under OS throttling limits
                     startDiscovery()
                     activity.readerManager?.requestRssiUpdate()
@@ -254,7 +261,7 @@ class ReaderConnectivityController(
     }
 
     private fun updateDeviceList() {
-        if (!secureStoreManager.isReaderEnabled) {
+        if (activity.readerManager?.isReaderEnabled?.value != true) {
             listAdapter?.submitList(emptyList(), emptyList(), emptyList())
             return
         }

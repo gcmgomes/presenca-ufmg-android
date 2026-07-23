@@ -29,6 +29,19 @@ class ReaderManager(
     // High-level states for the UI
     enum class ConnectionState { DISCONNECTED, SCANNING, CONNECTING, CONNECTED }
 
+    private val _isReaderEnabled = MutableStateFlow(secureStoreManager.isReaderEnabled)
+    val isReaderEnabled: StateFlow<Boolean> = _isReaderEnabled
+
+    fun setReaderEnabled(enabled: Boolean) {
+        if (_isReaderEnabled.value == enabled) return
+        Log.i(TAG, "[Lifecycle] Reader Enabled toggled to: $enabled")
+        _isReaderEnabled.value = enabled
+        secureStoreManager.isReaderEnabled = enabled
+        if (!enabled) {
+            disconnect(disableAutoReconnect = true)
+        }
+    }
+
     private var _isAutoReconnectEnabled = true
     fun isAutoReconnectedEnabled() = _isAutoReconnectEnabled
 
@@ -76,6 +89,12 @@ class ReaderManager(
         // Wire Transport Discovery -> Listener
         scope.launch {
             transport.discoveredDevices.collect { result ->
+                // --- BUGFIX: If reader is globally disabled, ABORT ALL background actions ---
+                if (!_isReaderEnabled.value) {
+                    Log.w(TAG, "[Discovery] Discarding result because Reader is DISABLED.")
+                    return@collect
+                }
+
                 // --- UI FIX: Always notify the listener so the card appears/updates in the list ---
                 // Even if we are in targeted mode, the UI needs to know the device was found 
                 // to show RSSI or the 'Connecting' state.
@@ -152,10 +171,10 @@ class ReaderManager(
         }
         
         // Handle auto-reconnect
-        if (tState == TransportConnectionState.DISCONNECTED && _isAutoReconnectEnabled && !scanning) {
+        if (tState == TransportConnectionState.DISCONNECTED && _isAutoReconnectEnabled && !scanning && _isReaderEnabled.value) {
             scope.launch {
                 delay(3000)
-                if (_isAutoReconnectEnabled && transport.connectionState.value == TransportConnectionState.DISCONNECTED) {
+                if (_isAutoReconnectEnabled && transport.connectionState.value == TransportConnectionState.DISCONNECTED && _isReaderEnabled.value) {
                     Log.i(TAG, "[Orchestrator] Connection lost. Triggering auto-reconnect...")
                     startConnecting()
                 }
@@ -200,6 +219,10 @@ class ReaderManager(
     }
 
     fun startConnecting(deviceName: String, password: String) {
+        if (!_isReaderEnabled.value) {
+            Log.e(TAG, "[Connect Flow] ABORTING connection to $deviceName. Reader is DISABLED.")
+            return
+        }
         Log.i(TAG, "[Orchestrator] Targeting $deviceName")
         _isAutoReconnectEnabled = true
         isBroadDiscoveryMode = false
@@ -214,6 +237,10 @@ class ReaderManager(
     }
 
     fun startScan() {
+        if (!_isReaderEnabled.value) {
+            Log.e(TAG, "[Scan Flow] ABORTING scan. Reader is DISABLED.")
+            return
+        }
         transport.startScan(isBroadDiscoveryMode)
     }
 

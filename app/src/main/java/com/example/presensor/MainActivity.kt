@@ -214,7 +214,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
             // SAFE ZONE: Initialize the channel right before connecting
             initializeReaderStatusChannel()
-            if (secureStoreManager.isReaderEnabled) {
+            if (readerManager?.isReaderEnabled?.value == true) {
                 readerManager?.startConnecting()
             }
             readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
@@ -251,7 +251,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         if (missingPermissions.isEmpty()) {
             Log.d("MainActivity", "Permissions already granted. Initializing pipeline...")
             initializeReaderStatusChannel()
-            if (secureStoreManager.isReaderEnabled) {
+            if (readerManager?.isReaderEnabled?.value == true) {
                 readerManager?.startConnecting()
             }
             readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
@@ -266,9 +266,17 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
      * Isolated helper to safely kick off the top-bar icon synchronization
      */
     private fun initializeReaderStatusChannel() {
-        // 1. Fire up the foreground service to anchor the status icon ONLY if enabled
-        if (secureStoreManager.isReaderEnabled) {
-            ReaderStatusService.startService(this)
+        // 1. Reactive Lifecycle Governance: Service starts/stops based on Manager state
+        lifecycleScope.launch {
+            readerManager?.isReaderEnabled?.collect { enabled ->
+                if (enabled) {
+                    Log.i(TAG, "[Lifecycle] Starting ReaderStatusService...")
+                    ReaderStatusService.startService(this@MainActivity)
+                } else {
+                    Log.i(TAG, "[Lifecycle] Stopping ReaderStatusService...")
+                    ReaderStatusService.stopService(this@MainActivity)
+                }
+            }
         }
 
         // 2. Start collecting the states to update the top-left area

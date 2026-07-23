@@ -149,4 +149,28 @@ class ReaderManagerTest {
         verify(transport).disconnect()
         assertTrue(readerManager.isBroadDiscoveryMode)
     }
+
+    @Test
+    fun `setReaderEnabled false should disconnect transport`() = testScope.runTest {
+        readerManager.setReaderEnabled(false)
+        advanceUntilIdle()
+        
+        verify(transport).disconnect()
+        verify(secureStoreManager).isReaderEnabled = false
+        assertFalse(readerManager.isReaderEnabled.value)
+    }
+
+    @Test
+    fun `discovery should be ignored when reader is disabled`() = testScope.runTest {
+        readerManager.setReaderEnabled(false)
+        advanceUntilIdle()
+        
+        val scanResult: ScanResult = mock()
+        tDiscoveredDevices.emit(scanResult)
+        advanceUntilIdle()
+        
+        // Should not trigger auto-connect logic even if it matches
+        verify(secureStoreManager, never()).deviceName
+        verify(transport, never()).connect(any())
+    }
 }
