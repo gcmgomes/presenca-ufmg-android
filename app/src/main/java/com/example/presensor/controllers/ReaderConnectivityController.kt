@@ -19,8 +19,9 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.MainActivity
 import com.example.presensor.R
-import com.example.presensor.ble.ReaderEvent
-import com.example.presensor.ble.ReaderManager
+import com.example.presensor.communication.ReaderEvent
+import com.example.presensor.communication.ReaderManager
+import com.example.presensor.communication.core.AppMode
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.SecureStoreManager
 import com.google.android.material.switchmaterial.SwitchMaterial
@@ -30,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,10 +108,18 @@ class ReaderConnectivityController(
             listRefresh?.isEnabled = isChecked
             if (isChecked) {
                 com.example.presensor.services.ReaderStatusService.startService(activity)
-                startDiscovery()
                 startRefreshLoop()
-                // Default behavior: attempt to auto-reconnect to the last known device
-                activity.readerManager?.startConnecting()
+                
+                // --- UI FIX: Unified Start Path ---
+                // We attempt to connect if credentials exist; otherwise, startConnecting() 
+                // will default to a broad scan if it fails internally.
+                val name = secureStoreManager.deviceName
+                val password = secureStoreManager.getAuthPasswordFor(name)
+                if (password != null) {
+                    activity.readerManager?.startConnecting(name, password)
+                } else {
+                    startDiscovery()
+                }
             } else {
                 com.example.presensor.services.ReaderStatusService.stopService(activity)
                 teardownDiscovery(fullDisconnect = true)
@@ -154,7 +164,7 @@ class ReaderConnectivityController(
             activity.readerManager?.disconnect()
         } else {
             activity.readerManager?.stopScanning()
-            activity.readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "Discovery Teardown")
+            activity.readerManager?.setAppMode(AppMode.IDLE, "Discovery Teardown")
         }
         // CRITICAL FIX: Only clear the list if we are doing a FULL disconnect/shutdown
         if (fullDisconnect) {
@@ -204,8 +214,9 @@ class ReaderConnectivityController(
         }
         activity.readerManager?.startScan()
 
+        // --- SCAN OPTIMIZATION: 5s active search to save battery ---
         scope.launch {
-            delay(6000)
+            delay(5000)
             activity.readerManager?.stopScanning()
         }
         updateDeviceList()
@@ -216,10 +227,11 @@ class ReaderConnectivityController(
         refreshJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
                 if (secureStoreManager.isReaderEnabled) {
+                    // Increase interval to 20 seconds to stay safely under OS throttling limits
                     startDiscovery()
                     activity.readerManager?.requestRssiUpdate()
                 }
-                delay(REFRESH_INTERVAL_MS)
+                delay(20000)
                 pruneAndRefresh()
             }
         }
@@ -417,26 +429,39 @@ class ReaderConnectivityController(
 
         updateHeader()
 
-        // --- REACTIVE DASHBOARD UI ---
+    // --- REACTIVE DASHBOARD UI ---
+        val dashboardTraceId = System.currentTimeMillis() % 10000
+        android.util.Log.i(TAG, "[Management] STARTING Dashboard Collector Trace: #$dashboardTraceId")
+
         dashboardUIJob?.cancel()
         dashboardUIJob = scope.launch(Dispatchers.Main) {
             // Observe both connection state and authentication via combine
             kotlinx.coroutines.flow.combine(
                 activity.readerManager!!.connectionState,
                 activity.readerManager!!.isAuthenticated
-            ) { state, auth -> state == ReaderManager.ConnectionState.CONNECTED && auth }
-                .collect { isActuallyReady ->
-                    android.util.Log.d(TAG, "[Management] UI Update -> Ready: $isActuallyReady")
+            ) { state, auth -> state to auth }
+                .distinctUntilChanged()
+                .collect { (state, auth) ->
+                    val isReady = state == ReaderManager.ConnectionState.CONNECTED && auth
+                    val isConnecting = state == ReaderManager.ConnectionState.CONNECTING || 
+                                     (state == ReaderManager.ConnectionState.CONNECTED && !auth)
+
+                    android.util.Log.d(TAG, "[Trace #$dashboardTraceId] UI Update -> State: $state, Auth: $auth, Ready: $isReady")
 
                     // 1. Accent color
-                    viewAccent?.setBackgroundColor(if (isActuallyReady) "#4CAF50".toColorInt() else Color.TRANSPARENT)
+                    val accentColor = when {
+                        isReady -> "#4CAF50".toColorInt()       // Green
+                        isConnecting -> "#FF9800".toColorInt()  // Orange
+                        else -> Color.TRANSPARENT
+                    }
+                    viewAccent?.setBackgroundColor(accentColor)
 
                     // 2. Action buttons (Disconnect/Connect toggle)
                     val btnDisconnect = rootView.findViewById<LinearLayout>(R.id.btnDisconnect)
                     val imgDisconnect = btnDisconnect.getChildAt(0) as? ImageView
                     val txtDisconnect = btnDisconnect.getChildAt(1) as? TextView
 
-                    if (isActuallyReady) {
+                    if (isReady || isConnecting) {
                         txtDisconnect?.text = activity.getString(R.string.action_disconnect)
                         imgDisconnect?.setImageResource(R.drawable.ic_reader_disconnected)
                         btnDisconnect.setOnClickListener {
@@ -453,15 +478,15 @@ class ReaderConnectivityController(
                         }
                     }
 
-                    // 3. Trigger management setup ONLY when it transition to ready
-                    if (isActuallyReady) {
+                    // 3. Trigger management setup ONLY when it transition to functional ready
+                    if (isReady) {
                         activity.readerManager?.setAppMode(
-                            ReaderManager.AppMode.MANAGEMENT,
+                            AppMode.MANAGEMENT,
                             "Management Dashboard Reactivation"
                         )
                         swipeRefreshLayout?.isRefreshing = true
                         refreshManagementData("Dashboard State Transition")
-                    } else {
+                    } else if (!isConnecting) {
                         txtStatFiles?.text = "--"
                         txtStatTime?.text = "--"
                         txtStatBattery?.text = "--%"
@@ -575,7 +600,7 @@ class ReaderConnectivityController(
         backlogAdapter?.submitList(emptyList())
         swipeRefreshLayout?.isRefreshing = false
         activity.readerManager?.setAppMode(
-            ReaderManager.AppMode.IDLE,
+            AppMode.IDLE,
             "Dashboard Disconnect/Forget"
         )
     }
@@ -587,7 +612,7 @@ class ReaderConnectivityController(
     }
 
     fun teardownView() {
-        activity.readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "Management Dashboard Exit")
+        activity.readerManager?.setAppMode(AppMode.IDLE, "Management Dashboard Exit")
         metricsJob?.cancel()
         inventoryJob?.cancel()
         dashboardUIJob?.cancel()

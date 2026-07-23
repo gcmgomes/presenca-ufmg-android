@@ -3,7 +3,7 @@ package com.example.presensor.controllers
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.ble.ReaderManager
+import com.example.presensor.communication.ReaderManager
 import androidx.appcompat.app.AlertDialog
 import com.example.presensor.data.entities.Student
 import com.example.presensor.tools.providers.ToastProvider

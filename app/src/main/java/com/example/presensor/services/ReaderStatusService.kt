@@ -7,7 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.presensor.R
-import com.example.presensor.ble.ReaderManager.ConnectionState
+import com.example.presensor.communication.ReaderManager.ConnectionState
 
 class ReaderStatusService : Service() {
 
@@ -100,17 +100,13 @@ class ReaderStatusService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
         return START_STICKY
     }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {

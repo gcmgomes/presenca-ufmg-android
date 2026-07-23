@@ -61,7 +61,7 @@ import com.example.presensor.data.AppDatabase
 import com.example.presensor.adapters.ImportStudentAdapter
 import com.example.presensor.adapters.ImportPreviewAdapter
 import com.example.presensor.adapters.StudentStatsAdapter
-import com.example.presensor.ble.ReaderManager
+import com.example.presensor.communication.ReaderManager
 import com.example.presensor.controllers.CloudSyncController
 import com.example.presensor.controllers.DashboardController
 import com.example.presensor.controllers.CourseController
@@ -82,6 +82,9 @@ import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.tools.providers.PreviewProvider
 import com.example.presensor.data.SecureStoreManager
 import com.example.presensor.controllers.ReaderConnectivityController
+import com.example.presensor.communication.ble.BleTransport
+import com.example.presensor.communication.core.AppMode
+import com.example.presensor.communication.core.TransportConnectionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
@@ -214,7 +217,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             if (secureStoreManager.isReaderEnabled) {
                 readerManager?.startConnecting()
             }
-            readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "MainActivity Initial Setup")
+            readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.e("MainActivity", "Permissions denied by user.")
             Toast.makeText(
@@ -251,7 +254,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             if (secureStoreManager.isReaderEnabled) {
                 readerManager?.startConnecting()
             }
-            readerManager?.setAppMode(ReaderManager.AppMode.IDLE, "MainActivity Initial Setup")
+            readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
@@ -270,21 +273,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         // 2. Start collecting the states to update the top-left area
         lifecycleScope.launch {
-            kotlinx.coroutines.flow.combine(
-                readerManager!!.connectionState,
-                readerManager!!.isAuthenticated
-            ) { state, auth ->
-                // Map to CONNECTED only if both GATT is up and AUTH is successful
-                if (state == ReaderManager.ConnectionState.CONNECTED && auth) {
-                    ReaderManager.ConnectionState.CONNECTED
-                } else if (state == ReaderManager.ConnectionState.CONNECTED) {
-                    // Raw link is up, but still authenticating
-                    ReaderManager.ConnectionState.CONNECTING
-                } else {
-                    state
-                }
-            }.collectLatest { effectiveState ->
-                ReaderStatusService.updateStatus(effectiveState)
+            readerManager!!.connectionState.collectLatest { state ->
+                ReaderStatusService.updateStatus(state)
             }
         }
     }
@@ -300,12 +290,11 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         val toastProvider = AndroidToastProvider(this)
         secureStoreManager = SecureStoreManager(this)
 
+        val transport = BleTransport(this, lifecycleScope)
         readerManager = ReaderManager(
-            context = this,
             secureStoreManager = secureStoreManager,
-            scope = lifecycleScope,
-            mainDispatcher = Dispatchers.Main,
-            ioDispatcher = Dispatchers.IO
+            transport = transport,
+            scope = lifecycleScope
         )
 
 
@@ -475,7 +464,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             onSessionSelected = { session ->
                 openSessionView(session)
                 readerManager?.setAppMode(
-                    ReaderManager.AppMode.ACTIVE,
+                    AppMode.ACTIVE,
                     "MainActivity Session Selection"
                 )
             },
@@ -524,7 +513,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 when (currentState) {
                     AppState.SESSION -> {
                         readerManager?.setAppMode(
-                            ReaderManager.AppMode.IDLE,
+                            AppMode.IDLE,
                             "MainActivity back button from session"
                         )
                         sessionController.clearActiveSession()

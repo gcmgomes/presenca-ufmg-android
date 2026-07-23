@@ -6,7 +6,8 @@ import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
-import com.example.presensor.ble.ReaderManager
+import com.example.presensor.communication.ReaderManager
+import com.example.presensor.communication.core.AppMode
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
@@ -58,7 +59,7 @@ class TagController(
     }
 
     fun resumeReader() {
-        readerManager?.setAppMode(ReaderManager.AppMode.ACTIVE, "TagController Resume")
+        readerManager?.setAppMode(AppMode.ACTIVE, "TagController Resume")
     }
 
     override fun onTagDiscovered(tag: Tag) {
