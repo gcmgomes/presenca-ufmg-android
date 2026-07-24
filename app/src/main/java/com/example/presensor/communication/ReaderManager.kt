@@ -1,13 +1,11 @@
 package com.example.presensor.communication
 
+import android.annotation.SuppressLint
 import android.util.Log
 import com.example.presensor.communication.core.*
 import com.example.presensor.data.SecureStoreManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 
 sealed class ReaderEvent {
     object ConnectionSuccessful : ReaderEvent()
@@ -15,11 +13,13 @@ sealed class ReaderEvent {
     data class Error(val message: String) : ReaderEvent()
 }
 
+@OptIn(FlowPreview::class)
 class ReaderManager(
     private val secureStoreManager: SecureStoreManager,
     private val transport: ReaderTransport,
     private val protocol: ReaderProtocol = ReaderProtocol(),
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    private val currentTimeMillis: () -> Long = { System.currentTimeMillis() }
 ) {
 
     companion object {
@@ -48,6 +48,7 @@ class ReaderManager(
     var isBroadDiscoveryMode: Boolean = false
 
     val isAuthenticated: StateFlow<Boolean> = protocol.isAuthenticated
+    val connectedAddress: StateFlow<String?> = transport.connectedAddress
     
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState
@@ -67,7 +68,36 @@ class ReaderManager(
     private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 0)
     val eventFlow: SharedFlow<ReaderEvent> = _eventFlow
 
-    var onDeviceFoundListener: ((android.bluetooth.le.ScanResult) -> Unit)? = null
+    private val _discoveredDevices = MutableStateFlow<Map<String, ReaderDevice>>(emptyMap())
+    private val _activeDevice = MutableStateFlow<ReaderDevice?>(null)
+    
+    val discoveredDevices: StateFlow<List<ReaderDevice>> = combine(
+        _discoveredDevices,
+        _activeDevice
+    ) { discovered, active ->
+        val merged = discovered.toMutableMap()
+        active?.let { merged[it.address] = it }
+        merged.values.toList().sortedByDescending { it.rssi }
+    }.stateIn(scope, SharingStarted.Lazily, emptyList())
+
+    // Tracks which devices have been "shown" to the UI in the current scan cycle
+    private val _emittedInCurrentCycle = mutableSetOf<String>()
+
+    /**
+     * Snapshots the internal discovery map to prune stale devices.
+     */
+    private fun pruneDiscoveryMap() {
+        val now = currentTimeMillis()
+        val isScanning = transport.isScanning.value
+        
+        _discoveredDevices.update { current ->
+            current.filter { (_, device) ->
+                if (device.address == connectedDeviceAddress) return@filter true
+                val timeout = if (isScanning) 3000L else 30000L
+                now - device.lastSeen < timeout
+            }
+        }
+    }
     
     private var currentMode = AppMode.IDLE
 
@@ -95,14 +125,28 @@ class ReaderManager(
                     return@collect
                 }
 
-                // --- UI FIX: Always notify the listener so the card appears/updates in the list ---
-                // Even if we are in targeted mode, the UI needs to know the device was found 
-                // to show RSSI or the 'Connecting' state.
-                onDeviceFoundListener?.invoke(result)
+                @SuppressLint("MissingPermission")
+                val advertisedName = result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
+                val address = result.device.address.uppercase()
+                val device = ReaderDevice(
+                    name = advertisedName,
+                    address = address,
+                    rssi = result.rssi,
+                    lastSeen = currentTimeMillis()
+                )
+
+                // --- DYNAMIC LOADING: Only update transient discovery map once per cycle ---
+                if (_emittedInCurrentCycle.add(address)) {
+                    _discoveredDevices.update { it + (address to device) }
+                }
+
+                // --- ACTIVE PASSTHROUGH: Persistent device updates on every hit to keep feedback responsive ---
+                if (address == _activeDevice.value?.address) {
+                    _activeDevice.update { it?.copy(rssi = device.rssi, lastSeen = device.lastSeen) }
+                }
 
                 if (!isBroadDiscoveryMode) {
                     val targetName = secureStoreManager.deviceName
-                    val advertisedName = result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
                     if (advertisedName == targetName) {
                         Log.i(TAG, "[Orchestrator] Match found for $targetName. Connecting...")
                         transport.stopScan()
@@ -131,6 +175,22 @@ class ReaderManager(
                 
                 Log.d(TAG, "[Orchestrator] State Change -> Transport: $tState, Auth: $auth, Scanning: $scanning")
                 updateHighLevelConnectionState(tState, auth, scanning)
+                
+                if (!scanning) {
+                    // End of cycle: Final prune and clear trackers
+                    _emittedInCurrentCycle.clear()
+                    pruneDiscoveryMap()
+                }
+            }
+        }
+
+        // Periodic maintenance (30s) when idle to clean up old devices
+        scope.launch {
+            while (isActive) {
+                delay(30000)
+                if (!transport.isScanning.value) {
+                    pruneDiscoveryMap()
+                }
             }
         }
     }
@@ -186,7 +246,15 @@ class ReaderManager(
         when (event) {
             is ProtocolEvent.RfidSwipe -> _rfidSwipeFlow.emit(event.tagId to event.timestamp)
             is ProtocolEvent.InventoryItem -> _inventoryFlow.emit(event.tagId to event.timestamp)
-            is ProtocolEvent.Metrics -> _metricsFlow.emit(event.timestamp to event.batteryLevel)
+            is ProtocolEvent.Metrics -> {
+                _metricsFlow.emit(event.timestamp to event.batteryLevel)
+                // Update the persistent active device with latest battery
+                _activeDevice.update { current ->
+                    if (current?.address == connectedDeviceAddress) {
+                        current?.copy(batteryLevel = event.batteryLevel)
+                    } else current
+                }
+            }
             is ProtocolEvent.SyncDone -> {
                 _rfidSwipeFlow.emit("SYNC_DONE" to 0L)
                 _inventoryFlow.emit("SYNC_DONE" to 0L)
@@ -218,16 +286,37 @@ class ReaderManager(
         }
     }
 
-    fun startConnecting(deviceName: String, password: String) {
+    fun startConnecting(deviceName: String, password: String, address: String? = null) {
         if (!_isReaderEnabled.value) {
             Log.e(TAG, "[Connect Flow] ABORTING connection to $deviceName. Reader is DISABLED.")
             return
         }
-        Log.i(TAG, "[Orchestrator] Targeting $deviceName")
+        
+        val normalizedAddress = address?.uppercase()
+        Log.i(TAG, "[Orchestrator] Targeting $deviceName at ${normalizedAddress ?: "unknown address"}")
+
+        // --- STABILIZATION: Clear any previous auth status before starting new link ---
+        protocol.resetAuth()
+
+        // --- PERSISTENT IDENTITY: Set as active device immediately to prevent UI flickering ---
+        val existing = if (normalizedAddress != null) _discoveredDevices.value[normalizedAddress] else null
+        _activeDevice.value = existing ?: ReaderDevice(
+            name = deviceName,
+            address = normalizedAddress ?: "",
+            rssi = transport.lastRssi.value ?: -100,
+            lastSeen = currentTimeMillis()
+        )
+
         _isAutoReconnectEnabled = true
         isBroadDiscoveryMode = false
         protocol.authPassword = password
-        startScan()
+        
+        if (normalizedAddress != null) {
+            transport.stopScan()
+            transport.connect(normalizedAddress)
+        } else {
+            startScan()
+        }
     }
 
     fun startConnecting() {
@@ -255,6 +344,13 @@ class ReaderManager(
         // --- STABILIZATION: Force Protocol and UI state reset immediately ---
         protocol.resetAuth()
         _connectionState.value = ConnectionState.DISCONNECTED
+        
+        // --- PERSISTENCE: Ensure the device remains in the list as a non-active device ---
+        _activeDevice.value?.let { device ->
+            val updatedDevice = device.copy(lastSeen = currentTimeMillis())
+            _discoveredDevices.update { it + (device.address to updatedDevice) }
+        }
+        _activeDevice.value = null // Release persistent identity
 
         transport.stopScan()
         transport.disconnect()

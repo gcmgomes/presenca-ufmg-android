@@ -45,3 +45,14 @@ sealed class ProtocolEvent {
     object AuthFailed : ProtocolEvent()
     data class AckRequired(val tagId: String, val timestamp: String) : ProtocolEvent()
 }
+
+/**
+ * Represents a discovered BLE reader device.
+ */
+data class ReaderDevice(
+    val name: String,
+    val address: String,
+    val rssi: Int,
+    val batteryLevel: Int? = null,
+    val lastSeen: Long = System.currentTimeMillis()
+)

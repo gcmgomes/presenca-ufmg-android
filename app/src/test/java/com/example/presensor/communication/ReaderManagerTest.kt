@@ -60,7 +60,8 @@ class ReaderManagerTest {
             secureStoreManager = secureStoreManager,
             transport = transport,
             protocol = protocol,
-            scope = managerScope
+            scope = managerScope,
+            currentTimeMillis = { testDispatcher.scheduler.currentTime }
         )
     }
 
@@ -172,5 +173,105 @@ class ReaderManagerTest {
         // Should not trigger auto-connect logic even if it matches
         verify(secureStoreManager, never()).deviceName
         verify(transport, never()).connect(any())
+
+        // Discovered devices list should be empty
+        assertEquals(0, readerManager.discoveredDevices.value.size)
+    }
+
+    @Test
+    fun `discoveredDevices flow should reflect transport discovery`() = testScope.runTest {
+        val mockDevice: android.bluetooth.BluetoothDevice = mock()
+        whenever(mockDevice.address).thenReturn("AA:BB:CC")
+        val mockRecord: ScanRecord = mock()
+        whenever(mockRecord.deviceName).thenReturn("TestDevice")
+        
+        val scanResult: ScanResult = mock()
+        whenever(scanResult.device).thenReturn(mockDevice)
+        whenever(scanResult.scanRecord).thenReturn(mockRecord)
+        whenever(scanResult.rssi).thenReturn(-50)
+        
+        tDiscoveredDevices.emit(scanResult)
+        advanceUntilIdle()
+        
+        val list = readerManager.discoveredDevices.value
+        assertEquals(1, list.size)
+        assertEquals("TestDevice", list[0].name)
+        assertEquals("AA:BB:CC", list[0].address)
+        assertEquals(-50, list[0].rssi)
+    }
+
+    @Test
+    fun `discoveredDevices flow should update on first-hit per cycle`() = testScope.runTest {
+        val results = mutableListOf<List<ReaderDevice>>()
+        val job = launch {
+            readerManager.discoveredDevices.collect { results.add(it) }
+        }
+        advanceUntilIdle() // Initial empty emission (results[0])
+
+        // Start scan
+        tIsScanning.value = true
+        advanceUntilIdle()
+
+        // Helper to emit a scan result
+        fun emitDevice(name: String, address: String, rssi: Int) {
+            val mockDevice: android.bluetooth.BluetoothDevice = mock()
+            whenever(mockDevice.address).thenReturn(address)
+            val mockRecord: ScanRecord = mock()
+            whenever(mockRecord.deviceName).thenReturn(name)
+            val scanResult: ScanResult = mock()
+            whenever(scanResult.device).thenReturn(mockDevice)
+            whenever(scanResult.scanRecord).thenReturn(mockRecord)
+            whenever(scanResult.rssi).thenReturn(rssi)
+            tDiscoveredDevices.tryEmit(scanResult)
+        }
+
+        // 1. First hit for D1 -> Should update UI
+        emitDevice("D1", "A1", -50)
+        advanceUntilIdle()
+        assertEquals(2, results.size)
+        assertEquals("D1", results[1][0].name)
+
+        // 2. Second hit for D1 (with better RSSI) -> Should NOT update UI immediately
+        emitDevice("D1", "A1", -40)
+        advanceUntilIdle()
+        assertEquals(2, results.size) // No change in flow emission
+
+        // 3. First hit for D2 -> Should update UI
+        emitDevice("D2", "A2", -60)
+        advanceUntilIdle()
+        assertEquals(3, results.size)
+        assertEquals(2, results[2].size)
+
+        // Stop scan -> Should trigger final snapshot (picking up the -40 RSSI for D1)
+        tIsScanning.value = false
+        advanceUntilIdle()
+        
+        assertEquals(4, results.size) 
+        assertEquals(-40, results[3].find { it.address == "A1" }?.rssi)
+        
+        job.cancel()
+    }
+
+    @Test
+    fun `The Reaper should prune devices after 3 seconds in snapshot`() = testScope.runTest {
+        tIsScanning.value = true
+        advanceUntilIdle()
+        
+        val mockDevice: android.bluetooth.BluetoothDevice = mock()
+        whenever(mockDevice.address).thenReturn("A1")
+        val mockRecord: ScanRecord = mock()
+        whenever(mockRecord.deviceName).thenReturn("D1")
+        val scanResult: ScanResult = mock()
+        whenever(scanResult.device).thenReturn(mockDevice)
+        whenever(scanResult.scanRecord).thenReturn(mockRecord)
+        
+        tDiscoveredDevices.emit(scanResult)
+        
+        testDispatcher.scheduler.advanceTimeBy(4000) // Device is now stale (> 3s)
+        
+        tIsScanning.value = false // Trigger snapshot
+        advanceUntilIdle()
+        
+        assertTrue(readerManager.discoveredDevices.value.isEmpty()) // Should be pruned in the snapshot
     }
 }

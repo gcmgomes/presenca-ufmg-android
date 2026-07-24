@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -46,7 +47,10 @@ class ReaderConnectivityController(
     private val secureStoreManager: SecureStoreManager,
     private val scope: CoroutineScope
 ) {
-    private val discoveredDevices = mutableMapOf<String, Pair<ScanResult, Long>>()
+    private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> = emptyList()
+    private var isAuth: Boolean = false
+    private var connectedAddress: String? = null
+    
     private var listAdapter: DeviceListAdapter? = null
     private var backlogAdapter: BacklogAdapter? = null
 
@@ -57,6 +61,8 @@ class ReaderConnectivityController(
     private var eventJob: Job? = null
 
     private var connectingAddress: String? = null
+    private var pendingPassword: String? = null
+    private var pendingDeviceName: String? = null
     private var backlogItems = mutableListOf<BacklogItem>()
     private val receivedInSync = mutableSetOf<BacklogItem>()
     private var isSyncInProgress = false
@@ -73,7 +79,6 @@ class ReaderConnectivityController(
 
     companion object {
         private const val REFRESH_INTERVAL_MS = 10000L
-        private const val STALE_THRESHOLD_MS = 20000L
         private const val TAG = "ReaderConnController"
     }
 
@@ -108,7 +113,7 @@ class ReaderConnectivityController(
             listRefresh?.isEnabled = isChecked
             if (isChecked) {
                 startRefreshLoop()
-                
+
                 // --- UI FIX: Unified Start Path ---
                 // We attempt to connect if credentials exist; otherwise, startConnecting() 
                 // will default to a broad scan if it fails internally.
@@ -134,12 +139,18 @@ class ReaderConnectivityController(
 
         statusJob?.cancel()
         statusJob = scope.launch(Dispatchers.Main) {
-            activity.readerManager?.connectionState?.collectLatest { state ->
-                if (state == ReaderManager.ConnectionState.CONNECTED || state == ReaderManager.ConnectionState.DISCONNECTED) {
-                    connectingAddress = null
-                }
-                updateDeviceList()
-            }
+            val rManager = activity.readerManager ?: return@launch
+            
+            // --- ATOMIC UI SYNC (Task 4.2 Fix) ---
+            // Combine all factors into a single flow to ensure they are updated simultaneously
+            combine(
+                rManager.discoveredDevices,
+                rManager.connectionState,
+                rManager.isAuthenticated,
+                rManager.connectedAddress
+            ) { devices, state, auth, connAddr ->
+                deviceUpdate(devices, state, auth, connAddr)
+            }.collect { /* collect triggers updateDeviceList via deviceUpdate */ }
         }
 
         eventJob?.cancel()
@@ -165,7 +176,6 @@ class ReaderConnectivityController(
     }
 
     fun teardownDiscovery(fullDisconnect: Boolean = false) {
-        activity.readerManager?.onDeviceFoundListener = null
         activity.readerManager?.isBroadDiscoveryMode = false
         if (fullDisconnect) {
             activity.readerManager?.disconnect()
@@ -175,7 +185,7 @@ class ReaderConnectivityController(
         }
         // CRITICAL FIX: Only clear the list if we are doing a FULL disconnect/shutdown
         if (fullDisconnect) {
-            discoveredDevices.clear()
+            currentDevices = emptyList()
             updateDeviceList()
         }
         refreshJob?.cancel()
@@ -183,42 +193,7 @@ class ReaderConnectivityController(
     }
 
     private fun startDiscovery() {
-        // --- UI Fix: Do not clear the map here. ---
-        // Clearing here caused devices to "disappear" during refresh cycles.
-        // We rely on pruneAndRefresh() to remove stale items.
-
         activity.readerManager?.isBroadDiscoveryMode = true
-        activity.readerManager?.onDeviceFoundListener = { result ->
-            activity.runOnUiThread {
-                val address = result.device.address
-                val advertisedName =
-                    result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
-
-                // --- PROACTIVE AUTO-CONNECT ---
-                // If this is the last used device and it's not currently connected, trigger a targeted link.
-                if (advertisedName == secureStoreManager.deviceName &&
-                    activity.readerManager?.connectionState?.value == ReaderManager.ConnectionState.SCANNING &&
-                    activity.readerManager?.isAutoReconnectedEnabled() == true
-                ) {
-
-                    val password = secureStoreManager.getAuthPasswordFor(advertisedName)
-                    if (password != null) {
-                        android.util.Log.i(
-                            TAG,
-                            "[Auto-Connect] Proactively linking with '$advertisedName' discovered in list."
-                        )
-                        connectingAddress = address
-                        activity.readerManager?.startConnecting(advertisedName, password)
-                        updateDeviceList()
-                        return@runOnUiThread
-                    }
-                }
-
-                val isNew = !discoveredDevices.containsKey(address)
-                discoveredDevices[address] = result to System.currentTimeMillis()
-                if (isNew) updateDeviceList()
-            }
-        }
         activity.readerManager?.startScan()
 
         // --- SCAN OPTIMIZATION: 5s active search to save battery ---
@@ -239,24 +214,32 @@ class ReaderConnectivityController(
                     activity.readerManager?.requestRssiUpdate()
                 }
                 delay(20000)
-                pruneAndRefresh()
             }
         }
     }
 
-    private fun pruneAndRefresh() {
-        val now = System.currentTimeMillis()
-        val connectedAddress = activity.readerManager?.connectedDeviceAddress
-        
-        val iterator = discoveredDevices.entries.iterator()
-        while (iterator.hasNext()) {
-            val entry = iterator.next()
-            // CRITICAL FIX: Do not prune the device we are currently connected to.
-            // If we prune it while connected, it will vanish from the list the moment we disconnect.
-            if (entry.key == connectedAddress) continue
-            
-            if (now - entry.value.second > STALE_THRESHOLD_MS) iterator.remove()
+    private fun deviceUpdate(
+        devices: List<com.example.presensor.communication.core.ReaderDevice>,
+        state: ReaderManager.ConnectionState,
+        auth: Boolean,
+        connAddr: String?
+    ) {
+        // Sync local variables
+        this.currentDevices = devices
+        this.isAuth = auth
+        this.connectedAddress = connAddr
+
+        // Handle the 'Connecting' label clearing logic
+        val isFailure = state == ReaderManager.ConnectionState.DISCONNECTED
+        val isTargetAuthenticated = auth && connAddr?.uppercase() == connectingAddress?.uppercase()
+
+        if (isFailure || isTargetAuthenticated) {
+            if (connectingAddress != null) {
+                android.util.Log.d(TAG, "[Connect Flow] Atomic Clear of connectingAddress. Success: $isTargetAuthenticated")
+                connectingAddress = null
+            }
         }
+
         updateDeviceList()
     }
 
@@ -266,46 +249,39 @@ class ReaderConnectivityController(
             return
         }
 
-        val connectedAddress = activity.readerManager?.connectedDeviceAddress
-        val isAuth = activity.readerManager?.isAuthenticated?.value ?: false
-        val lastRssi = activity.readerManager?.lastConnectedRssi
+        // --- ATOMIC SYNC: Using local variables updated by deviceUpdate() ---
+        val connectedAddress = this.connectedAddress?.uppercase()
+        val isAuth = this.isAuth
 
         val connectedItems = mutableListOf<DeviceItem>()
         val knownItems = mutableListOf<DeviceItem>()
         val unknownItems = mutableListOf<DeviceItem>()
 
-        if (connectedAddress != null) {
-            val scanResult = discoveredDevices[connectedAddress]?.first
-            val name = scanResult?.scanRecord?.deviceName ?: scanResult?.device?.name
-            ?: secureStoreManager.deviceName
-            val rssi = scanResult?.rssi ?: lastRssi
-            connectedItems.add(
-                DeviceItem(
-                    name,
-                    connectedAddress,
-                    rssi,
-                    isConnected = isAuth,
-                    isConnecting = !isAuth
-                )
-            )
-        }
+        // The Manager now provides a single combined list of both discovered and active devices.
+        // We simply map them and categorize them.
+        currentDevices.forEach { device ->
+            val deviceAddr = device.address.uppercase()
+            val isConnected = deviceAddr == connectedAddress && isAuth
+            // Connecting if: specifically targeted by UI OR hardware is in handshake phase
+            val isConnecting = (deviceAddr == connectingAddress?.uppercase()) || (deviceAddr == connectedAddress && !isAuth)
 
-        discoveredDevices.values.forEach { (result, _) ->
-            val address = result.device.address
-            if (address == connectedAddress) return@forEach
-            val name = result.scanRecord?.deviceName ?: result.device.name ?: "Unknown"
-            val isConnecting = address == connectingAddress
             val item = DeviceItem(
-                name,
-                address,
-                result.rssi,
-                isConnected = false,
+                name = device.name,
+                address = device.address,
+                rssi = device.rssi,
+                batteryLevel = device.batteryLevel,
+                isConnected = isConnected,
                 isConnecting = isConnecting
             )
-            if (secureStoreManager.hasPasswordFor(name)) knownItems.add(item) else unknownItems.add(
-                item
-            )
+
+            when {
+                isConnected -> connectedItems.add(item)
+                secureStoreManager.hasPasswordFor(device.name) -> knownItems.add(item)
+                else -> unknownItems.add(item)
+            }
         }
+
+        android.util.Log.v(TAG, "[UI Sync] updateDeviceList counts: connected=${connectedItems.size}, known=${knownItems.size}, unknown=${unknownItems.size}")
         listAdapter?.submitList(connectedItems, knownItems, unknownItems)
     }
 
@@ -320,7 +296,7 @@ class ReaderConnectivityController(
             android.util.Log.d(TAG, "[Connect Flow] Already connected. Tapping to DISCONNECT.")
             activity.readerManager?.disconnect(disableAutoReconnect = true)
             logAndToast(R.string.status_disconnected)
-            
+
             // --- UI Fix: Immediately resume discovery so the device re-appears as 'Known' instantly ---
             startDiscovery()
             updateDeviceList()
@@ -342,7 +318,7 @@ class ReaderConnectivityController(
             )
             connectingAddress = address
             activity.readerManager?.isBroadDiscoveryMode = false
-            activity.readerManager?.startConnecting(name, storedPassword)
+            activity.readerManager?.startConnecting(name, storedPassword, address)
             updateDeviceList()
             logAndToast(R.string.status_connecting)
         }
@@ -436,9 +412,12 @@ class ReaderConnectivityController(
 
         updateHeader()
 
-    // --- REACTIVE DASHBOARD UI ---
+        // --- REACTIVE DASHBOARD UI ---
         val dashboardTraceId = System.currentTimeMillis() % 10000
-        android.util.Log.i(TAG, "[Management] STARTING Dashboard Collector Trace: #$dashboardTraceId")
+        android.util.Log.i(
+            TAG,
+            "[Management] STARTING Dashboard Collector Trace: #$dashboardTraceId"
+        )
 
         dashboardUIJob?.cancel()
         dashboardUIJob = scope.launch(Dispatchers.Main) {
@@ -450,10 +429,13 @@ class ReaderConnectivityController(
                 .distinctUntilChanged()
                 .collect { (state, auth) ->
                     val isReady = state == ReaderManager.ConnectionState.CONNECTED && auth
-                    val isConnecting = state == ReaderManager.ConnectionState.CONNECTING || 
-                                     (state == ReaderManager.ConnectionState.CONNECTED && !auth)
+                    val isConnecting = state == ReaderManager.ConnectionState.CONNECTING ||
+                            (state == ReaderManager.ConnectionState.CONNECTED && !auth)
 
-                    android.util.Log.d(TAG, "[Trace #$dashboardTraceId] UI Update -> State: $state, Auth: $auth, Ready: $isReady")
+                    android.util.Log.d(
+                        TAG,
+                        "[Trace #$dashboardTraceId] UI Update -> State: $state, Auth: $auth, Ready: $isReady"
+                    )
 
                     // 1. Accent color
                     val accentColor = when {
@@ -638,11 +620,26 @@ class ReaderConnectivityController(
         when (event) {
             is ReaderEvent.ConnectionSuccessful -> {
                 logAndToast(R.string.status_connected)
+                
+                // --- TASK 4.3 V2: Persist credentials ONLY on confirmed success ---
+                if (pendingPassword != null && pendingDeviceName != null) {
+                    android.util.Log.i(TAG, "[Connect Flow] Success confirmed. Promoting '$pendingDeviceName' to KNOWN category.")
+                    secureStoreManager.saveReaderCredentials(pendingDeviceName!!, pendingPassword!!)
+                    pendingPassword = null
+                    pendingDeviceName = null
+                }
+                
                 updateDeviceList()
             }
 
             is ReaderEvent.AuthenticationFailed -> {
                 logAndToast(R.string.error_incorrect_password)
+                // --- TASK 4.3 V2: Discard pending credentials on rejection ---
+                pendingPassword = null
+                pendingDeviceName = null
+                
+                // --- BUGFIX (Task 4.2): Ensure UI lock is released on rejection ---
+                android.util.Log.w(TAG, "[Connect Flow] Auth Failed event received. Clearing connectingAddress.")
                 connectingAddress = null
                 updateDeviceList()
             }
@@ -650,6 +647,11 @@ class ReaderConnectivityController(
             is ReaderEvent.Error -> {
                 android.util.Log.e(TAG, "[Reader Error] ${event.message}")
                 Toast.makeText(activity, event.message, Toast.LENGTH_SHORT).show()
+                
+                pendingPassword = null
+                pendingDeviceName = null
+                
+                connectingAddress = null
                 updateDeviceList()
             }
         }
@@ -683,13 +685,16 @@ class ReaderConnectivityController(
             if (typedPassword.isNotEmpty()) {
                 android.util.Log.d(
                     TAG,
-                    "[Connect Flow] Password entered. Saving and starting connection."
+                    "[Connect Flow] Password entered. Deferring save until success."
                 )
-                secureStoreManager.saveReaderCredentials(readerName, typedPassword)
+                
+                // --- TASK 4.3 V2: Hold credentials in limbo until auth success ---
+                pendingPassword = typedPassword
+                pendingDeviceName = readerName
 
                 connectingAddress = address
                 activity.readerManager?.isBroadDiscoveryMode = false
-                activity.readerManager?.startConnecting(readerName, typedPassword)
+                activity.readerManager?.startConnecting(readerName, typedPassword, address)
 
                 dialog.dismiss()
                 updateDeviceList()
@@ -751,6 +756,7 @@ class ReaderConnectivityController(
         val name: String,
         val address: String,
         val rssi: Int?,
+        val batteryLevel: Int? = null,
         val isConnected: Boolean,
         val isConnecting: Boolean
     )
@@ -762,6 +768,12 @@ class ReaderConnectivityController(
         private val onDeviceLongClicked: (String, String) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         private var items = mutableListOf<Any>()
+
+        companion object {
+            private const val PAYLOAD_RSSI = "PAYLOAD_RSSI"
+            private const val PAYLOAD_BATTERY = "PAYLOAD_BATTERY"
+            private const val PAYLOAD_STATE = "PAYLOAD_STATE"
+        }
 
         fun submitList(
             connected: List<DeviceItem>,
@@ -804,6 +816,22 @@ class ReaderConnectivityController(
                 ): Boolean {
                     return items[oldItemPosition] == newList[newItemPosition]
                 }
+
+                override fun getChangePayload(oldItemPosition: Int, newItemPosition: Int): Any? {
+                    val old = items[oldItemPosition]
+                    val new = newList[newItemPosition]
+
+                    if (old is DeviceItem && new is DeviceItem) {
+                        val payloads = mutableSetOf<String>()
+                        if (old.rssi != new.rssi) payloads.add(PAYLOAD_RSSI)
+                        if (old.batteryLevel != new.batteryLevel) payloads.add(PAYLOAD_BATTERY)
+                        if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting) {
+                            payloads.add(PAYLOAD_STATE)
+                        }
+                        if (payloads.isNotEmpty()) return payloads
+                    }
+                    return super.getChangePayload(oldItemPosition, newItemPosition)
+                }
             })
 
             items.clear()
@@ -825,41 +853,96 @@ class ReaderConnectivityController(
         }
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            onBindViewHolder(holder, position, emptyList())
+        }
+
+        override fun onBindViewHolder(
+            holder: RecyclerView.ViewHolder,
+            position: Int,
+            payloads: List<Any>
+        ) {
             val item = items[position]
+
             if (holder is HeaderViewHolder && item is String) {
                 holder.txtHeader.text = when (item) {
                     "CONNECTED" -> holder.itemView.context.getString(R.string.header_connected_devices)
                     "KNOWN" -> holder.itemView.context.getString(R.string.header_known_devices)
                     else -> holder.itemView.context.getString(R.string.header_unknown_devices)
                 }
-            } else if (holder is DeviceViewHolder && item is DeviceItem) {
-                holder.txtName.text = item.name
-                holder.txtMac.text = item.address
+                return
+            }
 
-                // --- UI Fix: Connection accent now purely based on hardware state ---
-                holder.viewAccent.setBackgroundColor(if (item.isConnected) "#4CAF50".toColorInt() else Color.TRANSPARENT)
-                holder.txtValueSecondary.visibility = View.GONE
-
-                if (item.isConnecting) {
-                    holder.txtValue.text =
-                        holder.itemView.context.getString(R.string.status_connecting)
-                    holder.imgSignal.visibility = View.GONE
-                } else {
-                    holder.imgSignal.visibility = View.VISIBLE
-                    val (iconRes, rssiText) = when {
-                        item.rssi == null -> R.drawable.ic_signal_weak to "--"
-                        item.rssi >= -60 -> R.drawable.ic_signal_strong to "${item.rssi}"
-                        item.rssi >= -80 -> R.drawable.ic_signal_medium to "${item.rssi}"
-                        else -> R.drawable.ic_signal_weak to "${item.rssi}"
+            if (holder is DeviceViewHolder && item is DeviceItem) {
+                // If we have payloads, only update specific fields
+                if (payloads.isNotEmpty()) {
+                    val combinedPayloads = payloads.filterIsInstance<Set<String>>().flatten()
+                    if (combinedPayloads.contains(PAYLOAD_RSSI)) {
+                        updateRssi(holder, item)
                     }
-                    holder.imgSignal.setImageResource(iconRes)
-                    holder.txtValue.text = rssiText
+                    if (combinedPayloads.contains(PAYLOAD_BATTERY)) {
+                        updateBattery(holder, item)
+                    }
+                    if (combinedPayloads.contains(PAYLOAD_STATE)) {
+                        updateAccent(holder, item)
+                        updateRssi(holder, item) // State change affects RSSI text too (Connecting...)
+                    }
+                    
+                    // For any other change (like name), we still fall back to full bind
+                    if (combinedPayloads.isEmpty()) fullBind(holder, item)
+                } else {
+                    fullBind(holder, item)
                 }
-                holder.itemView.setOnClickListener { onDeviceSelected(item.name, item.address) }
-                holder.itemView.setOnLongClickListener {
-                    onDeviceLongClicked(item.name, item.address)
-                    true
+            }
+        }
+
+        private fun fullBind(holder: DeviceViewHolder, item: DeviceItem) {
+            holder.txtName.text = item.name
+            holder.txtMac.text = item.address
+
+            updateAccent(holder, item)
+            updateRssi(holder, item)
+            updateBattery(holder, item)
+
+            holder.itemView.setOnClickListener { onDeviceSelected(item.name, item.address) }
+            holder.itemView.setOnLongClickListener {
+                onDeviceLongClicked(item.name, item.address)
+                true
+            }
+        }
+
+        private fun updateAccent(holder: DeviceViewHolder, item: DeviceItem) {
+            val color = when {
+                item.isConnected -> "#4CAF50".toColorInt()  // Green
+                item.isConnecting -> "#FF9800".toColorInt() // Orange
+                else -> Color.TRANSPARENT
+            }
+            holder.viewAccent.setBackgroundColor(color)
+        }
+
+        private fun updateRssi(holder: DeviceViewHolder, item: DeviceItem) {
+            if (item.isConnecting) {
+                holder.txtValue.text =
+                    holder.itemView.context.getString(R.string.status_connecting)
+                holder.imgSignal.visibility = View.GONE
+            } else {
+                holder.imgSignal.visibility = View.VISIBLE
+                val (iconRes, rssiText) = when {
+                    item.rssi == null -> R.drawable.ic_signal_weak to "--"
+                    item.rssi >= -60 -> R.drawable.ic_signal_strong to "${item.rssi}"
+                    item.rssi >= -80 -> R.drawable.ic_signal_medium to "${item.rssi}"
+                    else -> R.drawable.ic_signal_weak to "${item.rssi}"
                 }
+                holder.imgSignal.setImageResource(iconRes)
+                holder.txtValue.text = rssiText
+            }
+        }
+
+        private fun updateBattery(holder: DeviceViewHolder, item: DeviceItem) {
+            if (item.batteryLevel != null && item.isConnected) {
+                holder.txtValueSecondary.visibility = View.VISIBLE
+                holder.txtValueSecondary.text = "${item.batteryLevel}%"
+            } else {
+                holder.txtValueSecondary.visibility = View.GONE
             }
         }
 
