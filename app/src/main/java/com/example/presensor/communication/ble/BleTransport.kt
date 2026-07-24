@@ -43,6 +43,7 @@ class BleTransport(
         private val CHAR_CONFIG_UPDATE_UUID =
             UUID.fromString("d117c60e-744d-4475-b6d9-aa3cf047ee2d")
         private val CHAR_INVENTORY_UUID = UUID.fromString("b59a681c-81db-4db6-9e96-a19f96da6041")
+        private val CHAR_STATUS_UUID = UUID.fromString("05df4f80-9943-4dc9-9807-611cc95fc91e")
         private val CCC_DESCRIPTOR_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         private val CHANNEL_MAP = mapOf(
@@ -52,7 +53,8 @@ class BleTransport(
             CHAR_TIME_SYNC_UUID to TransportChannel.TIME,
             CHAR_RFID_ACK_UUID to TransportChannel.ACK,
             CHAR_APP_MODE_UUID to TransportChannel.MODE,
-            CHAR_CONFIG_UPDATE_UUID to TransportChannel.CONFIG
+            CHAR_CONFIG_UPDATE_UUID to TransportChannel.CONFIG,
+            CHAR_STATUS_UUID to TransportChannel.STATUS
         )
 
         private val UUID_MAP = CHANNEL_MAP.entries.associate { it.value to it.key }
@@ -92,6 +94,11 @@ class BleTransport(
         }
         if (!adapter.isEnabled) {
             Log.e(TAG, "[connect] [CRITICAL] Failed: Bluetooth is disabled")
+            return
+        }
+        
+        if (address.isBlank()) {
+            Log.e(TAG, "[connect] [CRITICAL] Aborting: Bluetooth address is BLANK.")
             return
         }
 
@@ -305,11 +312,12 @@ class BleTransport(
             }
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                val address = gatt.device.address.uppercase()
                 Log.i(
                     TAG,
-                    "[onConnectionStateChange] CONNECTED to ${gatt.device.address}. Starting service discovery..."
+                    "[onConnectionStateChange] CONNECTED to $address. Starting service discovery..."
                 )
-                _connectedAddress.value = gatt.device.address
+                _connectedAddress.value = address
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.w(TAG, "[onConnectionStateChange] DISCONNECTED from ${gatt.device.address}")
@@ -335,7 +343,8 @@ class BleTransport(
             val uuids = listOf(
                 CHAR_RFID_DATA_UUID,
                 CHAR_AUTH_UUID,
-                CHAR_INVENTORY_UUID
+                CHAR_INVENTORY_UUID,
+                CHAR_STATUS_UUID
             )
 
             if (index >= uuids.size) {
@@ -413,7 +422,7 @@ class BleTransport(
                 Log.v(TAG, "[handleDescriptorWrite] SUCCESS for ${descriptor.characteristic.uuid}")
             }
 
-            val uuids = listOf(CHAR_RFID_DATA_UUID, CHAR_AUTH_UUID, CHAR_INVENTORY_UUID)
+            val uuids = listOf(CHAR_RFID_DATA_UUID, CHAR_AUTH_UUID, CHAR_INVENTORY_UUID, CHAR_STATUS_UUID)
             val nextIndex = uuids.indexOf(descriptor.characteristic.uuid) + 1
             subscribeNext(gatt, nextIndex)
         }

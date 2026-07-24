@@ -46,6 +46,7 @@
     <string name="toast_cloud_student_import_empty">No valid student rows found in the selected sheet.</string>
     <string name="toast_cloud_attendance_sync_success">Attendance synced successfully to Cloud!</string>
     <string name="toast_cloud_sync_failed">Cloud sync failed. Check connectivity configurations.</string>
+    <string name="toast_connection_timed_out">Connection Timed Out. Please ensure the reader is on and nearby.</string>
     <string name="toast_device_communication_time_out">Device communication timed out.</string>
 
     <string name="dialog_cloud_backup_prefix">Presensor_DB_Backup_</string>
@@ -231,6 +232,7 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
     <string name="status_disconnected">Disconnected</string>
+    <string name="status_not_found">Not Found</string>
     <string name="label_device_mac">MAC: %1$s</string>
     <string name="label_unknown_student">Unknown</string>
     <string name="inventory_dialog_title">Reader Inventory</string>

@@ -15,6 +15,7 @@
     android:foreground="?attr/selectableItemBackground">
 
     <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/layoutCardContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 

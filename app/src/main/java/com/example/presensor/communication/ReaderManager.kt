@@ -3,6 +3,7 @@ package com.example.presensor.communication
 import android.annotation.SuppressLint
 import android.util.Log
 import com.example.presensor.communication.core.*
+import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.data.SecureStoreManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -24,6 +25,7 @@ class ReaderManager(
 
     companion object {
         private const val TAG = "ReaderManager"
+        const val ERROR_TIMEOUT = "ERROR_TIMEOUT"
     }
 
     // High-level states for the UI
@@ -65,7 +67,7 @@ class ReaderManager(
     private val _metricsFlow = MutableSharedFlow<Pair<Long, Int>>(replay = 0)
     val metricsFlow: SharedFlow<Pair<Long, Int>> = _metricsFlow
 
-    private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 0)
+    private val _eventFlow = MutableSharedFlow<ReaderEvent>(replay = 1)
     val eventFlow: SharedFlow<ReaderEvent> = _eventFlow
 
     private val _discoveredDevices = MutableStateFlow<Map<String, ReaderDevice>>(emptyMap())
@@ -76,30 +78,44 @@ class ReaderManager(
         _activeDevice
     ) { discovered, active ->
         val merged = discovered.toMutableMap()
-        active?.let { merged[it.address] = it }
-        merged.values.toList().sortedByDescending { it.rssi }
+        active?.let { 
+            if (it.address.isNotBlank()) {
+                merged[it.address] = it 
+            }
+        }
+        merged.values.toList()
+            .filter { it.address.isNotBlank() } // Final ghost filter
+            .sortedByDescending { it.rssi }
     }.stateIn(scope, SharingStarted.Lazily, emptyList())
 
     // Tracks which devices have been "shown" to the UI in the current scan cycle
     private val _emittedInCurrentCycle = mutableSetOf<String>()
 
     /**
-     * Snapshots the internal discovery map to prune stale devices.
+     * Snapshots the internal discovery map to prune stale devices and update nearby status.
      */
     private fun pruneDiscoveryMap() {
-        val now = currentTimeMillis()
-        val isScanning = transport.isScanning.value
-        
+        val activeAddr = _activeDevice.value?.address
+
         _discoveredDevices.update { current ->
-            current.filter { (_, device) ->
-                if (device.address == connectedDeviceAddress) return@filter true
-                val timeout = if (isScanning) 3000L else 30000L
-                now - device.lastSeen < timeout
+            current.mapValues { (addr, device) ->
+                // A device is nearby ONLY if seen in current cycle OR currently connected
+                val isNearby = _emittedInCurrentCycle.contains(addr) || addr == connectedDeviceAddress
+                
+                device.copy(isNearby = isNearby)
+            }.filter { (addr, device) ->
+                // Retention rules:
+                // - Keep if it's nearby
+                // - Keep if it's a KNOWN device (has password) even if offline
+                val isKnown = secureStoreManager.hasPasswordFor(device.name)
+                device.isNearby || isKnown || addr == activeAddr
             }
         }
     }
     
     private var currentMode = AppMode.IDLE
+    
+    private var connectionTimeoutJob: Job? = null
 
     init {
         // Wire Transport -> Protocol
@@ -132,17 +148,18 @@ class ReaderManager(
                     name = advertisedName,
                     address = address,
                     rssi = result.rssi,
+                    isNearby = true,
                     lastSeen = currentTimeMillis()
                 )
 
-                // --- DYNAMIC LOADING: Only update transient discovery map once per cycle ---
+                // --- DYNAMIC LOADING: Only update once per cycle to prevent UI jitter ---
                 if (_emittedInCurrentCycle.add(address)) {
                     _discoveredDevices.update { it + (address to device) }
-                }
-
-                // --- ACTIVE PASSTHROUGH: Persistent device updates on every hit to keep feedback responsive ---
-                if (address == _activeDevice.value?.address) {
-                    _activeDevice.update { it?.copy(rssi = device.rssi, lastSeen = device.lastSeen) }
+                    
+                    // Also update the active device's persistent state once per cycle if it matches
+                    if (address == _activeDevice.value?.address) {
+                        _activeDevice.update { it?.copy(rssi = device.rssi, isNearby = true, lastSeen = device.lastSeen) }
+                    }
                 }
 
                 if (!isBroadDiscoveryMode) {
@@ -178,8 +195,8 @@ class ReaderManager(
                 
                 if (!scanning) {
                     // End of cycle: Final prune and clear trackers
-                    _emittedInCurrentCycle.clear()
                     pruneDiscoveryMap()
+                    _emittedInCurrentCycle.clear()
                 }
             }
         }
@@ -190,6 +207,10 @@ class ReaderManager(
                 delay(30000)
                 if (!transport.isScanning.value) {
                     pruneDiscoveryMap()
+                }
+                // Periodic Health Check for authenticated device
+                if (isAuthenticated.value) {
+                    requestStatus()
                 }
             }
         }
@@ -233,7 +254,8 @@ class ReaderManager(
         // Handle auto-reconnect
         if (tState == TransportConnectionState.DISCONNECTED && _isAutoReconnectEnabled && !scanning && _isReaderEnabled.value) {
             scope.launch {
-                delay(3000)
+                // Increased delay to 5 seconds to stay safely under OS "scanning too frequently" limits
+                delay(5000)
                 if (_isAutoReconnectEnabled && transport.connectionState.value == TransportConnectionState.DISCONNECTED && _isReaderEnabled.value) {
                     Log.i(TAG, "[Orchestrator] Connection lost. Triggering auto-reconnect...")
                     startConnecting()
@@ -248,10 +270,13 @@ class ReaderManager(
             is ProtocolEvent.InventoryItem -> _inventoryFlow.emit(event.tagId to event.timestamp)
             is ProtocolEvent.Metrics -> {
                 _metricsFlow.emit(event.timestamp to event.batteryLevel)
-                // Update the persistent active device with latest battery
+                // Update the persistent active device with latest battery and epoch
                 _activeDevice.update { current ->
                     if (current?.address == connectedDeviceAddress) {
-                        current?.copy(batteryLevel = event.batteryLevel)
+                        current?.copy(
+                            batteryLevel = event.batteryLevel,
+                            deviceEpoch = event.timestamp
+                        )
                     } else current
                 }
             }
@@ -262,6 +287,7 @@ class ReaderManager(
             is ProtocolEvent.DeletionSuccess -> _inventoryFlow.emit("DEL_OK" to 0L)
             is ProtocolEvent.DeletionError -> _inventoryFlow.emit("DEL_ERR" to 0L)
             is ProtocolEvent.AuthSuccess -> {
+                connectionTimeoutJob?.cancel()
                 _eventFlow.emit(ReaderEvent.ConnectionSuccessful)
                 // --- GATT BREATHER (Fix for Status 201) ---
                 // We wait 500ms after Auth success before sending commands.
@@ -270,10 +296,13 @@ class ReaderManager(
                     delay(500)
                     syncTime()
                     delay(300)
+                    requestStatus() // Initial health check
+                    delay(300)
                     setAppMode(currentMode, "Auth Success Restoration")
                 }
             }
             is ProtocolEvent.AuthFailed -> {
+                connectionTimeoutJob?.cancel()
                 _eventFlow.emit(ReaderEvent.AuthenticationFailed)
                 _isAutoReconnectEnabled = false
                 secureStoreManager.clearCredentialsFor(secureStoreManager.deviceName)
@@ -286,26 +315,35 @@ class ReaderManager(
         }
     }
 
-    fun startConnecting(deviceName: String, password: String, address: String? = null) {
+    fun startConnecting(deviceName: String, password: String, address: String? = null, isManual: Boolean = false) {
         if (!_isReaderEnabled.value) {
             Log.e(TAG, "[Connect Flow] ABORTING connection to $deviceName. Reader is DISABLED.")
             return
         }
         
-        val normalizedAddress = address?.uppercase()
-        Log.i(TAG, "[Orchestrator] Targeting $deviceName at ${normalizedAddress ?: "unknown address"}")
+        // --- STABILIZATION: Strict MAC address validation (Task 4.2.3 Fix) ---
+        val macRegex = Regex("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")
+        val normalizedAddress = address?.uppercase()?.trim()?.takeIf { it.matches(macRegex) }
+        
+        Log.i(TAG, "[Orchestrator] Targeting $deviceName at ${normalizedAddress ?: "unknown address"}. Manual=$isManual")
 
         // --- STABILIZATION: Clear any previous auth status before starting new link ---
         protocol.resetAuth()
 
-        // --- PERSISTENT IDENTITY: Set as active device immediately to prevent UI flickering ---
-        val existing = if (normalizedAddress != null) _discoveredDevices.value[normalizedAddress] else null
-        _activeDevice.value = existing ?: ReaderDevice(
-            name = deviceName,
-            address = normalizedAddress ?: "",
-            rssi = transport.lastRssi.value ?: -100,
-            lastSeen = currentTimeMillis()
-        )
+        // --- PERSISTENT IDENTITY: Only set active device if we have a valid address ---
+        if (normalizedAddress != null) {
+            val existing = _discoveredDevices.value[normalizedAddress]
+            _activeDevice.value = existing ?: ReaderDevice(
+                name = deviceName,
+                address = normalizedAddress,
+                rssi = transport.lastRssi.value ?: -100,
+                isNearby = false, // Not nearby until scanner actually finds it
+                lastSeen = currentTimeMillis()
+            )
+        } else {
+            // If address is unknown, clear any stale active device to prevent ghost cards
+            _activeDevice.value = null
+        }
 
         _isAutoReconnectEnabled = true
         isBroadDiscoveryMode = false
@@ -315,14 +353,66 @@ class ReaderManager(
             transport.stopScan()
             transport.connect(normalizedAddress)
         } else {
+            // If we don't have an address, we MUST scan to find it first.
             startScan()
+        }
+
+        startConnectionTimeout(isManual)
+    }
+
+    private fun startConnectionTimeout(isManual: Boolean) {
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = scope.launch {
+            var activeTimeMs = 0L
+            while (activeTimeMs < 5000L) {
+                delay(500)
+                
+                // If a dialog is open, we "pause" the timer
+                if (DialogFactory.isAnyDialogOpen()) {
+                    Log.v(TAG, "[Timeout] Connection timer paused: Dialog is OPEN.")
+                    continue
+                }
+                
+                // Check if we are already connected (Success)
+                if (isAuthenticated.value) {
+                    Log.d(TAG, "[Timeout] Connection successful. Cancelling timer.")
+                    return@launch
+                }
+                
+                // Check if hardware disconnected (Failure)
+                if (_connectionState.value == ConnectionState.DISCONNECTED && !transport.isScanning.value) {
+                    Log.d(TAG, "[Timeout] Hardware disconnected. Cancelling timer.")
+                    return@launch
+                }
+
+                activeTimeMs += 500
+            }
+
+            // If we get here, 5 seconds of non-dialog time have passed without success
+            Log.e(TAG, "[Timeout] Connection attempt timed out after 5s of active wait. isManual=$isManual")
+            withContext(Dispatchers.Main) {
+                if (isManual) {
+                    Log.i(TAG, "[Timeout] Emitting ERROR_TIMEOUT event...")
+                    _eventFlow.emit(ReaderEvent.Error(ERROR_TIMEOUT))
+                    disconnect(disableAutoReconnect = true)
+                } else {
+                    Log.d(TAG, "[Timeout] Background attempt timed out. Resetting for next retry.")
+                    disconnect(disableAutoReconnect = false) // Keep auto-reconnect ALIVE
+                }
+            }
         }
     }
 
     fun startConnecting() {
         val name = secureStoreManager.deviceName
         val password = secureStoreManager.getAuthPasswordFor(name)
-        if (password != null) startConnecting(name, password)
+        
+        // --- AUTO-CONNECT (Background): Try to get MAC from discovery map ---
+        val address = _discoveredDevices.value.values.find { it.name == name }?.address
+        
+        if (password != null) {
+            startConnecting(name, password, address, isManual = false)
+        }
     }
 
     fun startScan() {
@@ -338,6 +428,7 @@ class ReaderManager(
     }
 
     fun disconnect(disableAutoReconnect: Boolean = false) {
+        connectionTimeoutJob?.cancel()
         if (disableAutoReconnect) _isAutoReconnectEnabled = false
         Log.i(TAG, "[Orchestrator] Full teardown requested. Stopping scan and closing transport.")
         
@@ -347,7 +438,11 @@ class ReaderManager(
         
         // --- PERSISTENCE: Ensure the device remains in the list as a non-active device ---
         _activeDevice.value?.let { device ->
-            val updatedDevice = device.copy(lastSeen = currentTimeMillis())
+            // Mark as NOT active and NOT nearby (let next scan cycle find it)
+            val updatedDevice = device.copy(
+                isNearby = false, 
+                lastSeen = currentTimeMillis()
+            )
             _discoveredDevices.update { it + (device.address to updatedDevice) }
         }
         _activeDevice.value = null // Release persistent identity
@@ -393,6 +488,16 @@ class ReaderManager(
     fun requestBacklogSync() {
         val data = protocol.formatSyncCommand()
         transport.write(data, TransportChannel.MODE)
+    }
+
+    /**
+     * Triggers a health check on the authenticated reader to fetch epoch and battery.
+     */
+    fun requestStatus() {
+        if (!isAuthenticated.value) return
+        Log.d(TAG, "[Health Check] Requesting current status (GET)...")
+        val data = protocol.formatStatusGetCommand()
+        transport.write(data, TransportChannel.STATUS)
     }
     
     fun isInManagementMode(): Boolean = currentMode == com.example.presensor.communication.core.AppMode.MANAGEMENT

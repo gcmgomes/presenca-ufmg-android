@@ -37,6 +37,7 @@ class ReaderProtocol {
             TransportChannel.AUTH -> handleAuthPayload(payload)
             TransportChannel.DATA -> handleRfidPayload(payload, isInventory = false)
             TransportChannel.INVENTORY -> handleInventoryPayload(payload)
+            TransportChannel.STATUS -> handleStatusPayload(payload)
             else -> {
                 Log.w(TAG, "[Protocol] Unhandled channel $channel for payload '$payload'")
             }
@@ -107,6 +108,21 @@ class ReaderProtocol {
         }
     }
 
+    private suspend fun handleStatusPayload(payload: String) {
+        val parts = payload.split(",")
+        if (parts.size == 2) {
+            try {
+                val epoch = parts[0].trim().toLong()
+                val battery = parts[1].trim().toInt()
+                _domainEvents.emit(ProtocolEvent.Metrics(epoch, battery))
+            } catch (e: Exception) {
+                Log.e(TAG, "[Protocol Error] Failed to parse status payload: '$payload'", e)
+            }
+        } else {
+            Log.w(TAG, "[Protocol Warning] Malformed status payload (expected 2 parts): '$payload'")
+        }
+    }
+
     private suspend fun handleMetricsPayload(payload: String) {
         val parts = payload.split(",")
         if (parts.size == 3) {
@@ -155,6 +171,10 @@ class ReaderProtocol {
 
     fun formatSyncCommand(): ByteArray {
         return "SYNC".toByteArray()
+    }
+
+    fun formatStatusGetCommand(): ByteArray {
+        return "GET".toByteArray()
     }
 
     fun formatAckCommand(tagId: String, timestamp: String): ByteArray {

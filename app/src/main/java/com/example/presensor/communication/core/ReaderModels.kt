@@ -19,7 +19,8 @@ enum class TransportChannel {
     CONFIG,
     TIME,
     ACK,
-    INVENTORY
+    INVENTORY,
+    STATUS
 }
 
 /**
@@ -54,5 +55,7 @@ data class ReaderDevice(
     val address: String,
     val rssi: Int,
     val batteryLevel: Int? = null,
+    val deviceEpoch: Long? = null,
+    val isNearby: Boolean = true,
     val lastSeen: Long = System.currentTimeMillis()
 )
