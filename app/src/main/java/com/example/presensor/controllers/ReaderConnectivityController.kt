@@ -273,8 +273,7 @@ class ReaderConnectivityController(
                 rssi = device.rssi,
                 batteryLevel = device.batteryLevel,
                 isConnected = isConnected,
-                isConnecting = isConnecting,
-                isNearby = device.isNearby
+                isConnecting = isConnecting
             )
 
             when {
@@ -649,13 +648,15 @@ class ReaderConnectivityController(
 
             is ReaderEvent.Error -> {
                 android.util.Log.e(TAG, "[Reader Error Event] Received: ${event.message}")
-                val displayMessage = if (event.message == ReaderManager.ERROR_TIMEOUT) {
-                    activity.getString(R.string.toast_connection_timed_out)
-                } else {
-                    event.message
+                val displayMessage = when (event.message) {
+                    ReaderManager.ERROR_TIMEOUT -> activity.getString(R.string.toast_connection_timed_out)
+                    else -> event.message
                 }
-                android.util.Log.i(TAG, "[User Feedback] Showing Toast: $displayMessage")
-                Toast.makeText(activity, displayMessage, Toast.LENGTH_LONG).show()
+                
+                android.util.Log.i(TAG, "[User Feedback] Showing Toast on UI thread: $displayMessage")
+                activity.runOnUiThread {
+                    Toast.makeText(activity.applicationContext, displayMessage, Toast.LENGTH_LONG).show()
+                }
                 
                 pendingPassword = null
                 pendingDeviceName = null
@@ -766,8 +767,7 @@ class ReaderConnectivityController(
         val rssi: Int?,
         val batteryLevel: Int? = null,
         val isConnected: Boolean,
-        val isConnecting: Boolean,
-        val isNearby: Boolean = true
+        val isConnecting: Boolean
     )
 
     private data class BacklogItem(val tagId: String, val studentName: String, val timestamp: Long)
@@ -834,7 +834,7 @@ class ReaderConnectivityController(
                         val payloads = mutableSetOf<String>()
                         if (old.rssi != new.rssi) payloads.add(PAYLOAD_RSSI)
                         if (old.batteryLevel != new.batteryLevel) payloads.add(PAYLOAD_BATTERY)
-                        if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting || old.isNearby != new.isNearby) {
+                        if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting) {
                             payloads.add(PAYLOAD_STATE)
                         }
                         if (payloads.isNotEmpty()) return payloads
@@ -894,7 +894,6 @@ class ReaderConnectivityController(
                     if (combinedPayloads.contains(PAYLOAD_STATE)) {
                         updateAccent(holder, item)
                         updateRssi(holder, item) // State change affects RSSI text too (Connecting...)
-                        updateNearbyState(holder, item)
                     }
                     
                     // For any other change (like name), we still fall back to full bind
@@ -909,41 +908,19 @@ class ReaderConnectivityController(
             holder.txtName.text = item.name
             holder.txtMac.text = item.address
 
+            // Reset alpha
+            holder.itemView.alpha = 1.0f
+
             updateAccent(holder, item)
             updateRssi(holder, item)
             updateBattery(holder, item)
-            updateNearbyState(holder, item)
 
             holder.itemView.setOnClickListener { 
-                if (item.isNearby) {
-                    onDeviceSelected(item.name, item.address)
-                } else {
-                    android.util.Log.d("DeviceListAdapter", "Ignoring click on offline device: ${item.name}")
-                }
+                onDeviceSelected(item.name, item.address)
             }
             holder.itemView.setOnLongClickListener {
                 onDeviceLongClicked(item.name, item.address)
                 true
-            }
-        }
-
-        private fun updateNearbyState(holder: DeviceViewHolder, item: DeviceItem) {
-            // A device is visually active if it's nearby, or if we are actively trying to talk to it.
-            val isVisuallyActive = item.isNearby || item.isConnected || item.isConnecting
-            
-            val targetAlpha = if (isVisuallyActive) 1.0f else 0.5f
-            
-            // Apply alpha surgically to individual components to ensure visibility regardless of CardView rendering mode
-            holder.txtName.alpha = targetAlpha
-            holder.txtMac.alpha = targetAlpha
-            holder.txtValue.alpha = targetAlpha
-            holder.txtValueSecondary.alpha = targetAlpha
-            holder.imgSignal.alpha = targetAlpha
-            holder.viewAccent.alpha = targetAlpha
-            
-            if (!isVisuallyActive) {
-                holder.txtValue.text = holder.itemView.context.getString(R.string.status_not_found)
-                holder.imgSignal.visibility = View.GONE
             }
         }
 

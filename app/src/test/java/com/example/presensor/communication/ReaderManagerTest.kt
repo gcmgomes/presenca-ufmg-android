@@ -276,56 +276,14 @@ class ReaderManagerTest {
     }
 
     @Test
-    fun `isNearby should be false for devices not seen in the current cycle`() = testScope.runTest {
-        // 1. Discover a device
-        tIsScanning.value = true
-        val mockDevice: android.bluetooth.BluetoothDevice = mock()
-        whenever(mockDevice.address).thenReturn("A1")
-        val mockRecord: ScanRecord = mock()
-        whenever(mockRecord.deviceName).thenReturn("D1")
-        val scanResult: ScanResult = mock()
-        whenever(scanResult.device).thenReturn(mockDevice)
-        whenever(scanResult.scanRecord).thenReturn(mockRecord)
-        
-        tDiscoveredDevices.emit(scanResult)
-        advanceUntilIdle()
-        assertTrue(readerManager.discoveredDevices.value[0].isNearby)
-
-        // 2. End scan cycle without seeing the device again
-        tIsScanning.value = false
-        advanceUntilIdle()
-        
-        // If it's a known device, it stays but isNearby becomes false
-        whenever(secureStoreManager.hasPasswordFor("D1")).thenReturn(true)
-        
-        // Trigger another cycle or maintenance
-        tIsScanning.value = true 
-        // Emitting a DIFFERENT device so A1 isn't seen
-        val mockDevice2: android.bluetooth.BluetoothDevice = mock()
-        whenever(mockDevice2.address).thenReturn("A2")
-        val mockRecord2: ScanRecord = mock()
-        whenever(mockRecord2.deviceName).thenReturn("D2")
-        val scanResult2: ScanResult = mock()
-        whenever(scanResult2.device).thenReturn(mockDevice2)
-        whenever(scanResult2.scanRecord).thenReturn(mockRecord2)
-        tDiscoveredDevices.emit(scanResult2)
-        
-        tIsScanning.value = false // End cycle
-        advanceUntilIdle()
-        
-        val deviceA1 = readerManager.discoveredDevices.value.find { it.address == "A1" }
-        assertNotNull(deviceA1)
-        assertFalse(deviceA1!!.isNearby)
-    }
-
-    @Test
     fun `startConnecting should time out after 5 seconds of active wait`() = testScope.runTest {
         val events = mutableListOf<ReaderEvent>()
         val job = launch {
             readerManager.eventFlow.collect { events.add(it) }
         }
 
-        readerManager.startConnecting("Test", "pass", "AA:BB:CC")
+        // Use isManual = true to trigger the error event
+        readerManager.startConnecting("Test", "pass", "AA:BB:CC", isManual = true)
         
         // Advance 4 seconds -> No timeout yet
         testDispatcher.scheduler.advanceTimeBy(4000)
@@ -336,7 +294,7 @@ class ReaderManagerTest {
         
         assertEquals(1, events.size)
         assertTrue(events[0] is ReaderEvent.Error)
-        assertTrue((events[0] as ReaderEvent.Error).message.contains("Timed Out"))
+        assertEquals(ReaderManager.ERROR_TIMEOUT, (events[0] as ReaderEvent.Error).message)
         
         // Should have disconnected
         verify(transport).disconnect()

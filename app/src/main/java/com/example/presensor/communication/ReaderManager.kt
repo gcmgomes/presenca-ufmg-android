@@ -92,23 +92,17 @@ class ReaderManager(
     private val _emittedInCurrentCycle = mutableSetOf<String>()
 
     /**
-     * Snapshots the internal discovery map to prune stale devices and update nearby status.
+     * Snapshots the internal discovery map to prune stale devices.
      */
     private fun pruneDiscoveryMap() {
-        val activeAddr = _activeDevice.value?.address
-
+        val now = currentTimeMillis()
+        val isScanning = transport.isScanning.value
+        
         _discoveredDevices.update { current ->
-            current.mapValues { (addr, device) ->
-                // A device is nearby ONLY if seen in current cycle OR currently connected
-                val isNearby = _emittedInCurrentCycle.contains(addr) || addr == connectedDeviceAddress
-                
-                device.copy(isNearby = isNearby)
-            }.filter { (addr, device) ->
-                // Retention rules:
-                // - Keep if it's nearby
-                // - Keep if it's a KNOWN device (has password) even if offline
-                val isKnown = secureStoreManager.hasPasswordFor(device.name)
-                device.isNearby || isKnown || addr == activeAddr
+            current.filter { (_, device) ->
+                if (device.address == connectedDeviceAddress) return@filter true
+                val timeout = if (isScanning) 3000L else 30000L
+                now - device.lastSeen < timeout
             }
         }
     }
@@ -148,7 +142,6 @@ class ReaderManager(
                     name = advertisedName,
                     address = address,
                     rssi = result.rssi,
-                    isNearby = true,
                     lastSeen = currentTimeMillis()
                 )
 
@@ -158,7 +151,7 @@ class ReaderManager(
                     
                     // Also update the active device's persistent state once per cycle if it matches
                     if (address == _activeDevice.value?.address) {
-                        _activeDevice.update { it?.copy(rssi = device.rssi, isNearby = true, lastSeen = device.lastSeen) }
+                        _activeDevice.update { it?.copy(rssi = device.rssi, lastSeen = device.lastSeen) }
                     }
                 }
 
@@ -337,7 +330,6 @@ class ReaderManager(
                 name = deviceName,
                 address = normalizedAddress,
                 rssi = transport.lastRssi.value ?: -100,
-                isNearby = false, // Not nearby until scanner actually finds it
                 lastSeen = currentTimeMillis()
             )
         } else {
@@ -438,15 +430,12 @@ class ReaderManager(
         
         // --- PERSISTENCE: Ensure the device remains in the list as a non-active device ---
         _activeDevice.value?.let { device ->
-            // Mark as NOT active and NOT nearby (let next scan cycle find it)
-            val updatedDevice = device.copy(
-                isNearby = false, 
-                lastSeen = currentTimeMillis()
-            )
+            val updatedDevice = device.copy(lastSeen = currentTimeMillis())
             _discoveredDevices.update { it + (device.address to updatedDevice) }
         }
         _activeDevice.value = null // Release persistent identity
 
+        pruneDiscoveryMap() // Force immediate sync of nearby states
         transport.stopScan()
         transport.disconnect()
         // Reset to broad mode so we can find other devices after disconnect
