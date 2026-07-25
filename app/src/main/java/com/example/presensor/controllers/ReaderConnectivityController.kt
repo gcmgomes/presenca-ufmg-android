@@ -648,15 +648,7 @@ class ReaderConnectivityController(
 
             is ReaderEvent.Error -> {
                 android.util.Log.e(TAG, "[Reader Error Event] Received: ${event.message}")
-                val displayMessage = when (event.message) {
-                    ReaderManager.ERROR_TIMEOUT -> activity.getString(R.string.toast_connection_timed_out)
-                    else -> event.message
-                }
-                
-                android.util.Log.i(TAG, "[User Feedback] Showing Toast on UI thread: $displayMessage")
-                activity.runOnUiThread {
-                    Toast.makeText(activity.applicationContext, displayMessage, Toast.LENGTH_LONG).show()
-                }
+                Toast.makeText(activity, event.message, Toast.LENGTH_SHORT).show()
                 
                 pendingPassword = null
                 pendingDeviceName = null
