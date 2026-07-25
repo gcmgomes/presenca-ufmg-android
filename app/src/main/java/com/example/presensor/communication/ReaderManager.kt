@@ -92,17 +92,39 @@ class ReaderManager(
     private val _emittedInCurrentCycle = mutableSetOf<String>()
 
     /**
-     * Snapshots the internal discovery map to prune stale devices.
+     * Snapshots the internal discovery map to prune stale devices and update nearby status.
+     * @param isCycleEnd If true, re-evaluates 'isNearby' status based on current cycle hits.
      */
-    private fun pruneDiscoveryMap() {
-        val now = currentTimeMillis()
-        val isScanning = transport.isScanning.value
-        
+    private fun pruneDiscoveryMap(isCycleEnd: Boolean = false) {
+        val connectedAddr = connectedAddress.value?.uppercase()
+        val activeAddr = _activeDevice.value?.address?.uppercase()
+
         _discoveredDevices.update { current ->
-            current.filter { (_, device) ->
-                if (device.address == connectedDeviceAddress) return@filter true
-                val timeout = if (isScanning) 3000L else 30000L
-                now - device.lastSeen < timeout
+            current.mapValues { (addr, device) ->
+                val normalizedAddr = addr.uppercase()
+                
+                // --- STICKY NEARBY LOGIC (Task 4.5 Fix) ---
+                // Only downgrade isNearby to false if we just finished an active scan cycle 
+                // and the device wasn't seen AND it's not the active/connected one.
+                
+                val seenInThisCycle = _emittedInCurrentCycle.contains(normalizedAddr)
+                val isCurrentlyActive = normalizedAddr == connectedAddr || normalizedAddr == activeAddr
+                
+                val updatedNearby = if (isCycleEnd) {
+                    // At cycle end, we require a fresh hit or active connection
+                    seenInThisCycle || isCurrentlyActive
+                } else {
+                    // In idle periods or during disconnect transitions, we PRESERVE 'Nearby' status
+                    // unless it's currently connected/active (which forces true)
+                    device.isNearby || isCurrentlyActive
+                }
+                
+                device.copy(isNearby = updatedNearby)
+            }.filter { (addr, device) ->
+                val normalizedAddr = addr.uppercase()
+                val isKnown = secureStoreManager.hasPasswordFor(device.name)
+                // Retention: Keep if nearby, OR if it's a Known device (Offline persistence), OR if it's active
+                device.isNearby || isKnown || normalizedAddr == activeAddr
             }
         }
     }
@@ -167,6 +189,7 @@ class ReaderManager(
         }
 
         // UNIFIED STATE SYNC: Atomic high-level state calculation
+        var lastScanningState = false
         scope.launch {
             combine(
                 transport.connectionState,
@@ -186,11 +209,18 @@ class ReaderManager(
                 Log.d(TAG, "[Orchestrator] State Change -> Transport: $tState, Auth: $auth, Scanning: $scanning")
                 updateHighLevelConnectionState(tState, auth, scanning)
                 
-                if (!scanning) {
-                    // End of cycle: Final prune and clear trackers
-                    pruneDiscoveryMap()
+                if (lastScanningState && !scanning) {
+                    // --- BURST COMPLETED ---
+                    // This is the ONLY place where devices can be downgraded to 'Offline'
+                    Log.i(TAG, "[Orchestrator] Scan burst finished. Re-evaluating Nearby status.")
+                    pruneDiscoveryMap(isCycleEnd = true)
                     _emittedInCurrentCycle.clear()
+                } else if (!scanning) {
+                    // Periodic idle maintenance (e.g. RSSI cleanup) but keep Nearby status sticky
+                    pruneDiscoveryMap(isCycleEnd = false)
                 }
+                
+                lastScanningState = scanning
             }
         }
 
@@ -199,7 +229,7 @@ class ReaderManager(
             while (isActive) {
                 delay(30000)
                 if (!transport.isScanning.value) {
-                    pruneDiscoveryMap()
+                    pruneDiscoveryMap(isCycleEnd = false)
                 }
                 // Periodic Health Check for authenticated device
                 if (isAuthenticated.value) {
@@ -356,7 +386,9 @@ class ReaderManager(
         connectionTimeoutJob?.cancel()
         connectionTimeoutJob = scope.launch {
             var activeTimeMs = 0L
-            while (activeTimeMs < 5000L) {
+            val limitMs = if (isManual) 2000L else 5000L // User requested 2s for manual attempts
+            
+            while (activeTimeMs < limitMs) {
                 delay(500)
                 
                 // If a dialog is open, we "pause" the timer
@@ -380,8 +412,8 @@ class ReaderManager(
                 activeTimeMs += 500
             }
 
-            // If we get here, 5 seconds of non-dialog time have passed without success
-            Log.e(TAG, "[Timeout] Connection attempt timed out after 5s of active wait. isManual=$isManual")
+            // If we get here, the specified limit (2s for manual, 5s for auto) has passed
+            Log.e(TAG, "[Timeout] Connection attempt timed out after ${limitMs/1000}s of active wait. isManual=$isManual")
             withContext(Dispatchers.Main) {
                 if (isManual) {
                     Log.i(TAG, "[Timeout] Emitting ERROR_TIMEOUT event...")
@@ -430,12 +462,17 @@ class ReaderManager(
         
         // --- PERSISTENCE: Ensure the device remains in the list as a non-active device ---
         _activeDevice.value?.let { device ->
-            val updatedDevice = device.copy(lastSeen = currentTimeMillis())
+            // Mark as NOT active but explicitly keep it 'nearby' (Sticky)
+            // It will only become offline at the end of the NEXT scan cycle.
+            val updatedDevice = device.copy(
+                isNearby = true, 
+                lastSeen = currentTimeMillis()
+            )
             _discoveredDevices.update { it + (device.address to updatedDevice) }
         }
         _activeDevice.value = null // Release persistent identity
 
-        pruneDiscoveryMap() // Force immediate sync of nearby states
+        pruneDiscoveryMap(isCycleEnd = false) // Maintenance sync, don't kill Nearby status
         transport.stopScan()
         transport.disconnect()
         // Reset to broad mode so we can find other devices after disconnect

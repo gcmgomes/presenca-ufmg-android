@@ -273,7 +273,8 @@ class ReaderConnectivityController(
                 rssi = device.rssi,
                 batteryLevel = device.batteryLevel,
                 isConnected = isConnected,
-                isConnecting = isConnecting
+                isConnecting = isConnecting,
+                isNearby = device.isNearby
             )
 
             when {
@@ -648,7 +649,12 @@ class ReaderConnectivityController(
 
             is ReaderEvent.Error -> {
                 android.util.Log.e(TAG, "[Reader Error Event] Received: ${event.message}")
-                Toast.makeText(activity, event.message, Toast.LENGTH_SHORT).show()
+                val displayMessage = if (event.message == ReaderManager.ERROR_TIMEOUT) {
+                    activity.getString(R.string.toast_connection_timed_out)
+                } else {
+                    event.message
+                }
+                Toast.makeText(activity, displayMessage, Toast.LENGTH_SHORT).show()
                 
                 pendingPassword = null
                 pendingDeviceName = null
@@ -759,7 +765,8 @@ class ReaderConnectivityController(
         val rssi: Int?,
         val batteryLevel: Int? = null,
         val isConnected: Boolean,
-        val isConnecting: Boolean
+        val isConnecting: Boolean,
+        val isNearby: Boolean = true
     )
 
     private data class BacklogItem(val tagId: String, val studentName: String, val timestamp: Long)
@@ -826,7 +833,7 @@ class ReaderConnectivityController(
                         val payloads = mutableSetOf<String>()
                         if (old.rssi != new.rssi) payloads.add(PAYLOAD_RSSI)
                         if (old.batteryLevel != new.batteryLevel) payloads.add(PAYLOAD_BATTERY)
-                        if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting) {
+                        if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting || old.isNearby != new.isNearby) {
                             payloads.add(PAYLOAD_STATE)
                         }
                         if (payloads.isNotEmpty()) return payloads
@@ -886,6 +893,7 @@ class ReaderConnectivityController(
                     if (combinedPayloads.contains(PAYLOAD_STATE)) {
                         updateAccent(holder, item)
                         updateRssi(holder, item) // State change affects RSSI text too (Connecting...)
+                        updateDimming(holder, item)
                     }
                     
                     // For any other change (like name), we still fall back to full bind
@@ -900,20 +908,33 @@ class ReaderConnectivityController(
             holder.txtName.text = item.name
             holder.txtMac.text = item.address
 
-            // Reset alpha
-            holder.itemView.alpha = 1.0f
-
             updateAccent(holder, item)
             updateRssi(holder, item)
             updateBattery(holder, item)
+            updateDimming(holder, item)
 
             holder.itemView.setOnClickListener { 
-                onDeviceSelected(item.name, item.address)
+                if (item.isNearby || item.isConnected || item.isConnecting) {
+                    onDeviceSelected(item.name, item.address)
+                }
             }
             holder.itemView.setOnLongClickListener {
                 onDeviceLongClicked(item.name, item.address)
                 true
             }
+        }
+
+        private fun updateDimming(holder: DeviceViewHolder, item: DeviceItem) {
+            val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
+            val alpha = if (isOffline) 0.5f else 1.0f
+            
+            holder.cardRoot.alpha = alpha
+            // Surgical fallback for older Android versions or specific themes
+            holder.txtName.alpha = alpha
+            holder.txtMac.alpha = alpha
+            holder.txtValue.alpha = alpha
+            holder.imgSignal.alpha = alpha
+            holder.viewAccent.alpha = alpha
         }
 
         private fun updateAccent(holder: DeviceViewHolder, item: DeviceItem) {
@@ -926,9 +947,14 @@ class ReaderConnectivityController(
         }
 
         private fun updateRssi(holder: DeviceViewHolder, item: DeviceItem) {
+            val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
+            
             if (item.isConnecting) {
                 holder.txtValue.text =
                     holder.itemView.context.getString(R.string.status_connecting)
+                holder.imgSignal.visibility = View.GONE
+            } else if (isOffline) {
+                holder.txtValue.text = holder.itemView.context.getString(R.string.status_not_found)
                 holder.imgSignal.visibility = View.GONE
             } else {
                 holder.imgSignal.visibility = View.VISIBLE
@@ -958,6 +984,7 @@ class ReaderConnectivityController(
         }
 
         class DeviceViewHolder(v: View) : RecyclerView.ViewHolder(v) {
+            val cardRoot: com.google.android.material.card.MaterialCardView = v.findViewById(R.id.cardStatRoot)
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtMac: TextView = v.findViewById(R.id.txtSecondaryLabel)
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)
