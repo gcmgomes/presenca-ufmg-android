@@ -34,7 +34,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,6 +44,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @SuppressLint("MissingPermission")
 class ReaderConnectivityController(
     private val activity: MainActivity,
@@ -49,10 +52,9 @@ class ReaderConnectivityController(
     private val secureStoreManager: SecureStoreManager,
     private val scope: CoroutineScope
 ) {
-    private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> = emptyList()
-    private var isAuth: Boolean = false
-    private var connectedAddress: String? = null
-    
+    private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> =
+        emptyList()
+
     private var listAdapter: DeviceListAdapter? = null
     private var backlogAdapter: BacklogAdapter? = null
 
@@ -62,7 +64,6 @@ class ReaderConnectivityController(
     private var inventoryJob: Job? = null
     private var eventJob: Job? = null
 
-    private var connectingAddress: String? = null
     private var pendingPassword: String? = null
     private var pendingDeviceName: String? = null
     private var backlogItems = mutableListOf<BacklogItem>()
@@ -142,17 +143,12 @@ class ReaderConnectivityController(
         statusJob?.cancel()
         statusJob = scope.launch(Dispatchers.Main) {
             val rManager = activity.readerManager ?: return@launch
-            
+
             // --- ATOMIC UI SYNC (Task 4.2 Fix) ---
-            // Combine all factors into a single flow to ensure they are updated simultaneously
-            combine(
-                rManager.discoveredDevices,
-                rManager.connectionState,
-                rManager.isAuthenticated,
-                rManager.connectedAddress
-            ) { devices, state, auth, connAddr ->
-                deviceUpdate(devices, state, auth, connAddr)
-            }.collect { /* collect triggers updateDeviceList via deviceUpdate */ }
+            // The Manager now handles state computation internally.
+            rManager.discoveredDevices.collect { devices ->
+                deviceUpdate(devices)
+            }
         }
 
         eventJob?.cancel()
@@ -220,28 +216,8 @@ class ReaderConnectivityController(
         }
     }
 
-    private fun deviceUpdate(
-        devices: List<com.example.presensor.communication.core.ReaderDevice>,
-        state: ReaderManager.ConnectionState,
-        auth: Boolean,
-        connAddr: String?
-    ) {
-        // Sync local variables
+    private fun deviceUpdate(devices: List<com.example.presensor.communication.core.ReaderDevice>) {
         this.currentDevices = devices
-        this.isAuth = auth
-        this.connectedAddress = connAddr
-
-        // Handle the 'Connecting' label clearing logic
-        val isFailure = state == ReaderManager.ConnectionState.DISCONNECTED
-        val isTargetAuthenticated = auth && connAddr?.uppercase() == connectingAddress?.uppercase()
-
-        if (isFailure || isTargetAuthenticated) {
-            if (connectingAddress != null) {
-                android.util.Log.d(TAG, "[Connect Flow] Atomic Clear of connectingAddress. Success: $isTargetAuthenticated")
-                connectingAddress = null
-            }
-        }
-
         updateDeviceList()
     }
 
@@ -251,10 +227,6 @@ class ReaderConnectivityController(
             return
         }
 
-        // --- ATOMIC SYNC: Using local variables updated by deviceUpdate() ---
-        val connectedAddress = this.connectedAddress?.uppercase()
-        val isAuth = this.isAuth
-
         val connectedItems = mutableListOf<DeviceItem>()
         val knownItems = mutableListOf<DeviceItem>()
         val unknownItems = mutableListOf<DeviceItem>()
@@ -262,29 +234,27 @@ class ReaderConnectivityController(
         // The Manager now provides a single combined list of both discovered and active devices.
         // We simply map them and categorize them.
         currentDevices.forEach { device ->
-            val deviceAddr = device.address.uppercase()
-            val isConnected = deviceAddr == connectedAddress && isAuth
-            // Connecting if: specifically targeted by UI OR hardware is in handshake phase
-            val isConnecting = (deviceAddr == connectingAddress?.uppercase()) || (deviceAddr == connectedAddress && !isAuth)
-
             val item = DeviceItem(
                 name = device.name,
                 address = device.address,
                 rssi = device.rssi,
                 batteryLevel = device.batteryLevel,
-                isConnected = isConnected,
-                isConnecting = isConnecting,
+                isConnected = device.isConnected,
+                isConnecting = device.isConnecting,
                 isNearby = device.isNearby
             )
 
             when {
-                isConnected -> connectedItems.add(item)
+                item.isConnected -> connectedItems.add(item)
                 secureStoreManager.hasPasswordFor(device.name) -> knownItems.add(item)
                 else -> unknownItems.add(item)
             }
         }
 
-        android.util.Log.v(TAG, "[UI Sync] updateDeviceList counts: connected=${connectedItems.size}, known=${knownItems.size}, unknown=${unknownItems.size}")
+        android.util.Log.v(
+            TAG,
+            "[UI Sync] updateDeviceList counts: connected=${connectedItems.size}, known=${knownItems.size}, unknown=${unknownItems.size}"
+        )
         listAdapter?.submitList(connectedItems, knownItems, unknownItems)
     }
 
@@ -319,7 +289,6 @@ class ReaderConnectivityController(
                 TAG,
                 "[Connect Flow] Credentials found. Triggering ReaderManager.startConnecting()"
             )
-            connectingAddress = address
             activity.readerManager?.isBroadDiscoveryMode = false
             activity.readerManager?.startConnecting(name, storedPassword, address, isManual = true)
             updateDeviceList()
@@ -614,7 +583,7 @@ class ReaderConnectivityController(
                     SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
             }
         }
-        
+
         // Also ensure the files count is updated from local cache
         txtStatFiles?.text = backlogItems.size.toString()
     }
@@ -639,15 +608,18 @@ class ReaderConnectivityController(
         when (event) {
             is ReaderEvent.ConnectionSuccessful -> {
                 logAndToast(R.string.status_connected)
-                
+
                 // --- TASK 4.3 V2: Persist credentials ONLY on confirmed success ---
                 if (pendingPassword != null && pendingDeviceName != null) {
-                    android.util.Log.i(TAG, "[Connect Flow] Success confirmed. Promoting '$pendingDeviceName' to KNOWN category.")
+                    android.util.Log.i(
+                        TAG,
+                        "[Connect Flow] Success confirmed. Promoting '$pendingDeviceName' to KNOWN category."
+                    )
                     secureStoreManager.saveReaderCredentials(pendingDeviceName!!, pendingPassword!!)
                     pendingPassword = null
                     pendingDeviceName = null
                 }
-                
+
                 updateDeviceList()
             }
 
@@ -656,10 +628,12 @@ class ReaderConnectivityController(
                 // --- TASK 4.3 V2: Discard pending credentials on rejection ---
                 pendingPassword = null
                 pendingDeviceName = null
-                
+
                 // --- BUGFIX (Task 4.2): Ensure UI lock is released on rejection ---
-                android.util.Log.w(TAG, "[Connect Flow] Auth Failed event received. Clearing connectingAddress.")
-                connectingAddress = null
+                android.util.Log.w(
+                    TAG,
+                    "[Connect Flow] Auth Failed event received."
+                )
                 updateDeviceList()
             }
 
@@ -671,11 +645,10 @@ class ReaderConnectivityController(
                     event.message
                 }
                 Toast.makeText(activity, displayMessage, Toast.LENGTH_SHORT).show()
-                
+
                 pendingPassword = null
                 pendingDeviceName = null
-                
-                connectingAddress = null
+
                 updateDeviceList()
             }
         }
@@ -695,10 +668,7 @@ class ReaderConnectivityController(
                 if (activity.readerManager?.connectionState?.value == ReaderManager.ConnectionState.DISCONNECTED ||
                     activity.readerManager?.connectionState?.value == ReaderManager.ConnectionState.SCANNING
                 ) {
-                    if (connectingAddress == address) {
-                        connectingAddress = null
-                        updateDeviceList()
-                    }
+                    updateDeviceList()
                 }
             }
             .showWithSmartNfcReading()
@@ -710,14 +680,18 @@ class ReaderConnectivityController(
                     TAG,
                     "[Connect Flow] Password entered. Deferring save until success."
                 )
-                
+
                 // --- TASK 4.3 V2: Hold credentials in limbo until auth success ---
                 pendingPassword = typedPassword
                 pendingDeviceName = readerName
 
-                connectingAddress = address
                 activity.readerManager?.isBroadDiscoveryMode = false
-                activity.readerManager?.startConnecting(readerName, typedPassword, address, isManual = true)
+                activity.readerManager?.startConnecting(
+                    readerName,
+                    typedPassword,
+                    address,
+                    isManual = true
+                )
 
                 dialog.dismiss()
                 updateDeviceList()
@@ -768,11 +742,24 @@ class ReaderConnectivityController(
                     secureStoreManager.saveReaderCredentials(newName, newPass)
                     secureStoreManager.deviceName = newName
                     logAndToast(R.string.toast_config_update_sent)
+
+                    // --- REBOOT & RECONNECT (Task 4.6.2) ---
+                    // The reader will reboot after config update. We must disconnect, 
+                    // wait for it to come back, and reconnect with new credentials.
+                    val targetAddr = activity.readerManager?.connectedDeviceAddress ?: address
+                    rebootAndReconnect(newName, newPass, targetAddr)
+
                     dialog.dismiss()
                     updateHeader()
                 }
             }
         }
+    }
+
+    private fun rebootAndReconnect(newName: String, newPass: String, address: String) {
+        // --- STABILIZATION (Task 4.8): Offload reboot orchestration to ReaderManager ---
+        swipeRefreshLayout?.isRefreshing = true
+        activity.readerManager?.rebootReader(newName, newPass, address)
     }
 
     private data class DeviceItem(
@@ -908,10 +895,13 @@ class ReaderConnectivityController(
                     }
                     if (combinedPayloads.contains(PAYLOAD_STATE)) {
                         updateAccent(holder, item)
-                        updateRssi(holder, item) // State change affects RSSI text too (Connecting...)
+                        updateRssi(
+                            holder,
+                            item
+                        ) // State change affects RSSI text too (Connecting...)
                         updateDimming(holder, item)
                     }
-                    
+
                     // For any other change (like name), we still fall back to full bind
                     if (combinedPayloads.isEmpty()) fullBind(holder, item)
                 } else {
@@ -929,7 +919,7 @@ class ReaderConnectivityController(
             updateBattery(holder, item)
             updateDimming(holder, item)
 
-            holder.itemView.setOnClickListener { 
+            holder.itemView.setOnClickListener {
                 if (item.isNearby || item.isConnected || item.isConnecting) {
                     onDeviceSelected(item.name, item.address)
                 }
@@ -943,7 +933,7 @@ class ReaderConnectivityController(
         private fun updateDimming(holder: DeviceViewHolder, item: DeviceItem) {
             val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
             val alpha = if (isOffline) 0.5f else 1.0f
-            
+
             holder.cardRoot.alpha = alpha
             // Surgical fallback for older Android versions or specific themes
             holder.txtName.alpha = alpha
@@ -964,7 +954,7 @@ class ReaderConnectivityController(
 
         private fun updateRssi(holder: DeviceViewHolder, item: DeviceItem) {
             val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
-            
+
             if (item.isConnecting) {
                 holder.txtValue.text =
                     holder.itemView.context.getString(R.string.status_connecting)
@@ -1000,7 +990,8 @@ class ReaderConnectivityController(
         }
 
         class DeviceViewHolder(v: View) : RecyclerView.ViewHolder(v) {
-            val cardRoot: com.google.android.material.card.MaterialCardView = v.findViewById(R.id.cardStatRoot)
+            val cardRoot: com.google.android.material.card.MaterialCardView =
+                v.findViewById(R.id.cardStatRoot)
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtMac: TextView = v.findViewById(R.id.txtSecondaryLabel)
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)

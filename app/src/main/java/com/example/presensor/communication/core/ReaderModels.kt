@@ -57,5 +57,7 @@ data class ReaderDevice(
     val batteryLevel: Int? = null,
     val deviceEpoch: Long? = null,
     val isNearby: Boolean = true,
+    val isConnected: Boolean = false,
+    val isConnecting: Boolean = false,
     val lastSeen: Long = System.currentTimeMillis()
 )
