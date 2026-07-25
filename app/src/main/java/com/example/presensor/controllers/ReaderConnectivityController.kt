@@ -557,9 +557,10 @@ class ReaderConnectivityController(
                 android.util.Log.d(TAG, "[Management Flow] Step 1.5: Waiting 500ms...")
                 delay(500)
 
-                // 3. Dispatch the GET command
-                android.util.Log.d(TAG, "[Management Flow] Step 2: Requesting Inventory (GET)")
+                // 3. Dispatch the GET commands
+                android.util.Log.d(TAG, "[Management Flow] Step 2: Requesting Inventory & Status")
                 activity.readerManager?.requestInventory()
+                activity.readerManager?.requestStatus()
 
                 // 4. Safety timeout for refresh UI
                 delay(5000)
@@ -598,9 +599,24 @@ class ReaderConnectivityController(
     }
 
     private fun updateHeader() {
+        val manager = activity.readerManager
         txtDeviceName?.text = secureStoreManager.deviceName
-        val mac = activity.readerManager?.connectedDeviceAddress ?: "XX:XX:XX:XX:XX:XX"
+        val mac = manager?.connectedDeviceAddress ?: "XX:XX:XX:XX:XX:XX"
         txtDeviceMac?.text = activity.getString(R.string.label_device_mac, mac)
+
+        // --- INITIAL HYDRATION (Task 4.6.1) ---
+        // If the Manager already has status data for this device, show it immediately
+        val activeDevice = manager?.discoveredDevices?.value?.find { it.address == mac }
+        activeDevice?.let { device ->
+            device.batteryLevel?.let { txtStatBattery?.text = "$it%" }
+            device.deviceEpoch?.let { epoch ->
+                txtStatTime?.text =
+                    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
+            }
+        }
+        
+        // Also ensure the files count is updated from local cache
+        txtStatFiles?.text = backlogItems.size.toString()
     }
 
     fun teardownView() {

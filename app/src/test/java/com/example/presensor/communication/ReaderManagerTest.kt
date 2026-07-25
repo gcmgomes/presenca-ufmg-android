@@ -276,21 +276,21 @@ class ReaderManagerTest {
     }
 
     @Test
-    fun `startConnecting should time out after 5 seconds of active wait`() = testScope.runTest {
+    fun `startConnecting should time out after 2 seconds for manual attempts`() = testScope.runTest {
         val events = mutableListOf<ReaderEvent>()
         val job = launch {
             readerManager.eventFlow.collect { events.add(it) }
         }
 
-        // Use isManual = true to trigger the error event
-        readerManager.startConnecting("Test", "pass", "AA:BB:CC", isManual = true)
+        // Use isManual = true to trigger the 2s timeout
+        readerManager.startConnecting("Test", "pass", "AA:BB:CC:DD:EE:FF", isManual = true)
         
-        // Advance 4 seconds -> No timeout yet
-        testDispatcher.scheduler.advanceTimeBy(4000)
+        // Advance 1.5 seconds -> No timeout yet
+        testDispatcher.scheduler.advanceTimeBy(1500)
         assertTrue(events.isEmpty())
 
-        // Advance 2 more seconds -> Should time out
-        testDispatcher.scheduler.advanceTimeBy(2000)
+        // Advance 1 more second -> Should time out (at 2.5s > 2s)
+        testDispatcher.scheduler.advanceTimeBy(1000)
         
         assertEquals(1, events.size)
         assertTrue(events[0] is ReaderEvent.Error)
@@ -300,5 +300,107 @@ class ReaderManagerTest {
         verify(transport).disconnect()
         
         job.cancel()
+    }
+
+    @Test
+    fun `Known devices should persist as offline at cycle end`() = testScope.runTest {
+        // Setup a known device
+        whenever(secureStoreManager.hasPasswordFor("KnownDevice")).thenReturn(true)
+        
+        tIsScanning.value = true
+        advanceUntilIdle()
+
+        // Discover it
+        val mockDevice: android.bluetooth.BluetoothDevice = mock()
+        whenever(mockDevice.address).thenReturn("A1")
+        val mockRecord: ScanRecord = mock()
+        whenever(mockRecord.deviceName).thenReturn("KnownDevice")
+        val scanResult: ScanResult = mock()
+        whenever(scanResult.device).thenReturn(mockDevice)
+        whenever(scanResult.scanRecord).thenReturn(mockRecord)
+        tDiscoveredDevices.emit(scanResult)
+        advanceUntilIdle()
+        
+        // End scan cycle. It was seen, so it's still nearby.
+        tIsScanning.value = false
+        advanceUntilIdle()
+        assertTrue(readerManager.discoveredDevices.value[0].isNearby)
+        
+        // Start and end another cycle without seeing it
+        tIsScanningToTrueAndBackToFalse()
+        
+        val list = readerManager.discoveredDevices.value
+        assertEquals(1, list.size)
+        assertEquals("KnownDevice", list[0].name)
+        assertFalse(list[0].isNearby) // Should be offline but persisted
+    }
+
+    @Test
+    fun `Non-known devices should be removed at cycle end if not seen`() = testScope.runTest {
+        // Setup a non-known device
+        whenever(secureStoreManager.hasPasswordFor("UnknownDevice")).thenReturn(false)
+        
+        tIsScanning.value = true
+        advanceUntilIdle()
+
+        // Discover it
+        val mockDevice: android.bluetooth.BluetoothDevice = mock()
+        whenever(mockDevice.address).thenReturn("A2")
+        val mockRecord: ScanRecord = mock()
+        whenever(mockRecord.deviceName).thenReturn("UnknownDevice")
+        val scanResult: ScanResult = mock()
+        whenever(scanResult.device).thenReturn(mockDevice)
+        whenever(scanResult.scanRecord).thenReturn(mockRecord)
+        tDiscoveredDevices.emit(scanResult)
+        advanceUntilIdle()
+        
+        assertEquals(1, readerManager.discoveredDevices.value.size)
+
+        // End scan cycle. Since it's not seen in a "new" cycle (we just started/stopped)
+        // Actually, the current implementation:
+        // 1. Scanning = true -> _emittedInCurrentCycle adds address
+        // 2. Scanning = false -> pruneDiscoveryMap(isCycleEnd = true)
+        // At step 2, _emittedInCurrentCycle HAS the address.
+        // To test "not seen", we need TWO cycles.
+        
+        tIsScanning.value = false
+        advanceUntilIdle()
+        tIsScanningToTrueAndBackToFalse()
+        
+        assertTrue(readerManager.discoveredDevices.value.isEmpty())
+    }
+
+    private fun TestScope.tIsScanningToTrueAndBackToFalse() {
+        tIsScanning.value = true
+        advanceUntilIdle()
+        tIsScanning.value = false
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `Disconnected active device should remain sticky nearby until next cycle`() = testScope.runTest {
+        whenever(secureStoreManager.deviceName).thenReturn("Target")
+        whenever(secureStoreManager.getAuthPasswordFor("Target")).thenReturn("pass")
+        
+        // 1. Connect a device
+        readerManager.startConnecting("Target", "pass", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        
+        // 2. Disconnect it
+        readerManager.disconnect()
+        advanceUntilIdle()
+        
+        // Verify it's still in the list and isNearby = true
+        val list = readerManager.discoveredDevices.value
+        val device = list.find { it.address == "AA:BB:CC:DD:EE:FF" }
+        assertNotNull(device)
+        assertTrue(device!!.isNearby)
+        
+        // 3. Complete a scan cycle without seeing it
+        // If it's not known, it should be gone. 
+        whenever(secureStoreManager.hasPasswordFor("Target")).thenReturn(false)
+        tIsScanningToTrueAndBackToFalse() 
+        
+        assertTrue(readerManager.discoveredDevices.value.isEmpty())
     }
 }

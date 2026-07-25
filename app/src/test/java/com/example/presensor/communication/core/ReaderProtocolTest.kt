@@ -132,17 +132,19 @@ class ReaderProtocolTest {
     }
 
     @Test
-    fun `processData should emit Metrics on INFO payload in INVENTORY channel`() = runBlocking {
+    fun `processData should ignore INFO payload in INVENTORY channel (legacy)`() = runBlocking {
         val payload = "INFO,1624612345,85".toByteArray()
+        val events = mutableListOf<ProtocolEvent>()
         val job = launch {
-            protocol.processData(payload, TransportChannel.INVENTORY)
+            protocol.domainEvents.toList(events)
         }
-        val event = withTimeout(1000) { protocol.domainEvents.first() }
-        assertTrue(event is ProtocolEvent.Metrics)
-        val metrics = event as ProtocolEvent.Metrics
-        assertEquals(1624612345L, metrics.timestamp)
-        assertEquals(85, metrics.batteryLevel)
-        job.join()
+        
+        protocol.processData(payload, TransportChannel.INVENTORY)
+        kotlinx.coroutines.delay(100)
+        
+        // Metrics event should NOT be emitted from INVENTORY channel anymore
+        assertTrue(events.none { it is ProtocolEvent.Metrics })
+        job.cancel()
     }
 
     @Test
@@ -152,6 +154,34 @@ class ReaderProtocolTest {
         }
         val event = withTimeout(1000) { protocol.domainEvents.first() }
         assertTrue(event is ProtocolEvent.DeletionSuccess)
+        job.join()
+    }
+
+    @Test
+    fun `processData should emit Metrics on STATUS channel`() = runBlocking {
+        val payload = "1624612345,90".toByteArray()
+        val job = launch {
+            protocol.processData(payload, TransportChannel.STATUS)
+        }
+        val event = withTimeout(1000) { protocol.domainEvents.first() }
+        assertTrue(event is ProtocolEvent.Metrics)
+        val metrics = event as ProtocolEvent.Metrics
+        assertEquals(1624612345L, metrics.timestamp)
+        assertEquals(90, metrics.batteryLevel)
+        job.join()
+    }
+
+    @Test
+    fun `processData should emit InventoryItem on INVENTORY channel`() = runBlocking {
+        val payload = "TAG_ID,1624612345".toByteArray()
+        val job = launch {
+            protocol.processData(payload, TransportChannel.INVENTORY)
+        }
+        val event = withTimeout(1000) { protocol.domainEvents.first() }
+        assertTrue(event is ProtocolEvent.InventoryItem)
+        val item = event as ProtocolEvent.InventoryItem
+        assertEquals("TAG_ID", item.tagId)
+        assertEquals(1624612345L, item.timestamp)
         job.join()
     }
 

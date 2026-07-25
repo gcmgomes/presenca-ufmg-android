@@ -103,7 +103,6 @@ class ReaderProtocol {
         when {
             payload == "DEL_OK" -> _domainEvents.emit(ProtocolEvent.DeletionSuccess)
             payload == "DEL_ERR" -> _domainEvents.emit(ProtocolEvent.DeletionError)
-            payload.startsWith("INFO,") -> handleMetricsPayload(payload)
             else -> handleRfidPayload(payload, isInventory = true)
         }
     }
@@ -120,24 +119,6 @@ class ReaderProtocol {
             }
         } else {
             Log.w(TAG, "[Protocol Warning] Malformed status payload (expected 2 parts): '$payload'")
-        }
-    }
-
-    private suspend fun handleMetricsPayload(payload: String) {
-        val parts = payload.split(",")
-        if (parts.size == 3) {
-            try {
-                val epoch = parts[1].trim().toLong()
-                val battery = parts[2].trim().toInt()
-                _domainEvents.emit(ProtocolEvent.Metrics(epoch, battery))
-            } catch (e: Exception) {
-                Log.e(TAG, "[Protocol Error] Failed to parse metrics payload: '$payload'", e)
-            }
-        } else {
-            Log.w(
-                TAG,
-                "[Protocol Warning] Malformed metrics payload (expected 3 parts): '$payload'"
-            )
         }
     }
 
