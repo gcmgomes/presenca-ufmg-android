@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class ReaderManagerTest {
+class ReaderOrchestratorTest {
 
     private val secureStoreManager: SecureStoreManager = mock()
     private val transport: ReaderTransport = mock()
@@ -42,7 +42,7 @@ class ReaderManagerTest {
     private val pIsAuthenticated = MutableStateFlow(false)
     private val pDomainEvents = MutableSharedFlow<ProtocolEvent>(replay = 1)
 
-    private lateinit var readerManager: ReaderManager
+    private lateinit var readerOrchestrator: ReaderOrchestrator
 
     @Before
     fun setup() {
@@ -56,7 +56,7 @@ class ReaderManagerTest {
         whenever(protocol.isAuthenticated).thenReturn(pIsAuthenticated)
         whenever(protocol.domainEvents).thenReturn(pDomainEvents)
 
-        readerManager = ReaderManager(
+        readerOrchestrator = ReaderOrchestrator(
             secureStoreManager = secureStoreManager,
             transport = transport,
             protocol = protocol,
@@ -71,24 +71,28 @@ class ReaderManagerTest {
     }
 
     @Test
-    fun `connectionState should map Transport READY and Auth true to CONNECTED`() = testScope.runTest {
-        tConnectionState.value = TransportConnectionState.READY
-        pIsAuthenticated.value = true
-        advanceUntilIdle()
-        
-        assertEquals(ReaderManager.ConnectionState.CONNECTED, readerManager.connectionState.value)
-    }
+    fun `connectionState should map Transport READY and Auth true to CONNECTED`() =
+        testScope.runTest {
+            tConnectionState.value = TransportConnectionState.READY
+            pIsAuthenticated.value = true
+            advanceUntilIdle()
+
+            assertEquals(
+                ReaderOrchestrator.ConnectionState.CONNECTED,
+                readerOrchestrator.connectionState.value
+            )
+        }
 
     @Test
     fun `rfidSwipeFlow should emit when protocol emits RfidSwipe`() = testScope.runTest {
         val results = mutableListOf<Pair<String, Long>>()
         val job = launch {
-            readerManager.rfidSwipeFlow.collect { results.add(it) }
+            readerOrchestrator.rfidSwipeFlow.collect { results.add(it) }
         }
 
         pDomainEvents.emit(ProtocolEvent.RfidSwipe("TAG123", 12345L))
         advanceUntilIdle()
-        
+
         assertEquals(1, results.size)
         assertEquals("TAG123", results[0].first)
         assertEquals(12345L, results[0].second)
@@ -96,86 +100,88 @@ class ReaderManagerTest {
     }
 
     @Test
-    fun `discoveredDevices match should trigger transport connect in targeted mode`() = testScope.runTest {
-        whenever(secureStoreManager.deviceName).thenReturn("TargetReader")
-        readerManager.isBroadDiscoveryMode = false
-        
-        val mockDevice: android.bluetooth.BluetoothDevice = mock()
-        whenever(mockDevice.address).thenReturn("00:11:22")
-        val mockRecord: ScanRecord = mock()
-        whenever(mockRecord.deviceName).thenReturn("TargetReader")
-        
-        val scanResult: ScanResult = mock()
-        whenever(scanResult.device).thenReturn(mockDevice)
-        whenever(scanResult.scanRecord).thenReturn(mockRecord)
-        
-        tDiscoveredDevices.emit(scanResult)
-        advanceUntilIdle()
-        
-        verify(transport).connect("00:11:22")
-        verify(transport).stopScan()
-    }
+    fun `discoveredDevices match should trigger transport connect in targeted mode`() =
+        testScope.runTest {
+            whenever(secureStoreManager.deviceName).thenReturn("TargetReader")
+            readerOrchestrator.isBroadDiscoveryMode = false
+
+            val mockDevice: android.bluetooth.BluetoothDevice = mock()
+            whenever(mockDevice.address).thenReturn("00:11:22")
+            val mockRecord: ScanRecord = mock()
+            whenever(mockRecord.deviceName).thenReturn("TargetReader")
+
+            val scanResult: ScanResult = mock()
+            whenever(scanResult.device).thenReturn(mockDevice)
+            whenever(scanResult.scanRecord).thenReturn(mockRecord)
+
+            tDiscoveredDevices.emit(scanResult)
+            advanceUntilIdle()
+
+            verify(transport).connect("00:11:22")
+            verify(transport).stopScan()
+        }
 
     @Test
-    fun `handleProtocolEvent AckRequired should write ACK command to transport`() = testScope.runTest {
-        val mockAckData = "ACK_BYTES".toByteArray()
-        whenever(protocol.formatAckCommand(any(), any())).thenReturn(mockAckData)
-        
-        pDomainEvents.emit(ProtocolEvent.AckRequired("TAG1", "123"))
-        advanceUntilIdle()
-        
-        verify(protocol).formatAckCommand("TAG1", "123")
-        verify(transport).write(eq(mockAckData), eq(TransportChannel.ACK))
-    }
+    fun `handleProtocolEvent AckRequired should write ACK command to transport`() =
+        testScope.runTest {
+            val mockAckData = "ACK_BYTES".toByteArray()
+            whenever(protocol.formatAckCommand(any(), any())).thenReturn(mockAckData)
+
+            pDomainEvents.emit(ProtocolEvent.AckRequired("TAG1", "123"))
+            advanceUntilIdle()
+
+            verify(protocol).formatAckCommand("TAG1", "123")
+            verify(transport).write(eq(mockAckData), eq(TransportChannel.ACK))
+        }
 
     @Test
     fun `setAppMode should write formatted command to transport`() = testScope.runTest {
         val mockData = "MODE_BYTES".toByteArray()
         whenever(protocol.formatAppModeCommand(any())).thenReturn(mockData)
-        
-        readerManager.setAppMode(AppMode.MANAGEMENT, "Test")
+
+        readerOrchestrator.setAppMode(AppMode.MANAGEMENT, "Test")
         advanceUntilIdle()
-        
+
         verify(protocol).formatAppModeCommand(AppMode.MANAGEMENT)
         verify(transport).write(eq(mockData), eq(TransportChannel.MODE))
     }
 
     @Test
     fun `disconnect should reset state and stop scanning`() = testScope.runTest {
-        readerManager.disconnect()
+        readerOrchestrator.disconnect()
         advanceUntilIdle()
-        
+
         verify(protocol).resetAuth()
         verify(transport).stopScan()
         verify(transport).disconnect()
-        assertTrue(readerManager.isBroadDiscoveryMode)
+        assertTrue(readerOrchestrator.isBroadDiscoveryMode)
     }
 
     @Test
     fun `setReaderEnabled false should disconnect transport`() = testScope.runTest {
-        readerManager.setReaderEnabled(false)
+        readerOrchestrator.setReaderEnabled(false)
         advanceUntilIdle()
-        
+
         verify(transport).disconnect()
         verify(secureStoreManager).isReaderEnabled = false
-        assertFalse(readerManager.isReaderEnabled.value)
+        assertFalse(readerOrchestrator.isReaderEnabled.value)
     }
 
     @Test
     fun `discovery should be ignored when reader is disabled`() = testScope.runTest {
-        readerManager.setReaderEnabled(false)
+        readerOrchestrator.setReaderEnabled(false)
         advanceUntilIdle()
-        
+
         val scanResult: ScanResult = mock()
         tDiscoveredDevices.emit(scanResult)
         advanceUntilIdle()
-        
+
         // Should not trigger auto-connect logic even if it matches
         verify(secureStoreManager, never()).deviceName
         verify(transport, never()).connect(any())
 
         // Discovered devices list should be empty
-        assertEquals(0, readerManager.discoveredDevices.value.size)
+        assertEquals(0, readerOrchestrator.discoveredDevices.value.size)
     }
 
     @Test
@@ -184,16 +190,16 @@ class ReaderManagerTest {
         whenever(mockDevice.address).thenReturn("AA:BB:CC")
         val mockRecord: ScanRecord = mock()
         whenever(mockRecord.deviceName).thenReturn("TestDevice")
-        
+
         val scanResult: ScanResult = mock()
         whenever(scanResult.device).thenReturn(mockDevice)
         whenever(scanResult.scanRecord).thenReturn(mockRecord)
         whenever(scanResult.rssi).thenReturn(-50)
-        
+
         tDiscoveredDevices.emit(scanResult)
         advanceUntilIdle()
-        
-        val list = readerManager.discoveredDevices.value
+
+        val list = readerOrchestrator.discoveredDevices.value
         assertEquals(1, list.size)
         assertEquals("TestDevice", list[0].name)
         assertEquals("AA:BB:CC", list[0].address)
@@ -204,7 +210,7 @@ class ReaderManagerTest {
     fun `discoveredDevices flow should update on first-hit per cycle`() = testScope.runTest {
         val results = mutableListOf<List<ReaderDevice>>()
         val job = launch {
-            readerManager.discoveredDevices.collect { results.add(it) }
+            readerOrchestrator.discoveredDevices.collect { results.add(it) }
         }
         advanceUntilIdle() // Initial empty emission (results[0])
 
@@ -245,10 +251,10 @@ class ReaderManagerTest {
         // Stop scan -> Should trigger final snapshot (picking up the -40 RSSI for D1)
         tIsScanning.value = false
         advanceUntilIdle()
-        
-        assertEquals(4, results.size) 
+
+        assertEquals(4, results.size)
         assertEquals(-40, results[3].find { it.address == "A1" }?.rssi)
-        
+
         job.cancel()
     }
 
@@ -256,7 +262,7 @@ class ReaderManagerTest {
     fun `The Reaper should prune devices after 3 seconds in snapshot`() = testScope.runTest {
         tIsScanning.value = true
         advanceUntilIdle()
-        
+
         val mockDevice: android.bluetooth.BluetoothDevice = mock()
         whenever(mockDevice.address).thenReturn("A1")
         val mockRecord: ScanRecord = mock()
@@ -264,49 +270,50 @@ class ReaderManagerTest {
         val scanResult: ScanResult = mock()
         whenever(scanResult.device).thenReturn(mockDevice)
         whenever(scanResult.scanRecord).thenReturn(mockRecord)
-        
+
         tDiscoveredDevices.emit(scanResult)
-        
+
         testDispatcher.scheduler.advanceTimeBy(4000) // Device is now stale (> 3s)
-        
+
         tIsScanning.value = false // Trigger snapshot
         advanceUntilIdle()
-        
-        assertTrue(readerManager.discoveredDevices.value.isEmpty()) // Should be pruned in the snapshot
+
+        assertTrue(readerOrchestrator.discoveredDevices.value.isEmpty()) // Should be pruned in the snapshot
     }
 
     @Test
-    fun `startConnecting should time out after 2 seconds for manual attempts`() = testScope.runTest {
-        val events = mutableListOf<ReaderEvent>()
-        val job = launch {
-            readerManager.eventFlow.collect { events.add(it) }
+    fun `startConnecting should time out after 2 seconds for manual attempts`() =
+        testScope.runTest {
+            val events = mutableListOf<ReaderEvent>()
+            val job = launch {
+                readerOrchestrator.eventFlow.collect { events.add(it) }
+            }
+
+            // Use isManual = true to trigger the 2s timeout
+            readerOrchestrator.startConnecting("Test", "pass", "AA:BB:CC:DD:EE:FF", isManual = true)
+
+            // Advance 1.5 seconds -> No timeout yet
+            testDispatcher.scheduler.advanceTimeBy(1500)
+            assertTrue(events.isEmpty())
+
+            // Advance 1 more second -> Should time out (at 2.5s > 2s)
+            testDispatcher.scheduler.advanceTimeBy(1000)
+
+            assertEquals(1, events.size)
+            assertTrue(events[0] is ReaderEvent.Error)
+            assertEquals(ReaderOrchestrator.ERROR_TIMEOUT, (events[0] as ReaderEvent.Error).message)
+
+            // Should have disconnected
+            verify(transport).disconnect()
+
+            job.cancel()
         }
-
-        // Use isManual = true to trigger the 2s timeout
-        readerManager.startConnecting("Test", "pass", "AA:BB:CC:DD:EE:FF", isManual = true)
-        
-        // Advance 1.5 seconds -> No timeout yet
-        testDispatcher.scheduler.advanceTimeBy(1500)
-        assertTrue(events.isEmpty())
-
-        // Advance 1 more second -> Should time out (at 2.5s > 2s)
-        testDispatcher.scheduler.advanceTimeBy(1000)
-        
-        assertEquals(1, events.size)
-        assertTrue(events[0] is ReaderEvent.Error)
-        assertEquals(ReaderManager.ERROR_TIMEOUT, (events[0] as ReaderEvent.Error).message)
-        
-        // Should have disconnected
-        verify(transport).disconnect()
-        
-        job.cancel()
-    }
 
     @Test
     fun `Known devices should persist as offline at cycle end`() = testScope.runTest {
         // Setup a known device
         whenever(secureStoreManager.hasPasswordFor("KnownDevice")).thenReturn(true)
-        
+
         tIsScanning.value = true
         advanceUntilIdle()
 
@@ -320,16 +327,16 @@ class ReaderManagerTest {
         whenever(scanResult.scanRecord).thenReturn(mockRecord)
         tDiscoveredDevices.emit(scanResult)
         advanceUntilIdle()
-        
+
         // End scan cycle. It was seen, so it's still nearby.
         tIsScanning.value = false
         advanceUntilIdle()
-        assertTrue(readerManager.discoveredDevices.value[0].isNearby)
-        
+        assertTrue(readerOrchestrator.discoveredDevices.value[0].isNearby)
+
         // Start and end another cycle without seeing it
         tIsScanningToTrueAndBackToFalse()
-        
-        val list = readerManager.discoveredDevices.value
+
+        val list = readerOrchestrator.discoveredDevices.value
         assertEquals(1, list.size)
         assertEquals("KnownDevice", list[0].name)
         assertFalse(list[0].isNearby) // Should be offline but persisted
@@ -339,7 +346,7 @@ class ReaderManagerTest {
     fun `Non-known devices should be removed at cycle end if not seen`() = testScope.runTest {
         // Setup a non-known device
         whenever(secureStoreManager.hasPasswordFor("UnknownDevice")).thenReturn(false)
-        
+
         tIsScanning.value = true
         advanceUntilIdle()
 
@@ -353,8 +360,8 @@ class ReaderManagerTest {
         whenever(scanResult.scanRecord).thenReturn(mockRecord)
         tDiscoveredDevices.emit(scanResult)
         advanceUntilIdle()
-        
-        assertEquals(1, readerManager.discoveredDevices.value.size)
+
+        assertEquals(1, readerOrchestrator.discoveredDevices.value.size)
 
         // End scan cycle. Since it's not seen in a "new" cycle (we just started/stopped)
         // Actually, the current implementation:
@@ -362,12 +369,12 @@ class ReaderManagerTest {
         // 2. Scanning = false -> pruneDiscoveryMap(isCycleEnd = true)
         // At step 2, _emittedInCurrentCycle HAS the address.
         // To test "not seen", we need TWO cycles.
-        
+
         tIsScanning.value = false
         advanceUntilIdle()
         tIsScanningToTrueAndBackToFalse()
-        
-        assertTrue(readerManager.discoveredDevices.value.isEmpty())
+
+        assertTrue(readerOrchestrator.discoveredDevices.value.isEmpty())
     }
 
     private fun TestScope.tIsScanningToTrueAndBackToFalse() {
@@ -378,29 +385,101 @@ class ReaderManagerTest {
     }
 
     @Test
-    fun `Disconnected active device should remain sticky nearby until next cycle`() = testScope.runTest {
-        whenever(secureStoreManager.deviceName).thenReturn("Target")
-        whenever(secureStoreManager.getAuthPasswordFor("Target")).thenReturn("pass")
+    fun `Disconnected active device should remain sticky nearby until next cycle`() =
+        testScope.runTest {
+            whenever(secureStoreManager.deviceName).thenReturn("Target")
+            whenever(secureStoreManager.getAuthPasswordFor("Target")).thenReturn("pass")
+
+            // 1. Connect a device
+            readerOrchestrator.startConnecting("Target", "pass", "AA:BB:CC:DD:EE:FF")
+            advanceUntilIdle()
+
+            // 2. Disconnect it
+            readerOrchestrator.disconnect()
+            advanceUntilIdle()
+
+            // Verify it's still in the list and isNearby = true
+            val list = readerOrchestrator.discoveredDevices.value
+            val device = list.find { it.address == "AA:BB:CC:DD:EE:FF" }
+            assertNotNull(device)
+            assertTrue(device!!.isNearby)
+
+            // 3. Complete a scan cycle without seeing it
+            // If it's not known, it should be gone.
+            whenever(secureStoreManager.hasPasswordFor("Target")).thenReturn(false)
+            tIsScanningToTrueAndBackToFalse()
+
+            assertTrue(readerOrchestrator.discoveredDevices.value.isEmpty())
+        }
+
+    @Test
+    fun `rebootReader should manage blackout window and trigger targeted scan`() = testScope.runTest {
+        val name = "NewName"
+        val pass = "NewPass"
+        val addr = "00:11:22:33:44:55"
         
-        // 1. Connect a device
-        readerManager.startConnecting("Target", "pass", "AA:BB:CC:DD:EE:FF")
+        readerOrchestrator.rebootReader(name, pass, addr)
         advanceUntilIdle()
         
-        // 2. Disconnect it
-        readerManager.disconnect()
+        // 1. Immediately disconnects
+        verify(transport).disconnect()
+        assertTrue(readerOrchestrator.isRebooting.value)
+        assertEquals(ReaderOrchestrator.ConnectionState.DISCONNECTED, readerOrchestrator.connectionState.value)
+        
+        // 2. Blackout window (wait 7s)
+        testDispatcher.scheduler.advanceTimeBy(7500)
         advanceUntilIdle()
         
-        // Verify it's still in the list and isNearby = true
-        val list = readerManager.discoveredDevices.value
-        val device = list.find { it.address == "AA:BB:CC:DD:EE:FF" }
-        assertNotNull(device)
-        assertTrue(device!!.isNearby)
+        // 3. Re-initiates via scan (address = null)
+        assertFalse(readerOrchestrator.isRebooting.value)
+        verify(transport).startScan(any())
+    }
+
+    @Test
+    fun `disconnect should set intentional flag and skip orange state`() = testScope.runTest {
+        // Setup a ready state
+        tConnectionState.value = TransportConnectionState.READY
+        pIsAuthenticated.value = true
+        advanceUntilIdle()
+        assertEquals(ReaderOrchestrator.ConnectionState.CONNECTED, readerOrchestrator.connectionState.value)
         
-        // 3. Complete a scan cycle without seeing it
-        // If it's not known, it should be gone. 
-        whenever(secureStoreManager.hasPasswordFor("Target")).thenReturn(false)
-        tIsScanningToTrueAndBackToFalse() 
+        // Initiate intentional disconnect
+        readerOrchestrator.disconnect()
+        advanceUntilIdle()
         
-        assertTrue(readerManager.discoveredDevices.value.isEmpty())
+        assertTrue(readerOrchestrator.isIntentionalDisconnect.value)
+        
+        // Simulate auth dropping before radio (the flicker trigger)
+        pIsAuthenticated.value = false
+        advanceUntilIdle()
+        
+        // State should STAY disconnected, not go to CONNECTING
+        assertEquals(ReaderOrchestrator.ConnectionState.DISCONNECTED, readerOrchestrator.connectionState.value)
+    }
+
+    @Test
+    fun `manual connection timeout should be resilient to link fluctuations`() = testScope.runTest {
+        val events = mutableListOf<ReaderEvent>()
+        val job = launch { readerOrchestrator.eventFlow.collect { events.add(it) } }
+        
+        readerOrchestrator.startConnecting("Target", "pass", "00:11:22:33:44:55", isManual = true)
+        advanceUntilIdle()
+        
+        // Simulate a momentary link drop during handshake
+        tConnectionState.value = TransportConnectionState.DISCONNECTED
+        advanceUntilIdle()
+        
+        // In manual mode, it should NOT cancel the timer immediately on drop
+        testDispatcher.scheduler.advanceTimeBy(5000)
+        assertTrue(events.isEmpty()) // Still waiting
+        
+        // After 10s total it should finally time out
+        testDispatcher.scheduler.advanceTimeBy(6000)
+        advanceUntilIdle()
+        
+        assertEquals(1, events.size)
+        assertTrue(events[0] is ReaderEvent.Error)
+        
+        job.cancel()
     }
 }

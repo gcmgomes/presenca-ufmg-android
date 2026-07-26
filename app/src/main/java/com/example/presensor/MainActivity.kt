@@ -6,21 +6,14 @@ import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.AndroidTagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.tools.providers.ToastProvider
 import com.example.presensor.tools.providers.AndroidToastProvider
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.net.Uri
 import android.nfc.NfcAdapter
-import android.nfc.Tag
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
-import android.view.ViewGroup
 import android.widget.*
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,40 +21,23 @@ import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SearchView
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
-import androidx.core.view.isGone
-import androidx.core.widget.addTextChangedListener
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import androidx.room.*
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.*
 
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.data.AppDatabase
-import com.example.presensor.adapters.ImportStudentAdapter
-import com.example.presensor.adapters.ImportPreviewAdapter
-import com.example.presensor.adapters.StudentStatsAdapter
-import com.example.presensor.communication.ReaderManager
+import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.controllers.CloudSyncController
 import com.example.presensor.controllers.DashboardController
 import com.example.presensor.controllers.CourseController
@@ -69,7 +45,6 @@ import com.example.presensor.controllers.DetailedCourseController
 import com.example.presensor.controllers.SessionController
 import com.example.presensor.controllers.TagController
 import com.example.presensor.data.entities.Session
-import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Course
 import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.controllers.ImportStudentController
@@ -77,14 +52,13 @@ import com.example.presensor.services.ReaderStatusService
 import com.example.presensor.tools.providers.AndroidDataProcessorProvider
 import com.example.presensor.tools.providers.AndroidDialogProvider
 import com.example.presensor.tools.providers.AndroidPreviewProvider
-import com.example.presensor.tools.providers.DialogProvider
 import com.example.presensor.tools.providers.LoadingOverlayProvider
-import com.example.presensor.tools.providers.PreviewProvider
 import com.example.presensor.data.SecureStoreManager
-import com.example.presensor.controllers.ReaderConnectivityController
+import com.example.presensor.controllers.ReaderDiscoveryController
+import com.example.presensor.controllers.ReaderManagementController
+import com.example.presensor.controllers.AndroidReaderInteractionProvider
 import com.example.presensor.communication.ble.BleTransport
 import com.example.presensor.communication.core.AppMode
-import com.example.presensor.communication.core.TransportConnectionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
@@ -109,7 +83,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     private lateinit var tagController: TagController
     lateinit var importSessionController: ImportSessionController
     lateinit var importStudentController: ImportStudentController
-    lateinit var readerConnectivityController: ReaderConnectivityController
+    lateinit var readerDiscoveryController: ReaderDiscoveryController
+    lateinit var readerManagementController: ReaderManagementController
 
     lateinit var cloudSyncController: CloudSyncController
 
@@ -128,7 +103,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     private var currentOverlayJob: Job? = null
 
     lateinit var secureStoreManager: SecureStoreManager
-    var readerManager: ReaderManager? = null
+    var readerOrchestrator: ReaderOrchestrator? = null
 
 
     override fun toggleLoadingOverlay(show: Boolean) {
@@ -214,10 +189,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
             // SAFE ZONE: Initialize the channel right before connecting
             initializeReaderStatusChannel()
-            if (readerManager?.isReaderEnabled?.value == true) {
-                readerManager?.startConnecting()
+            if (readerOrchestrator?.isReaderEnabled?.value == true) {
+                readerOrchestrator?.startConnecting()
             }
-            readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
+            readerOrchestrator?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.e("MainActivity", "Permissions denied by user.")
             Toast.makeText(
@@ -251,10 +226,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         if (missingPermissions.isEmpty()) {
             Log.d("MainActivity", "Permissions already granted. Initializing pipeline...")
             initializeReaderStatusChannel()
-            if (readerManager?.isReaderEnabled?.value == true) {
-                readerManager?.startConnecting()
+            if (readerOrchestrator?.isReaderEnabled?.value == true) {
+                readerOrchestrator?.startConnecting()
             }
-            readerManager?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
+            readerOrchestrator?.setAppMode(AppMode.IDLE, "MainActivity Initial Setup")
         } else {
             Log.d("MainActivity", "Requesting missing permissions: $missingPermissions")
             requestPermissionLauncher.launch(missingPermissions.toTypedArray())
@@ -268,7 +243,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     private fun initializeReaderStatusChannel() {
         // 1. Reactive Lifecycle Governance: Service starts/stops based on Manager state
         lifecycleScope.launch {
-            readerManager?.isReaderEnabled?.collect { enabled ->
+            readerOrchestrator?.isReaderEnabled?.collect { enabled ->
                 if (enabled) {
                     Log.i(TAG, "[Lifecycle] Starting ReaderStatusService...")
                     ReaderStatusService.startService(this@MainActivity)
@@ -281,7 +256,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         // 2. Start collecting the states to update the top-left area
         lifecycleScope.launch {
-            readerManager!!.connectionState.collectLatest { state ->
+            readerOrchestrator!!.connectionState.collectLatest { state ->
                 ReaderStatusService.updateStatus(state)
             }
         }
@@ -299,7 +274,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         secureStoreManager = SecureStoreManager(this)
 
         val transport = BleTransport(this, lifecycleScope)
-        readerManager = ReaderManager(
+        readerOrchestrator = ReaderOrchestrator(
             secureStoreManager = secureStoreManager,
             transport = transport,
             scope = lifecycleScope
@@ -409,10 +384,20 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
 
-        readerConnectivityController = ReaderConnectivityController(
+        val readerInteractionProvider = AndroidReaderInteractionProvider(this, secureStoreManager)
+        
+        readerDiscoveryController = ReaderDiscoveryController(
+            activity = this,
+            secureStoreManager = secureStoreManager,
+            interactionProvider = readerInteractionProvider,
+            scope = lifecycleScope
+        )
+
+        readerManagementController = ReaderManagementController(
             activity = this,
             db = db,
             secureStoreManager = secureStoreManager,
+            interactionProvider = readerInteractionProvider,
             scope = lifecycleScope
         )
 
@@ -443,7 +428,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             },
             dialogFactory = sessionDialogFactory,
             toastProvider = AndroidToastProvider(this),
-            onPulldown = { readerManager?.requestBacklogSync() }
+            onPulldown = { readerOrchestrator?.requestBacklogSync() }
         )
 
         // Initialize Tag Controller
@@ -451,7 +436,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             activity = this,
             db = db,
             scope = lifecycleScope,
-            readerManager = readerManager,
+            readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
             sessionDialogFactory = sessionDialogFactory,
             tagControllerDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
@@ -471,7 +456,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             db = db,
             onSessionSelected = { session ->
                 openSessionView(session)
-                readerManager?.setAppMode(
+                readerOrchestrator?.setAppMode(
                     AppMode.ACTIVE,
                     "MainActivity Session Selection"
                 )
@@ -520,7 +505,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
                 when (currentState) {
                     AppState.SESSION -> {
-                        readerManager?.setAppMode(
+                        readerOrchestrator?.setAppMode(
                             AppMode.IDLE,
                             "MainActivity back button from session"
                         )
@@ -545,14 +530,14 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                     }
 
                     AppState.READER_MANAGEMENT -> {
-                        readerConnectivityController.teardownDiscovery()
+                        readerDiscoveryController.teardownDiscovery()
                         currentState = AppState.DASHBOARD
                         toggleAllViews(layoutDashboardView = true)
                         dashboardController.refreshDashboard()
                     }
 
                     AppState.DEVICE_MANAGER -> {
-                        readerConnectivityController.teardownView()
+                        readerManagementController.teardownView()
                         currentState = AppState.READER_MANAGEMENT
                         toggleAllViews(layoutReaderManagementView = true)
                     }
@@ -572,7 +557,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     fun openReaderManagement() {
         currentState = AppState.READER_MANAGEMENT
         toggleAllViews(layoutReaderManagementView = true)
-        readerConnectivityController.setupReaderList(findViewById<View>(R.id.layoutReaderManagementView))
+        readerDiscoveryController.setupReaderList(findViewById<View>(R.id.layoutReaderManagementView))
     }
 
     fun openDeviceManager(address: String? = null) {
@@ -589,7 +574,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 "MainActivity",
                 "[UI Flow] layoutDeviceManagerView found. ID: ${managerView.id}. Initializing controller..."
             )
-            readerConnectivityController.setupReaderManagementView(managerView, address)
+            readerManagementController.setupReaderManagementView(managerView, address)
         } else {
             android.util.Log.e(
                 "MainActivity",
@@ -709,7 +694,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
     override fun onDestroy() {
         super.onDestroy()
-        readerManager?.disconnect()
+        readerOrchestrator?.disconnect()
     }
 
 }

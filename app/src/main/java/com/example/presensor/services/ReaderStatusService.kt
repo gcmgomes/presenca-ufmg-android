@@ -7,7 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.presensor.R
-import com.example.presensor.communication.ReaderManager.ConnectionState
+import com.example.presensor.communication.ReaderOrchestrator.ConnectionState
 
 class ReaderStatusService : Service() {
 

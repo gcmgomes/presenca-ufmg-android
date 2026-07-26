@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
-import com.example.presensor.communication.ReaderManager
+import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.communication.core.AppMode
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
@@ -25,7 +25,7 @@ class TagController(
     private val activity: AppCompatActivity,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
-    private val readerManager: ReaderManager?,
+    private val readerOrchestrator: ReaderOrchestrator?,
     private val sessionController: SessionController,
     private val sessionDialogFactory: SessionControllerDialogFactory,
     private val tagControllerDialogFactory: TagControllerDialogFactory,
@@ -59,7 +59,7 @@ class TagController(
     }
 
     fun resumeReader() {
-        readerManager?.setAppMode(AppMode.ACTIVE, "TagController Resume")
+        readerOrchestrator?.setAppMode(AppMode.ACTIVE, "TagController Resume")
     }
 
     override fun onTagDiscovered(tag: Tag) {
@@ -91,7 +91,7 @@ class TagController(
             )
 
             try {
-                readerManager?.rfidSwipeFlow?.collect { (rawRfid, espTime) ->
+                readerOrchestrator?.rfidSwipeFlow?.collect { (rawRfid, espTime) ->
                     if (rawRfid == "SYNC_DONE") {
                         withContext(mainDispatcher) {
                             // Turn off the spinner on your layout!

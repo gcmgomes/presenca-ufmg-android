@@ -15,7 +15,7 @@ sealed class ReaderEvent {
 }
 
 @OptIn(FlowPreview::class)
-class ReaderManager(
+class ReaderOrchestrator(
     private val secureStoreManager: SecureStoreManager,
     private val transport: ReaderTransport,
     private val protocol: ReaderProtocol = ReaderProtocol(),
@@ -62,6 +62,7 @@ class ReaderManager(
     val isRebooting: StateFlow<Boolean> = _isRebooting
 
     private val _isIntentionalDisconnect = MutableStateFlow(false)
+
     // Exposed as public for debugging or UI state checks if needed
     val isIntentionalDisconnect: StateFlow<Boolean> = _isIntentionalDisconnect
 
@@ -217,7 +218,10 @@ class ReaderManager(
                     if (advertisedName == targetName) {
                         // --- STABILIZATION: Ignore if currently rebooting ---
                         if (_isRebooting.value) {
-                            Log.d(TAG, "[Discovery] Match found for $targetName but device is REBOOTING. Ignoring.")
+                            Log.d(
+                                TAG,
+                                "[Discovery] Match found for $targetName but device is REBOOTING. Ignoring."
+                            )
                             return@collect
                         }
                         Log.i(TAG, "[Orchestrator] Match found for $targetName. Connecting...")
@@ -445,7 +449,8 @@ class ReaderManager(
         connectionTimeoutJob?.cancel()
         connectionTimeoutJob = scope.launch {
             var activeTimeMs = 0L
-            val limitMs = if (isManual) 10000L else 5000L // Manual attempts get 10s to account for reboots/discovery
+            val limitMs =
+                if (isManual) 10000L else 5000L // Manual attempts get 10s to account for reboots/discovery
 
             while (activeTimeMs < limitMs) {
                 delay(500)
@@ -572,17 +577,17 @@ class ReaderManager(
         Log.i(TAG, "[Orchestrator] Initiating Reboot & Reconnect sequence for $address")
         scope.launch {
             _isRebooting.value = true
-            
+
             // 1. Force immediate disconnect
             disconnect(disableAutoReconnect = true)
-            
+
             // 2. Wait for ESP32 to restart (Increased to 7s for safety)
             delay(7000)
-            
+
             // 3. Clear rebooting flag and attempt reconnect
             _isRebooting.value = false
             Log.i(TAG, "[Orchestrator] Reboot delay finished. Attempting reconnection via scan...")
-            
+
             // We pass null for address to force a targeted scan. 
             // This is more reliable than connectGatt() on a device that might still be initializing its BLE stack.
             startConnecting(newName, newPass, null, isManual = true)
