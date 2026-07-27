@@ -8,35 +8,48 @@
     android:padding="20dp">
 
     <TextView
-        android:id="@+id/txtImportStudentTitle"
+        android:id="@+id/txtPreviewTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/dialog_import_students"
         android:textSize="20sp"
         android:textStyle="bold"
         android:textColor="?android:attr/textColorPrimary" />
 
     <TextView
-        android:id="@+id/txtImportStudentCount"
+        android:id="@+id/txtPreviewHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
-        android:text="@string/dialog_import_students_hint"
         android:textColor="?attr/descriptiveTextColor"
         android:textSize="14sp" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvImportStudentPreview"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="320dp"
-        android:background="#08000000" />
+        android:layout_height="wrap_content">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvPreviewList"
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:clipToPadding="false"
+            android:padding="8dp"
+            android:background="#08000000" />
+
+        <ProgressBar
+            android:id="@+id/pbPreviewLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnConfirmStudentImport"
+        android:id="@+id/btnConfirmAction"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:text="@string/dialog_import_students_button_text"
         app:cornerRadius="8dp"
-        android:padding="12dp" />
+        android:padding="12dp"
+        android:textColor="?attr/colorOnPrimary"
+        app:backgroundTint="?attr/colorPrimary" />
 </LinearLayout>

@@ -24,14 +24,14 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
     private val dialogProvider: DialogProvider = mock()
     private val loadingOverlayProvider: LoadingOverlayProvider = mock()
     private val toastProvider: ToastProvider = mock()
-    
+
     private lateinit var controller: ImportStudentController
     private val testScope = TestScope(mainDispatcherRule.testDispatcher)
 
     @Before
     override fun setup() {
         super.setup()
-        
+
         controller = ImportStudentController(
             activity = activity,
             context = activity,
@@ -55,13 +55,22 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(uri)
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(eq(activity), any(), eq(table.headers), any(), any(), any())
+        verify(dialogProvider).showMappingDialog(
+            eq(activity),
+            any(),
+            eq(table.headers),
+            any(),
+            any(),
+            any()
+        )
     }
 
     @Test
     fun importFromLocal_failure_showsToast() = runTest {
         val uri: Uri = mock()
-        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(RuntimeException("Error"))
+        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(
+            RuntimeException("Error")
+        )
 
         controller.importFromLocal(uri)
         advanceUntilIdle()
@@ -74,18 +83,41 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
     fun importFromCloud_success_showsMapping() = runTest {
         val sheets: Sheets = mock()
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        whenever(dataProcessorProvider.ingestFromGoogleSheets(any(), eq(sheets), any(), any(), any())).thenReturn(table)
+        whenever(
+            dataProcessorProvider.ingestFromGoogleSheets(
+                any(),
+                eq(sheets),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(table)
 
         controller.importFromCloud(sheets, "id", "tab")
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(eq(activity), any(), eq(table.headers), any(), any(), any())
+        verify(dialogProvider).showMappingDialog(
+            eq(activity),
+            any(),
+            eq(table.headers),
+            any(),
+            any(),
+            any()
+        )
     }
 
     @Test
     fun importFromCloud_failure_showsToast() = runTest {
         val sheets: Sheets = mock()
-        whenever(dataProcessorProvider.ingestFromGoogleSheets(any(), eq(sheets), any(), any(), any())).thenThrow(RuntimeException("API Error"))
+        whenever(
+            dataProcessorProvider.ingestFromGoogleSheets(
+                any(),
+                eq(sheets),
+                any(),
+                any(),
+                any()
+            )
+        ).thenThrow(RuntimeException("API Error"))
 
         controller.importFromCloud(sheets, "id", "tab")
         advanceUntilIdle()
@@ -106,16 +138,25 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val students = listOf(Student(name = "John", email = "john@example.com"))
         val result = DataProcessor.ImportResult(students, listOf("Parse error"))
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(result)
-        
+        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(
+            result
+        )
+
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        
+
         controller.importFromLocal(mock())
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onConfirmedCaptor.capture()
+        )
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
@@ -126,16 +167,25 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
     fun handleMappingConfirmed_noItems_showsErrorToast() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val result = DataProcessor.ImportResult(emptyList<Student>(), listOf("Critical error"))
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(result)
-        
+        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(
+            result
+        )
+
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        
+
         controller.importFromLocal(mock())
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onConfirmedCaptor.capture()
+        )
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
@@ -147,14 +197,21 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
     fun mappingDialog_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        
+
         val onDismissedCaptor = argumentCaptor<() -> Unit>()
         controller.importFromLocal(mock())
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), onDismissedCaptor.capture(), any())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            onDismissedCaptor.capture(),
+            any()
+        )
         onDismissedCaptor.firstValue.invoke()
-        
+
         verify(loadingOverlayProvider).toggleLoadingOverlay(false)
     }
 
@@ -163,22 +220,36 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val students = listOf(Student(name = "John", email = "john@example.com"))
         val result = DataProcessor.ImportResult(students, emptyList<String>())
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(result)
-        
+        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(
+            result
+        )
+
         val onMappingConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        val onPreviewConfirmCaptor = argumentCaptor<() -> Unit>()
-        
+        val onPreviewConfirmCaptor = argumentCaptor<(List<Student>) -> Unit>()
+
         controller.importFromLocal(mock())
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onMappingConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onMappingConfirmedCaptor.capture()
+        )
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showStudentImportPreview(any(), eq(students), onPreviewConfirmCaptor.capture(), any())
-        onPreviewConfirmCaptor.firstValue.invoke()
+        verify(dialogProvider).showStudentImportPreview(
+            any(),
+            eq(students),
+            onPreviewConfirmCaptor.capture(),
+            any()
+        )
+        onPreviewConfirmCaptor.firstValue.invoke(students)
         advanceUntilIdle()
 
         val saved = db.getAllStudents()
@@ -189,22 +260,39 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
     @Test
     fun preview_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        val result = DataProcessor.ImportResult(listOf(Student(name = "John", email = "john@example.com")), emptyList<String>())
-        
+        val result = DataProcessor.ImportResult(
+            listOf(Student(name = "John", email = "john@example.com")),
+            emptyList<String>()
+        )
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(result)
-        
+        whenever(dataProcessorProvider.parseStudentsFromTable(any(), any(), any())).thenReturn(
+            result
+        )
+
         val onMappingConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
         val onPreviewDismissCaptor = argumentCaptor<() -> Unit>()
-        
+
         controller.importFromLocal(mock())
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onMappingConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onMappingConfirmedCaptor.capture()
+        )
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showStudentImportPreview(any(), any(), any(), onPreviewDismissCaptor.capture())
+        verify(dialogProvider).showStudentImportPreview(
+            any(),
+            any(),
+            any(),
+            onPreviewDismissCaptor.capture()
+        )
         onPreviewDismissCaptor.firstValue.invoke()
         advanceUntilIdle()
 

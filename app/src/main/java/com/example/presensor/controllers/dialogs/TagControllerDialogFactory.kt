@@ -1,6 +1,5 @@
 package com.example.presensor.controllers.dialogs
 
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
@@ -9,8 +8,13 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
+import com.example.presensor.adapters.StudentSearchAdapter
 import com.example.presensor.data.entities.Student
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.button.MaterialButton
 
 interface TagControllerDialogFactory {
     fun showOverwriteConfirmation(
@@ -66,67 +70,56 @@ class AndroidTagControllerDialogFactory(
         if(DialogFactory.isAnyDialogOpen()) return
         val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
         val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
-        val container = dialogView.findViewById<LinearLayout>(R.id.studentListContainer)
-        var bindingDialog: AlertDialog? = null
+        val rvSearch = dialogView.findViewById<RecyclerView>(R.id.rvStudentSearch)
+        val txtTitle = dialogView.findViewById<TextView>(R.id.txtSearchStudentTitle)
+        val txtHint = dialogView.findViewById<TextView>(R.id.txtSearchStudentHint)
+        val btnManual = dialogView.findViewById<MaterialButton>(R.id.btnSecondaryAction)
+        
+        txtTitle.text = activity.getString(R.string.title_assign_tag, newRfid)
+        txtHint.text = activity.getString(R.string.label_tag_id, newRfid)
+        btnManual.visibility = View.VISIBLE
+        
+        var bindingDialog: BottomSheetDialog? = null
+
+        val adapter = StudentSearchAdapter { student ->
+            if (!student.rfid.isNullOrEmpty()) {
+                showReassignConfirmation(student, newRfid) {
+                    onReassignConfirmed(student)
+                    bindingDialog?.dismiss()
+                }
+            } else {
+                onStudentSelected(student)
+                bindingDialog?.dismiss()
+            }
+        }
+        rvSearch.adapter = adapter
+        rvSearch.layoutManager = LinearLayoutManager(activity)
 
         fun refreshList(query: String) {
-            container.removeAllViews()
             val filtered = allStudents.filter {
                 it.name.contains(query, true) || it.email.contains(query, true)
             }
-
-            filtered.forEach { student ->
-                val hasTag = !student.rfid.isNullOrEmpty()
-                val row = TextView(activity).apply {
-                    text = if (hasTag) activity.getString(
-                        R.string.label_student_row_with_tag,
-                        student.name,
-                        student.email,
-                        student.rfid
-                    )
-                    else activity.getString(
-                        R.string.label_student_row_no_tag,
-                        student.name,
-                        student.email
-                    )
-                    textSize = 16f
-                    setPadding(30, 30, 30, 30)
-                    alpha = if (hasTag) 0.6f else 1.0f
-
-                    setOnClickListener {
-                        if (hasTag) {
-                            showReassignConfirmation(student, newRfid) {
-                                onReassignConfirmed(student)
-                                bindingDialog?.dismiss()
-                            }
-                        } else {
-                            onStudentSelected(student)
-                            bindingDialog?.dismiss()
-                        }
-                    }
-                }
-                container.addView(row)
-
-                val line = View(activity).apply {
-                    layoutParams =
-                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-                    setBackgroundColor(Color.LTGRAY)
-                }
-                container.addView(line)
+            adapter.submitList(filtered)
+            
+            if (filtered.isEmpty()) {
+                txtHint.text = activity.getString(R.string.msg_no_students_found)
+            } else {
+                txtHint.text = activity.getString(R.string.label_tag_id, newRfid)
             }
         }
 
         refreshList("")
 
+        bindingDialog = BottomSheetDialog(activity)
+        bindingDialog?.setContentView(dialogView)
+        
+        btnManual.setOnClickListener {
+            bindingDialog?.dismiss()
+            onManualAttendance()
+        }
+
         with(DialogFactory) {
-            bindingDialog = AlertDialog.Builder(activity)
-                .setTitle(activity.getString(R.string.title_assign_tag, newRfid))
-                .setView(dialogView)
-                .setNegativeButton(activity.getString(R.string.action_cancel), null)
-                .setNeutralButton(activity.getString(R.string.title_manual_attendance)) { _, _ ->
-                    onManualAttendance()
-                }
-                .showWithSmartNfcReading()
+            bindingDialog?.showWithSmartNfcReading()
         }
 
         edtSearch.addTextChangedListener { refreshList(it.toString()) }

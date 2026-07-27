@@ -266,7 +266,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     suspend fun getAttendanceRecordsForSession(sid: Long): List<AttendanceRecord> {
         if (useCourseCache && courseCache.sessionIds.contains(sid)) {
-            return courseCache.allAttendance.filter { it.sessionId == sid }
+            return courseCache.allAttendance
+                .filter { it.sessionId == sid }
+                .sortedByDescending { it.timestamp }
         }
         return dao().getAttendanceRecordsForSession(sid)
     }

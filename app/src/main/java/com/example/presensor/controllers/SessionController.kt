@@ -15,10 +15,15 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
+import com.example.presensor.adapters.AttendanceAdapter
+import com.example.presensor.adapters.StudentSearchAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
@@ -44,7 +49,7 @@ class SessionController(
     private val scope: CoroutineScope,
     private val db: AppDatabase,
     private val layoutInflater: LayoutInflater,
-    private val attendanceContainer: LinearLayout,
+    private val rvAttendance: RecyclerView,
     private val swipeRefreshLayout: SwipeRefreshLayout,
     private val txtSessionTitle: TextView,
     private val txtSessionSubtitle: TextView,
@@ -58,11 +63,18 @@ class SessionController(
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onPulldown: () -> Unit,
+    private val onSyncTimeout: (() -> Unit)? = null
 ) {
     var activeSession: Session? = null
         private set
 
     private var syncTimeoutJob: Job? = null
+    internal val attendanceAdapter = AttendanceAdapter()
+
+    init {
+        rvAttendance.layoutManager = LinearLayoutManager(context)
+        rvAttendance.adapter = attendanceAdapter
+    }
 
     fun clearActiveSession() {
         activeSession = null
@@ -82,10 +94,11 @@ class SessionController(
 
         // 2. Start a fresh 10-second timer
         syncTimeoutJob = scope.launch {
-            delay(10000) // 10 seconds of silence allowed
+            delay(5000) // 5 seconds of silence allowed
 
             if (swipeRefreshLayout.isRefreshing) {
                 swipeRefreshLayout.isRefreshing = false
+                onSyncTimeout?.invoke()
                 toastProvider.showToast("Sync timed out. Connection lost.")
                 Log.w("SyncWatchdog", "Inactivity timeout: No tags received for 10 seconds.")
             }
@@ -138,21 +151,7 @@ class SessionController(
         scope.launch {
             val records = db.getAttendanceRecordsForSession(currentSessionId)
             withContext(mainDispatcher) {
-                attendanceContainer.removeAllViews()
-                val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
-
-                records.forEach { record ->
-                    val rowView =
-                        layoutInflater.inflate(
-                            R.layout.item_attendance_row,
-                            attendanceContainer,
-                            false
-                        )
-                    rowView.findViewById<TextView>(R.id.txtStudentInfo).text = record.studentName
-                    rowView.findViewById<TextView>(R.id.txtTimestamp).text =
-                        TimeUtils.fromMillisToLocalDateTime(record.timestamp).format(timeFormat)
-                    attendanceContainer.addView(rowView)
-                }
+                attendanceAdapter.submitList(records)
             }
         }
     }
@@ -276,56 +275,56 @@ class SessionController(
             withContext(mainDispatcher) {
                 val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
                 val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
-                val container = dialogView.findViewById<LinearLayout>(R.id.studentListContainer)
-                var manualDialog: AlertDialog? = null
+                val rvSearch = dialogView.findViewById<RecyclerView>(R.id.rvStudentSearch)
+                val btnCreate = dialogView.findViewById<View>(R.id.btnCreateNewStudent)
+                val txtHint = dialogView.findViewById<TextView>(R.id.txtSearchStudentHint)
+                btnCreate.visibility = View.VISIBLE
+                var manualDialog: BottomSheetDialog? = null
+
+                val adapter = StudentSearchAdapter { student ->
+                    registerAttendance(student, System.currentTimeMillis())
+                    manualDialog?.dismiss()
+                }
+                rvSearch.adapter = adapter
+                rvSearch.layoutManager = LinearLayoutManager(context)
 
                 fun refreshAbsenteeList(query: String) {
-                    container.removeAllViews()
                     val filtered = absentStudents.filter {
                         it.name.contains(query, true) || it.email.contains(query, true)
                     }
+                    adapter.submitList(filtered)
 
                     if (filtered.isEmpty()) {
-                        val emptyRow = TextView(context).apply {
-                            text = context.getString(R.string.msg_no_students_found)
-                            textSize = 14f
-                            setPadding(30, 40, 30, 40)
-                            gravity = android.view.Gravity.CENTER
-                            setTextColor(Color.GRAY)
-                        }
-                        container.addView(emptyRow)
-                        return
-                    }
-
-                    filtered.forEach { student ->
-                        val row = TextView(context).apply {
-                            text = "${student.name}\n${student.email}"
-                            textSize = 16f
-                            setPadding(30, 24, 30, 24)
-
-                            setOnClickListener {
-                                registerAttendance(student, System.currentTimeMillis())
-                                manualDialog?.dismiss()
-                            }
-                        }
-                        container.addView(row)
-
-                        val divider = View(context).apply {
-                            layoutParams =
-                                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-                            setBackgroundColor(Color.LTGRAY)
-                        }
-                        container.addView(divider)
+                        txtHint.text = context.getString(R.string.msg_no_students_found)
+                        txtHint.setTextColor(Color.RED)
+                    } else {
+                        txtHint.text = context.getString(R.string.hint_search_student)
+                        txtHint.setTextColor(context.getColor(R.color.text_secondary))
                     }
                 }
 
                 refreshAbsenteeList("")
 
-                manualDialog = AlertDialog.Builder(context)
-                    .setTitle(context.getString(R.string.title_manual_attendance))
-                    .setView(dialogView)
-                    .setNegativeButton(context.getString(R.string.action_cancel), null)
-                    .showWithSmartNfcReading()
+                btnCreate.setOnClickListener {
+                    manualDialog?.dismiss()
+                    dialogFactory.showManualRegistrationDialog("") { name, email, regDialog ->
+                        scope.launch {
+                            val newStudent = Student(email = email, name = name, rfid = null)
+                            db.insertStudents(listOf(newStudent))
+                            withContext(mainDispatcher) {
+                                registerAttendance(newStudent, System.currentTimeMillis())
+                                regDialog.dismiss()
+                            }
+                        }
+                    }
+                }
+
+                manualDialog = BottomSheetDialog(context)
+                manualDialog?.setContentView(dialogView)
+
+                with(DialogFactory) {
+                    manualDialog?.showWithSmartNfcReading()
+                }
 
                 edtSearch.addTextChangedListener { refreshAbsenteeList(it.toString()) }
             }

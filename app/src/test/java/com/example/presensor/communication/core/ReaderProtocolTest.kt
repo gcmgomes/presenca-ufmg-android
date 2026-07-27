@@ -46,15 +46,18 @@ class ReaderProtocolTest {
     }
 
     @Test
-    fun `formatInventoryGetCommand should return GET`() {
-        assertEquals("GET", String(protocol.formatInventoryGetCommand()))
+    fun `formatInventoryListCommand should return LIST`() {
+        assertEquals("LIST", String(protocol.formatInventoryListCommand()))
     }
 
     @Test
     fun `formatInventoryDeleteCommand should remove colons and return DEL csv`() {
         val tagId = "AA:BB:CC:DD"
         val timestamp = 12345L
-        assertEquals("DEL,AABBCCDD,12345", String(protocol.formatInventoryDeleteCommand(tagId, timestamp)))
+        assertEquals(
+            "DEL,AABBCCDD,12345",
+            String(protocol.formatInventoryDeleteCommand(tagId, timestamp))
+        )
     }
 
     @Test
@@ -69,7 +72,10 @@ class ReaderProtocolTest {
 
     @Test
     fun `formatConfigUpdateCommand should return tab separated bytes`() {
-        assertEquals("NewName\tNewPass", String(protocol.formatConfigUpdateCommand("NewName", "NewPass")))
+        assertEquals(
+            "NewName\tNewPass",
+            String(protocol.formatConfigUpdateCommand("NewName", "NewPass"))
+        )
     }
 
     // --- Data Parsing Tests ---
@@ -79,7 +85,7 @@ class ReaderProtocolTest {
         val job = launch {
             protocol.processData("SUCCESS".toByteArray(), TransportChannel.AUTH)
         }
-        
+
         val event = withTimeout(1000) { protocol.domainEvents.first() }
         assertTrue(event is ProtocolEvent.AuthSuccess)
         assertTrue(protocol.isAuthenticated.value)
@@ -91,7 +97,7 @@ class ReaderProtocolTest {
         val job = launch {
             protocol.processData("FAIL".toByteArray(), TransportChannel.AUTH)
         }
-        
+
         val event = withTimeout(1000) { protocol.domainEvents.first() }
         assertTrue(event is ProtocolEvent.AuthFailed)
         assertFalse(protocol.isAuthenticated.value)
@@ -102,20 +108,20 @@ class ReaderProtocolTest {
     fun `processData should emit RfidSwipe and AckRequired on DATA channel`() = runBlocking {
         val payload = "AA:BB:CC:DD,1624612345".toByteArray()
         val events = mutableListOf<ProtocolEvent>()
-        
+
         val collectJob = launch {
             protocol.domainEvents.take(2).toList(events)
         }
-        
+
         kotlinx.coroutines.delay(50)
         protocol.processData(payload, TransportChannel.DATA)
-        
+
         withTimeout(1000) { collectJob.join() }
-        
+
         assertEquals(2, events.size)
         assertTrue(events[0] is ProtocolEvent.RfidSwipe)
         assertTrue(events[1] is ProtocolEvent.AckRequired)
-        
+
         val swipe = events[0] as ProtocolEvent.RfidSwipe
         assertEquals("AA:BB:CC:DD", swipe.tagId)
         assertEquals(1624612345L, swipe.timestamp)
@@ -138,10 +144,10 @@ class ReaderProtocolTest {
         val job = launch {
             protocol.domainEvents.toList(events)
         }
-        
+
         protocol.processData(payload, TransportChannel.INVENTORY)
         kotlinx.coroutines.delay(100)
-        
+
         // Metrics event should NOT be emitted from INVENTORY channel anymore
         assertTrue(events.none { it is ProtocolEvent.Metrics })
         job.cancel()

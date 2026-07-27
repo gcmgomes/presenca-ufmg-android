@@ -45,24 +45,36 @@ class ImportSessionController(
                 sampleRow = table.rows.firstOrNull(),
                 onDismissed = { loadingOverlayProvider.toggleLoadingOverlay(false) },
                 onConfirmed = { mapping ->
-                    val result = dataProcessorProvider.parseSessionsFromTable(context, table, courseId, mapping)
+                    val result = dataProcessorProvider.parseSessionsFromTable(
+                        context,
+                        table,
+                        courseId,
+                        mapping
+                    )
                     if (result.items.isNotEmpty()) {
                         dialogProvider.showSessionImportPreview(
                             activity,
                             result.items,
-                            onConfirm = { executeImport(result.items, onImportComplete) },
+                            onConfirm = { selected -> executeImport(selected, onImportComplete) },
                             onDismiss = { loadingOverlayProvider.toggleLoadingOverlay(false) }
                         )
                         if (result.errors.isNotEmpty()) {
                             toastProvider.showToast(
-                                context.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
+                                context.getString(
+                                    R.string.msg_imported_with_errors,
+                                    result.items.size,
+                                    result.errors.size
+                                ),
                                 Toast.LENGTH_LONG
                             )
                             result.errors.forEach { Log.w("ImportSession", it) }
                         }
                     } else {
                         val errorMessage = if (result.errors.isNotEmpty()) {
-                            context.getString(R.string.msg_failed_to_parse_any, result.errors.take(2).joinToString("\n"))
+                            context.getString(
+                                R.string.msg_failed_to_parse_any,
+                                result.errors.take(2).joinToString("\n")
+                            )
                         } else {
                             context.getString(R.string.error_parsing_mapping_sessions)
                         }
@@ -80,7 +92,7 @@ class ImportSessionController(
             withContext(ioDispatcher) {
                 db.insertSessions(sessions)
             }
-            
+
             withContext(mainDispatcher) {
                 loadingOverlayProvider.toggleLoadingOverlay(false)
                 onImportComplete()
@@ -130,7 +142,11 @@ class ImportSessionController(
     ) {
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromCsv(context.contentResolver, uri, caller = "ImportSessionController.importFromLocal")
+                val table = dataProcessorProvider.ingestFromCsv(
+                    context.contentResolver,
+                    uri,
+                    caller = "ImportSessionController.importFromLocal"
+                )
                 handleTableIngested(table, courseId, onImportComplete)
             } catch (e: Exception) {
                 Log.e("ImportSession", "CSV Import error", e)

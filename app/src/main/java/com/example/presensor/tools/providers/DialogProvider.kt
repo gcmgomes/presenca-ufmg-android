@@ -19,14 +19,14 @@ interface DialogProvider {
     fun showSessionImportPreview(
         activity: AppCompatActivity,
         sessions: List<Session>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Session>) -> Unit,
         onDismiss: () -> Unit
     )
 
     fun showStudentImportPreview(
         activity: AppCompatActivity,
         students: List<Student>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     )
 }
@@ -42,13 +42,20 @@ class AndroidDialogProvider(
         onDismissed: () -> Unit,
         onConfirmed: (Map<String, String>) -> Unit
     ) {
-        DialogFactory.showMappingDialog(context, fields, columns, sampleRow, onDismissed, onConfirmed)
+        DialogFactory.showMappingDialog(
+            context,
+            fields,
+            columns,
+            sampleRow,
+            onDismissed,
+            onConfirmed
+        )
     }
 
     override fun showSessionImportPreview(
         activity: AppCompatActivity,
         sessions: List<Session>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Session>) -> Unit,
         onDismiss: () -> Unit
     ) {
         previewProvider.showSessionImportPreview(activity, sessions, onConfirm, onDismiss)
@@ -57,7 +64,7 @@ class AndroidDialogProvider(
     override fun showStudentImportPreview(
         activity: AppCompatActivity,
         students: List<Student>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     ) {
         previewProvider.showStudentImportPreview(activity, students, onConfirm, onDismiss)

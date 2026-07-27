@@ -17,6 +17,7 @@ import androidx.fragment.app.FragmentManager
 import com.example.presensor.R
 import com.example.presensor.controllers.TagController
 import com.example.presensor.tools.TimeUtils
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -64,6 +65,22 @@ object DialogFactory {
         }
         dialog.show()
         return dialog
+    }
+
+    fun BottomSheetDialog.showWithSmartNfcReading(resumeReader: Boolean = false): BottomSheetDialog {
+        this.setOnShowListener {
+            isDialogOpen = true
+            tagController?.pauseNfcScanning()
+        }
+        this.setOnDismissListener {
+            isDialogOpen = false
+            tagController?.resumeNfcScanning()
+            if (resumeReader) {
+                tagController?.resumeReader()
+            }
+        }
+        this.show()
+        return this
     }
 
     fun showDestructiveDeleteDialog(

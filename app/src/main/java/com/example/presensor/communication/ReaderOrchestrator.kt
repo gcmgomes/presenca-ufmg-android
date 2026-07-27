@@ -595,7 +595,7 @@ class ReaderOrchestrator(
     }
 
     fun requestInventory() {
-        val data = protocol.formatInventoryGetCommand()
+        val data = protocol.formatInventoryListCommand()
         transport.write(data, TransportChannel.INVENTORY)
     }
 

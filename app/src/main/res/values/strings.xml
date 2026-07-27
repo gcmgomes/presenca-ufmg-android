@@ -119,6 +119,9 @@
     <string name="dialog_import_students">Review importing student roster</string>
     <string name="dialog_import_students_hint">Found %1$d students. Please verify their information.</string>
     <string name="dialog_import_students_button_text">Import students</string>
+    <string name="dialog_import_backlog_title">Review Backlog Import</string>
+    <string name="dialog_import_backlog_hint">Found %1$d backlogged records. Toggle items to import them into the current session.</string>
+    <string name="dialog_import_backlog_button_text">Import Selected</string>
     <string name="csv_header_student_identity">Student Name,Email,Tag</string>
     <string name="filename_attendance_fallback">Attendance</string>
     <string name="label_not_applicable">N/A</string>
@@ -135,6 +138,7 @@
     <string name="msg_session_unlocked">Session Unlocked</string>
 
     <string name="action_create">Create</string>
+    <string name="action_register_new_student">Register New Student</string>
     <string name="action_save">Save Changes</string>
     <string name="action_unlock">Unlock</string>
     <string name="action_cancel">Cancel</string>

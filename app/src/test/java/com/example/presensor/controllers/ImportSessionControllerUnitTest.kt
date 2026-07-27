@@ -24,14 +24,14 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     private val dialogProvider: DialogProvider = mock()
     private val loadingOverlayProvider: LoadingOverlayProvider = mock()
     private val toastProvider: ToastProvider = mock()
-    
+
     private lateinit var controller: ImportSessionController
     private val testScope = TestScope(mainDispatcherRule.testDispatcher)
 
     @Before
     override fun setup() {
         super.setup()
-        
+
         controller = ImportSessionController(
             activity = activity,
             context = activity,
@@ -55,13 +55,22 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(uri, 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(eq(activity), any(), eq(table.headers), any(), any(), any())
+        verify(dialogProvider).showMappingDialog(
+            eq(activity),
+            any(),
+            eq(table.headers),
+            any(),
+            any(),
+            any()
+        )
     }
 
     @Test
     fun importFromLocal_failure_showsToast() = runTest {
         val uri: Uri = mock()
-        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(RuntimeException("Error"))
+        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(
+            RuntimeException("Error")
+        )
 
         controller.importFromLocal(uri, 1L, {})
         advanceUntilIdle()
@@ -74,18 +83,41 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun importFromCloud_success_showsMapping() = runTest {
         val sheets: Sheets = mock()
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        whenever(dataProcessorProvider.ingestFromGoogleSheets(any(), eq(sheets), any(), any(), any())).thenReturn(table)
+        whenever(
+            dataProcessorProvider.ingestFromGoogleSheets(
+                any(),
+                eq(sheets),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(table)
 
         controller.importFromCloud(sheets, "id", "tab", 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(eq(activity), any(), eq(table.headers), any(), any(), any())
+        verify(dialogProvider).showMappingDialog(
+            eq(activity),
+            any(),
+            eq(table.headers),
+            any(),
+            any(),
+            any()
+        )
     }
 
     @Test
     fun importFromCloud_failure_showsToast() = runTest {
         val sheets: Sheets = mock()
-        whenever(dataProcessorProvider.ingestFromGoogleSheets(any(), eq(sheets), any(), any(), any())).thenThrow(RuntimeException("API Error"))
+        whenever(
+            dataProcessorProvider.ingestFromGoogleSheets(
+                any(),
+                eq(sheets),
+                any(),
+                any(),
+                any()
+            )
+        ).thenThrow(RuntimeException("API Error"))
 
         controller.importFromCloud(sheets, "id", "tab", 1L, {})
         advanceUntilIdle()
@@ -106,16 +138,30 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val sessions = listOf(Session(id = 1, courseId = 1L, name = "S1", date = 1000L))
         val result = DataProcessor.ImportResult(sessions, listOf("Parse error"))
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseSessionsFromTable(any(), any(), any(), any())).thenReturn(result)
-        
+        whenever(
+            dataProcessorProvider.parseSessionsFromTable(
+                any(),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(result)
+
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        
+
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onConfirmedCaptor.capture()
+        )
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
@@ -126,16 +172,30 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun handleMappingConfirmed_noItems_showsErrorToast() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val result = DataProcessor.ImportResult(emptyList<Session>(), listOf("Critical error"))
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseSessionsFromTable(any(), any(), any(), any())).thenReturn(result)
-        
+        whenever(
+            dataProcessorProvider.parseSessionsFromTable(
+                any(),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(result)
+
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        
+
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onConfirmedCaptor.capture()
+        )
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
@@ -147,40 +207,66 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun mappingDialog_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        
+
         val onDismissedCaptor = argumentCaptor<() -> Unit>()
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), onDismissedCaptor.capture(), any())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            onDismissedCaptor.capture(),
+            any()
+        )
         onDismissedCaptor.firstValue.invoke()
-        
+
         verify(loadingOverlayProvider).toggleLoadingOverlay(false)
     }
 
     @Test
     fun preview_confirm_insertsToDb() = runTest {
         insertTestCourse(1L)
-        
+
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val sessions = listOf(Session(courseId = 1L, name = "S1", date = 1000L))
         val result = DataProcessor.ImportResult(sessions, emptyList<String>())
-        
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseSessionsFromTable(any(), any(), any(), any())).thenReturn(result)
-        
+        whenever(
+            dataProcessorProvider.parseSessionsFromTable(
+                any(),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(result)
+
         val onMappingConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
-        val onPreviewConfirmCaptor = argumentCaptor<() -> Unit>()
-        
+        val onPreviewConfirmCaptor = argumentCaptor<(List<Session>) -> Unit>()
+
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onMappingConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onMappingConfirmedCaptor.capture()
+        )
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showSessionImportPreview(any(), eq(sessions), onPreviewConfirmCaptor.capture(), any())
-        onPreviewConfirmCaptor.firstValue.invoke()
+        verify(dialogProvider).showSessionImportPreview(
+            any(),
+            eq(sessions),
+            onPreviewConfirmCaptor.capture(),
+            any()
+        )
+        onPreviewConfirmCaptor.firstValue.invoke(sessions)
         advanceUntilIdle()
 
         val saved = db.getSessionsByCourse(1L)
@@ -191,22 +277,44 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Test
     fun preview_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        val result = DataProcessor.ImportResult(listOf(Session(courseId = 1L, name = "S1", date = 1000L)), emptyList<String>())
-        
+        val result = DataProcessor.ImportResult(
+            listOf(Session(courseId = 1L, name = "S1", date = 1000L)),
+            emptyList<String>()
+        )
+
         whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
-        whenever(dataProcessorProvider.parseSessionsFromTable(any(), any(), any(), any())).thenReturn(result)
-        
+        whenever(
+            dataProcessorProvider.parseSessionsFromTable(
+                any(),
+                any(),
+                any(),
+                any()
+            )
+        ).thenReturn(result)
+
         val onMappingConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
         val onPreviewDismissCaptor = argumentCaptor<() -> Unit>()
-        
+
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
-        
-        verify(dialogProvider).showMappingDialog(any(), any(), any(), any(), any(), onMappingConfirmedCaptor.capture())
+
+        verify(dialogProvider).showMappingDialog(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            onMappingConfirmedCaptor.capture()
+        )
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showSessionImportPreview(any(), any(), any(), onPreviewDismissCaptor.capture())
+        verify(dialogProvider).showSessionImportPreview(
+            any(),
+            any(),
+            any(),
+            onPreviewDismissCaptor.capture()
+        )
         onPreviewDismissCaptor.firstValue.invoke()
         advanceUntilIdle()
 

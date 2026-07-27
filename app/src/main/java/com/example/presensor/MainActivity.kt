@@ -57,6 +57,7 @@ import com.example.presensor.data.SecureStoreManager
 import com.example.presensor.controllers.ReaderDiscoveryController
 import com.example.presensor.controllers.ReaderManagementController
 import com.example.presensor.controllers.AndroidReaderInteractionProvider
+import com.example.presensor.controllers.ImportBacklogController
 import com.example.presensor.communication.ble.BleTransport
 import com.example.presensor.communication.core.AppMode
 import kotlinx.coroutines.delay
@@ -85,6 +86,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     lateinit var importStudentController: ImportStudentController
     lateinit var readerDiscoveryController: ReaderDiscoveryController
     lateinit var readerManagementController: ReaderManagementController
+    lateinit var importBacklogController: ImportBacklogController
 
     lateinit var cloudSyncController: CloudSyncController
 
@@ -408,7 +410,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             scope = lifecycleScope,
             db = db,
             layoutInflater = layoutInflater,
-            attendanceContainer = findViewById(R.id.attendanceContainer),
+            rvAttendance = findViewById(R.id.rvAttendance),
             swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout),
             txtSessionTitle = findViewById(R.id.txtSessionTitle),
             txtSessionSubtitle = findViewById(R.id.txtSessionSubtitle),
@@ -428,7 +430,19 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             },
             dialogFactory = sessionDialogFactory,
             toastProvider = AndroidToastProvider(this),
-            onPulldown = { readerOrchestrator?.requestBacklogSync() }
+            onPulldown = { importBacklogController.startImportFlow() },
+            onSyncTimeout = { importBacklogController.dismissActiveDialog() }
+        )
+
+        importBacklogController = ImportBacklogController(
+            activity = this,
+            scope = lifecycleScope,
+            db = db,
+            orchestrator = readerOrchestrator,
+            toastProvider = AndroidToastProvider(this),
+            toggleSpinner = { sessionController.showLayoutRefreshSpinner(it) },
+            registerAttendance = { student, time -> sessionController.registerAttendance(student, time) },
+            refreshAttendanceList = { sessionController.loadAttendanceList() }
         )
 
         // Initialize Tag Controller

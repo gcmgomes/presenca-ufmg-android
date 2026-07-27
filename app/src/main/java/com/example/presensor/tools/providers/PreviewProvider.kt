@@ -1,7 +1,6 @@
 package com.example.presensor.tools.providers
 
 import android.view.LayoutInflater
-import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,21 +13,18 @@ import com.example.presensor.data.entities.Student
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 
-/**
- * Interface for showing import preview bottom sheets.
- */
 interface PreviewProvider {
     fun showSessionImportPreview(
         activity: AppCompatActivity,
         sessions: List<Session>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Session>) -> Unit,
         onDismiss: () -> Unit
     )
 
     fun showStudentImportPreview(
         activity: AppCompatActivity,
         students: List<Student>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     )
 }
@@ -41,33 +37,33 @@ class AndroidPreviewProvider : PreviewProvider {
     override fun showSessionImportPreview(
         activity: AppCompatActivity,
         sessions: List<Session>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Session>) -> Unit,
         onDismiss: () -> Unit
     ) {
         val bottomSheet = BottomSheetDialog(activity)
-        val view = LayoutInflater.from(activity).inflate(
-            R.layout.layout_import_session_preview,
-            activity.findViewById(android.R.id.content),
-            false
-        )
+        val view = LayoutInflater.from(activity).inflate(R.layout.dialog_list_preview, null)
         bottomSheet.setContentView(view)
 
         var importConfirmed = false
 
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportPreview)
-        val txtImportCount = view.findViewById<TextView>(R.id.txtImportCount)
-        val btnConfirm = view.findViewById<Button>(R.id.btnConfirmImport)
+        val recyclerView = view.findViewById<RecyclerView>(R.id.rvPreviewList)
+        val txtTitle = view.findViewById<TextView>(R.id.txtPreviewTitle)
+        val txtHint = view.findViewById<TextView>(R.id.txtPreviewHint)
+        val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmAction)
+
+        txtTitle.text = activity.getString(R.string.dialog_import_sessions)
+        txtHint.text = activity.getString(R.string.dialog_import_sessions_hint, sessions.size)
+        btnConfirm.text = activity.getString(R.string.dialog_import_sessions_button_text)
 
         recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportPreviewAdapter(sessions)
-
-        txtImportCount.text = activity.getString(R.string.dialog_import_sessions_hint, sessions.size)
-        btnConfirm.text = activity.getString(R.string.dialog_import_sessions_button_text)
+        val adapter = ImportPreviewAdapter()
+        recyclerView.adapter = adapter
+        adapter.submitList(sessions)
 
         btnConfirm.setOnClickListener {
             importConfirmed = true
             bottomSheet.dismiss()
-            onConfirm()
+            onConfirm(adapter.getSelectedItems())
         }
 
         bottomSheet.setOnDismissListener {
@@ -75,34 +71,42 @@ class AndroidPreviewProvider : PreviewProvider {
                 onDismiss()
             }
         }
-        bottomSheet.show()
+
+        with(com.example.presensor.controllers.dialogs.DialogFactory) {
+            bottomSheet.showWithSmartNfcReading()
+        }
     }
 
     override fun showStudentImportPreview(
         activity: AppCompatActivity,
         students: List<Student>,
-        onConfirm: () -> Unit,
+        onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     ) {
         val bottomSheet = BottomSheetDialog(activity)
-        val view = activity.layoutInflater.inflate(R.layout.layout_import_student_preview, null)
+        val view = LayoutInflater.from(activity).inflate(R.layout.dialog_list_preview, null)
         bottomSheet.setContentView(view)
 
         var importConfirmed = false
 
-        val recyclerView = view.findViewById<RecyclerView>(R.id.rvImportStudentPreview)
-        val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmStudentImport)
+        val recyclerView = view.findViewById<RecyclerView>(R.id.rvPreviewList)
+        val txtTitle = view.findViewById<TextView>(R.id.txtPreviewTitle)
+        val txtHint = view.findViewById<TextView>(R.id.txtPreviewHint)
+        val btnConfirm = view.findViewById<MaterialButton>(R.id.btnConfirmAction)
 
-        view.findViewById<TextView>(R.id.txtImportStudentCount).text =
-            activity.getString(R.string.dialog_import_students_hint, students.size)
+        txtTitle.text = activity.getString(R.string.dialog_import_students)
+        txtHint.text = activity.getString(R.string.dialog_import_students_hint, students.size)
+        btnConfirm.text = activity.getString(R.string.dialog_import_students_button_text)
 
         recyclerView.layoutManager = LinearLayoutManager(activity)
-        recyclerView.adapter = ImportStudentAdapter(students)
+        val adapter = ImportStudentAdapter()
+        recyclerView.adapter = adapter
+        adapter.submitList(students)
 
         btnConfirm.setOnClickListener {
             importConfirmed = true
             bottomSheet.dismiss()
-            onConfirm()
+            onConfirm(adapter.getSelectedItems())
         }
 
         bottomSheet.setOnDismissListener {
@@ -110,6 +114,9 @@ class AndroidPreviewProvider : PreviewProvider {
                 onDismiss()
             }
         }
-        bottomSheet.show()
+
+        with(com.example.presensor.controllers.dialogs.DialogFactory) {
+            bottomSheet.showWithSmartNfcReading()
+        }
     }
 }

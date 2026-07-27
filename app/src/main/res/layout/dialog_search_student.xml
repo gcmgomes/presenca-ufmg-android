@@ -1,36 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="?attr/colorSurface"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="20dp">
 
     <TextView
-        android:id="@+id/txtTagId"
+        android:id="@+id/txtSearchStudentTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:text="@string/title_manual_attendance"
+        android:textSize="20sp"
         android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
+        android:textColor="?android:attr/textColorPrimary" />
+
+    <TextView
+        android:id="@+id/txtSearchStudentHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:text="@string/hint_search_student"
+        android:textColor="?attr/descriptiveTextColor"
+        android:textSize="14sp" />
 
     <EditText
         android:id="@+id/edtStudentSearch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/hint_search_student"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textColorHint="?attr/descriptiveTextColor"
         android:drawableStart="@android:drawable/ic_menu_search"
         android:drawablePadding="8dp"
         android:singleLine="true" />
 
-    <ScrollView
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvStudentSearch"
         android:layout_width="match_parent"
-        android:layout_height="300dp"
-        android:layout_marginTop="8dp">
+        android:layout_height="320dp"
+        android:layout_marginTop="8dp"
+        android:clipToPadding="false"
+        android:padding="8dp"
+        android:background="#08000000" />
 
-        <!-- This is where we will inject the rows manually -->
-        <LinearLayout
-            android:id="@+id/studentListContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </ScrollView>
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnCreateNewStudent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/action_register_new_student"
+        android:visibility="gone"
+        app:cornerRadius="8dp"
+        android:padding="12dp"
+        app:icon="@drawable/ic_add"
+        android:textColor="?attr/colorOnPrimary"
+        app:backgroundTint="?attr/colorPrimary"
+        app:iconTint="?attr/colorOnPrimary" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSecondaryAction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/title_manual_attendance"
+        android:visibility="gone"
+        app:cornerRadius="8dp"
+        android:padding="12dp"
+        android:textColor="?attr/colorOnPrimary"
+        app:backgroundTint="?attr/colorPrimary" />
+
 </LinearLayout>

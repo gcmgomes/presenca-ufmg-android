@@ -1,10 +1,12 @@
 package com.example.presensor.controllers
 
 import android.view.LayoutInflater
+import com.example.presensor.R
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.ImageView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.data.entities.Session
@@ -36,8 +38,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
     private val toastProvider: ToastProvider = mock()
     private val onSessionStateMutated: () -> Unit = mock()
     private val onPulldown: () -> Unit = mock()
-    
-    private lateinit var attendanceContainer: LinearLayout
+
+    private lateinit var rvAttendance: RecyclerView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var txtSessionTitle: TextView
     private lateinit var txtSessionSubtitle: TextView
@@ -48,8 +50,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
     @Before
     override fun setup() {
         super.setup()
-        
-        attendanceContainer = LinearLayout(activity)
+
+        rvAttendance = RecyclerView(activity)
         swipeRefreshLayout = SwipeRefreshLayout(activity)
         txtSessionTitle = TextView(activity)
         txtSessionSubtitle = TextView(activity)
@@ -63,7 +65,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
             scope = CoroutineScope(mainDispatcherRule.testDispatcher),
             db = db,
             layoutInflater = LayoutInflater.from(activity),
-            attendanceContainer = attendanceContainer,
+            rvAttendance = rvAttendance,
             swipeRefreshLayout = swipeRefreshLayout,
             txtSessionTitle = txtSessionTitle,
             txtSessionSubtitle = txtSessionSubtitle,
@@ -76,7 +78,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
             toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             ioDispatcher = mainDispatcherRule.testDispatcher,
-            onPulldown = onPulldown
+            onPulldown = onPulldown,
+            onSyncTimeout = {}
         )
     }
 
@@ -222,15 +225,49 @@ class SessionControllerUnitTest : BaseControllerTest() {
         val dialog = ShadowDialog.getShownDialogs().lastOrNull()
         assert(dialog != null)
         
-        val container = dialog!!.findViewById<LinearLayout>(com.example.presensor.R.id.studentListContainer)
-        assert(container != null)
+        val rv = dialog!!.findViewById<RecyclerView>(R.id.rvStudentSearch)
+        assert(rv != null)
 
-        repeat(5) {
-            ShadowLooper.idleMainLooper()
-            advanceUntilIdle()
-        }
+        ShadowLooper.idleMainLooper()
+        advanceUntilIdle()
 
-        assert(container!!.childCount > 0)
+        assert((rv!!.adapter?.itemCount ?: 0) > 0)
+    }
+
+    @Test
+    fun `manualAttendanceDialog CreateNewStudent triggers registration and records attendance`() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "S1", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        sessionController.openSessionView(insertedSession)
+        advanceUntilIdle()
+
+        sessionController.showManualAttendanceDialog()
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        val dialog = ShadowDialog.getLatestDialog()
+        val btnCreate = dialog.findViewById<View>(R.id.btnCreateNewStudent)
+        btnCreate.performClick()
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        // Verify registration dialog was shown
+        val regCaptor = argumentCaptor<(String, String, AlertDialog) -> Unit>()
+        verify(dialogFactory).showManualRegistrationDialog(any(), regCaptor.capture())
+
+        // Simulate saving
+        val regDialog: AlertDialog = mock()
+        regCaptor.firstValue.invoke("New Student", "new@test.com", regDialog)
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        // Verify student inserted and attendance registered
+        val student = db.getAllStudents().find { it.email == "new@test.com" }
+        assert(student != null)
+        assert(db.getAttendanceRecordsForSession(insertedSession.id).isNotEmpty())
+        verify(regDialog).dismiss()
     }
 
     @Test
@@ -309,7 +346,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
     fun loadAttendanceList_nullSession_returnsEarly() {
         sessionController.clearActiveSession()
         sessionController.loadAttendanceList()
-        assert(attendanceContainer.childCount == 0)
+        assert(sessionController.attendanceAdapter.itemCount == 0)
     }
 
     @Test
@@ -453,7 +490,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
             scope = CoroutineScope(mainDispatcherRule.testDispatcher),
             db = db,
             layoutInflater = LayoutInflater.from(activity),
-            attendanceContainer = attendanceContainer,
+            rvAttendance = rvAttendance,
             swipeRefreshLayout = swipeRefreshLayout,
             txtSessionTitle = txtSessionTitle,
             txtSessionSubtitle = txtSessionSubtitle,
@@ -466,7 +503,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
             toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             ioDispatcher = mainDispatcherRule.testDispatcher,
-            onPulldown = {}
+            onPulldown = {},
+            onSyncTimeout = {}
         )
         assert(sc.activeSession == null)
     }

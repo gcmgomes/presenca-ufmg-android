@@ -141,8 +141,8 @@ class ReaderProtocol {
         return epochSeconds.toString().toByteArray()
     }
 
-    fun formatInventoryGetCommand(): ByteArray {
-        return "GET".toByteArray()
+    fun formatInventoryListCommand(): ByteArray {
+        return "LIST".toByteArray()
     }
 
     fun formatInventoryDeleteCommand(tagId: String, timestamp: Long): ByteArray {

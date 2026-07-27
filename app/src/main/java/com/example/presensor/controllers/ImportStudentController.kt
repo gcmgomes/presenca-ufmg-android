@@ -43,24 +43,32 @@ class ImportStudentController(
                 sampleRow = table.rows.firstOrNull(),
                 onDismissed = { loadingOverlayProvider.toggleLoadingOverlay(false) },
                 onConfirmed = { mapping ->
-                    val result = dataProcessorProvider.parseStudentsFromTable(context, table, mapping)
+                    val result =
+                        dataProcessorProvider.parseStudentsFromTable(context, table, mapping)
                     if (result.items.isNotEmpty()) {
                         dialogProvider.showStudentImportPreview(
                             activity,
                             result.items,
-                            onConfirm = { executeImport(result.items) },
+                            onConfirm = { selected -> executeImport(selected) },
                             onDismiss = { loadingOverlayProvider.toggleLoadingOverlay(false) }
                         )
                         if (result.errors.isNotEmpty()) {
                             toastProvider.showToast(
-                                context.getString(R.string.msg_imported_with_errors, result.items.size, result.errors.size),
+                                context.getString(
+                                    R.string.msg_imported_with_errors,
+                                    result.items.size,
+                                    result.errors.size
+                                ),
                                 Toast.LENGTH_LONG
                             )
                             result.errors.forEach { Log.w("ImportStudent", it) }
                         }
                     } else {
                         val errorMessage = if (result.errors.isNotEmpty()) {
-                            context.getString(R.string.msg_failed_to_parse_any, result.errors.take(3).joinToString("\n"))
+                            context.getString(
+                                R.string.msg_failed_to_parse_any,
+                                result.errors.take(3).joinToString("\n")
+                            )
                         } else {
                             context.getString(R.string.toast_cloud_student_import_empty)
                         }
@@ -124,7 +132,11 @@ class ImportStudentController(
     fun importFromLocal(uri: Uri) {
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromCsv(context.contentResolver, uri, caller = "ImportStudentController.importFromLocal")
+                val table = dataProcessorProvider.ingestFromCsv(
+                    context.contentResolver,
+                    uri,
+                    caller = "ImportStudentController.importFromLocal"
+                )
                 handleTableIngested(table)
             } catch (e: Exception) {
                 withContext(mainDispatcher) {
