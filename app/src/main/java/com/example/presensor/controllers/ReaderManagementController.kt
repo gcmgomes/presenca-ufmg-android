@@ -36,7 +36,7 @@ class ReaderManagementController(
     private var metricsJob: Job? = null
     private var inventoryJob: Job? = null
     private var dashboardUIJob: Job? = null
-    
+
     private var backlogItems = mutableListOf<BacklogItem>()
     private val receivedInSync = mutableSetOf<BacklogItem>()
     private var isSyncInProgress = false
@@ -66,7 +66,8 @@ class ReaderManagementController(
         txtStatBattery = rootView.findViewById(R.id.txtStatBattery)
         val viewAccent = rootView.findViewById<View>(R.id.viewDeviceDetailAccent)
 
-        swipeRefreshLayout = rootView as? SwipeRefreshLayout ?: rootView.findViewById(R.id.swipeRefreshDeviceManager)
+        swipeRefreshLayout =
+            rootView as? SwipeRefreshLayout ?: rootView.findViewById(R.id.swipeRefreshDeviceManager)
 
         val rvBacklog = rootView.findViewById<RecyclerView>(R.id.rvDeviceBacklog)
         backlogAdapter = BacklogAdapter { item -> handleBacklogItemLongClick(item) }
@@ -107,6 +108,7 @@ class ReaderManagementController(
                 refreshManagementData("Manual Pull-to-Refresh")
             } else {
                 swipeRefreshLayout?.isRefreshing = false
+                logAndToast(R.string.status_not_found)
             }
         }
 
@@ -125,8 +127,8 @@ class ReaderManagementController(
                             (state == ReaderOrchestrator.ConnectionState.CONNECTED && !auth)
 
                     val accentColor = when {
-                        isReady -> "#4CAF50".toColorInt()
-                        isConnecting -> "#FF9800".toColorInt()
+                        isReady -> activity.getColor(R.color.chalk_green)
+                        isConnecting -> activity.getColor(R.color.chalk_orange)
                         else -> Color.TRANSPARENT
                     }
                     viewAccent?.setBackgroundColor(accentColor)
@@ -146,17 +148,26 @@ class ReaderManagementController(
                         txtDisconnect?.text = activity.getString(R.string.action_connect)
                         imgDisconnect?.setImageResource(R.drawable.ic_reader_connected)
                         btnDisconnect.setOnClickListener {
-                            val targetAddr = currentDashboardAddress ?: activity.readerOrchestrator?.connectedDeviceAddress ?: ""
+                            val targetAddr = currentDashboardAddress
+                                ?: activity.readerOrchestrator?.connectedDeviceAddress ?: ""
                             // We can't call handleReaderSelection directly here easily if it's in DiscoveryCtrl.
                             // But we can call Orchestrator.startConnecting if we have credentials.
                             val name = secureStoreManager.deviceName
                             val pass = secureStoreManager.getAuthPasswordFor(name)
-                            if (pass != null) activity.readerOrchestrator?.startConnecting(name, pass, targetAddr, true)
+                            if (pass != null) activity.readerOrchestrator?.startConnecting(
+                                name,
+                                pass,
+                                targetAddr,
+                                true
+                            )
                         }
                     }
 
                     if (isReady) {
-                        activity.readerOrchestrator?.setAppMode(AppMode.MANAGEMENT, "Dashboard Reactivation")
+                        activity.readerOrchestrator?.setAppMode(
+                            AppMode.MANAGEMENT,
+                            "Dashboard Reactivation"
+                        )
                         swipeRefreshLayout?.isRefreshing = true
                         refreshManagementData("State Transition")
                     } else if (!isConnecting) {
@@ -170,7 +181,8 @@ class ReaderManagementController(
         metricsJob?.cancel()
         metricsJob = scope.launch(Dispatchers.Main) {
             activity.readerOrchestrator?.metricsFlow?.collect { (epoch, battery) ->
-                txtStatTime?.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
+                txtStatTime?.text =
+                    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
                 txtStatBattery?.text = "$battery%"
             }
         }
@@ -192,7 +204,8 @@ class ReaderManagementController(
                 } else {
                     val tagId = rawTagId.chunked(2).joinToString(":")
                     val studentName = withContext(Dispatchers.IO) {
-                        db.getStudentByRfid(tagId)?.name ?: activity.getString(R.string.label_unknown_student)
+                        db.getStudentByRfid(tagId)?.name
+                            ?: activity.getString(R.string.label_unknown_student)
                     }
                     val item = BacklogItem(tagId, studentName, timestamp)
                     if (isSyncInProgress) receivedInSync.add(item)
@@ -212,8 +225,9 @@ class ReaderManagementController(
         isSyncInProgress = true
         scope.launch {
             delay(500)
-            activity.readerOrchestrator?.requestInventory()
             activity.readerOrchestrator?.requestStatus()
+            delay(1000)
+            activity.readerOrchestrator?.requestInventory()
             delay(5000)
             withContext(Dispatchers.Main) {
                 if (swipeRefreshLayout?.isRefreshing == true) {
@@ -244,7 +258,8 @@ class ReaderManagementController(
         activeDevice?.let { device ->
             device.batteryLevel?.let { txtStatBattery?.text = "$it%" }
             device.deviceEpoch?.let { epoch ->
-                txtStatTime?.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
+                txtStatTime?.text =
+                    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
             }
         }
         txtStatFiles?.text = backlogItems.size.toString()
@@ -280,24 +295,37 @@ class ReaderManagementController(
 
     internal data class BacklogItem(val tagId: String, val studentName: String, val timestamp: Long)
 
-    private class BacklogAdapter(private val onItemLongClicked: (BacklogItem) -> Unit) : RecyclerView.Adapter<BacklogAdapter.ViewHolder>() {
+    private class BacklogAdapter(private val onItemLongClicked: (BacklogItem) -> Unit) :
+        RecyclerView.Adapter<BacklogAdapter.ViewHolder>() {
         private var items = mutableListOf<BacklogItem>()
         fun submitList(newItems: List<BacklogItem>) {
             val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
                 override fun getOldListSize(): Int = items.size
                 override fun getNewListSize(): Int = newItems.size
-                override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean = items[oldPos].tagId == newItems[newPos].tagId && items[oldPos].timestamp == newItems[newPos].timestamp
-                override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean = items[oldPos] == newItems[newPos]
+                override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean =
+                    items[oldPos].tagId == newItems[newPos].tagId && items[oldPos].timestamp == newItems[newPos].timestamp
+
+                override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean =
+                    items[oldPos] == newItems[newPos]
             })
             items.clear()
             items.addAll(newItems)
             diffResult.dispatchUpdatesTo(this)
         }
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(LayoutInflater.from(parent.context).inflate(R.layout.item_stat_card, parent, false))
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(
+            LayoutInflater.from(parent.context).inflate(R.layout.item_stat_card, parent, false)
+        )
+
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
             holder.txtName.text = item.studentName
             holder.txtTag.text = item.tagId
+            
+            // Hide technical stacks for backlog records
+            holder.layoutSignalStack.visibility = View.GONE
+            holder.layoutBatteryStack.visibility = View.GONE
+            
             val date = Date(item.timestamp * 1000L)
             holder.txtTime.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(date)
             val df = android.text.format.DateFormat.getDateFormat(holder.itemView.context)
@@ -305,12 +333,15 @@ class ReaderManagementController(
             holder.txtDate.visibility = View.VISIBLE
             holder.itemView.setOnLongClickListener { onItemLongClicked(item); true }
         }
+
         override fun getItemCount() = items.size
         class ViewHolder(v: View) : RecyclerView.ViewHolder(v) {
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtTag: TextView = v.findViewById(R.id.txtSecondaryLabel)
-            val txtTime: TextView = v.findViewById(R.id.txtStatValue)
-            val txtDate: TextView = v.findViewById(R.id.txtStatValueSecondary)
+            val txtTime: TextView = v.findViewById(R.id.txtLegacyStatValue)
+            val txtDate: TextView = v.findViewById(R.id.txtLegacyStatValueSecondary)
+            val layoutSignalStack: View = v.findViewById(R.id.layoutSignalStack)
+            val layoutBatteryStack: View = v.findViewById(R.id.layoutBatteryStack)
         }
     }
 }

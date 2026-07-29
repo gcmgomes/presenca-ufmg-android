@@ -152,6 +152,11 @@ class ReaderDiscoveryController(
                 if (activity.readerOrchestrator?.isReaderEnabled?.value == true) {
                     startDiscovery()
                     activity.readerOrchestrator?.requestRssiUpdate()
+                    
+                    // Always refresh status for authenticated device during refresh cycles
+                    if (activity.readerOrchestrator?.isAuthenticated?.value == true) {
+                        activity.readerOrchestrator?.requestStatus()
+                    }
                 }
                 delay(20000)
             }
@@ -179,9 +184,11 @@ class ReaderDiscoveryController(
                 address = device.address,
                 rssi = device.rssi,
                 batteryLevel = device.batteryLevel,
+                deviceEpoch = device.deviceEpoch,
                 isConnected = device.isConnected,
                 isConnecting = device.isConnecting,
-                isNearby = device.isNearby
+                isNearby = device.isNearby,
+                lastSeen = device.lastSeen
             )
 
             when {
@@ -272,9 +279,11 @@ class ReaderDiscoveryController(
         val address: String,
         val rssi: Int?,
         val batteryLevel: Int? = null,
+        val deviceEpoch: Long? = null,
         val isConnected: Boolean,
         val isConnecting: Boolean,
-        val isNearby: Boolean = true
+        val isNearby: Boolean = true,
+        val lastSeen: Long = 0
     )
 
     private class DeviceListAdapter(
@@ -286,6 +295,7 @@ class ReaderDiscoveryController(
         companion object {
             private const val PAYLOAD_RSSI = "PAYLOAD_RSSI"
             private const val PAYLOAD_BATTERY = "PAYLOAD_BATTERY"
+            private const val PAYLOAD_TIME = "PAYLOAD_TIME"
             private const val PAYLOAD_STATE = "PAYLOAD_STATE"
         }
 
@@ -331,6 +341,7 @@ class ReaderDiscoveryController(
                         val payloads = mutableSetOf<String>()
                         if (old.rssi != new.rssi) payloads.add(PAYLOAD_RSSI)
                         if (old.batteryLevel != new.batteryLevel) payloads.add(PAYLOAD_BATTERY)
+                        if (old.deviceEpoch != new.deviceEpoch) payloads.add(PAYLOAD_TIME)
                         if (old.isConnected != new.isConnected || old.isConnecting != new.isConnecting || old.isNearby != new.isNearby) {
                             payloads.add(PAYLOAD_STATE)
                         }
@@ -372,9 +383,14 @@ class ReaderDiscoveryController(
                     val combinedPayloads = payloads.filterIsInstance<Set<String>>().flatten()
                     if (combinedPayloads.contains(PAYLOAD_RSSI)) updateRssi(holder, item)
                     if (combinedPayloads.contains(PAYLOAD_BATTERY)) updateBattery(holder, item)
+                    if (combinedPayloads.contains(PAYLOAD_TIME)) {
+                        updateRssi(holder, item)
+                        updateBattery(holder, item)
+                    }
                     if (combinedPayloads.contains(PAYLOAD_STATE)) {
                         updateAccent(holder, item)
                         updateRssi(holder, item)
+                        updateBattery(holder, item)
                         updateDimming(holder, item)
                     }
                     if (combinedPayloads.isEmpty()) fullBind(holder, item)
@@ -407,14 +423,16 @@ class ReaderDiscoveryController(
             holder.txtName.alpha = alpha
             holder.txtMac.alpha = alpha
             holder.txtValue.alpha = alpha
+            holder.txtValueSecondary.alpha = alpha
             holder.imgSignal.alpha = alpha
+            holder.imgBattery.alpha = alpha
             holder.viewAccent.alpha = alpha
         }
 
         private fun updateAccent(holder: DeviceViewHolder, item: DeviceItem) {
             val color = when {
-                item.isConnected -> "#4CAF50".toColorInt()
-                item.isConnecting -> "#FF9800".toColorInt()
+                item.isConnected -> holder.itemView.context.getColor(R.color.chalk_green)
+                item.isConnecting -> holder.itemView.context.getColor(R.color.chalk_orange)
                 else -> Color.TRANSPARENT
             }
             holder.viewAccent.setBackgroundColor(color)
@@ -422,31 +440,49 @@ class ReaderDiscoveryController(
 
         private fun updateRssi(holder: DeviceViewHolder, item: DeviceItem) {
             val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
+            
+            // Show/Hide Twin Stacks
+            holder.layoutSignalStack.visibility = if (isOffline) View.GONE else View.VISIBLE
+            holder.layoutLegacyValueStack.visibility = View.GONE
+            
             if (item.isConnecting) {
-                holder.txtValue.text = holder.itemView.context.getString(R.string.status_connecting)
-                holder.imgSignal.visibility = View.GONE
+                holder.layoutLegacyValueStack.visibility = View.VISIBLE
+                holder.txtLegacyValue.text = holder.itemView.context.getString(R.string.status_connecting)
+                holder.layoutSignalStack.visibility = View.GONE
+                holder.layoutBatteryStack.visibility = View.GONE
             } else if (isOffline) {
-                holder.txtValue.text = holder.itemView.context.getString(R.string.status_not_found)
-                holder.imgSignal.visibility = View.GONE
+                holder.layoutLegacyValueStack.visibility = View.VISIBLE
+                holder.txtLegacyValue.text = holder.itemView.context.getString(R.string.status_not_found)
+                holder.layoutSignalStack.visibility = View.GONE
+                holder.layoutBatteryStack.visibility = View.GONE
             } else {
                 holder.imgSignal.visibility = View.VISIBLE
-                val (iconRes, rssiText) = when {
-                    item.rssi == null -> R.drawable.ic_signal_weak to "--"
-                    item.rssi >= -60 -> R.drawable.ic_signal_strong to "${item.rssi}"
-                    item.rssi >= -80 -> R.drawable.ic_signal_medium to "${item.rssi}"
-                    else -> R.drawable.ic_signal_weak to "${item.rssi}"
+                val iconRes = when {
+                    item.rssi == null -> R.drawable.ic_signal_weak
+                    item.rssi >= -60 -> R.drawable.ic_signal_strong
+                    item.rssi >= -80 -> R.drawable.ic_signal_medium
+                    else -> R.drawable.ic_signal_weak
                 }
                 holder.imgSignal.setImageResource(iconRes)
-                holder.txtValue.text = rssiText
+                
+                // Row 2: Values (Primary text is RSSI) - Consistent 11sp orange
+                holder.txtValue.text = if (item.rssi != null) "${item.rssi} dBm" else "--"
             }
         }
 
         private fun updateBattery(holder: DeviceViewHolder, item: DeviceItem) {
-            if (item.batteryLevel != null && item.isConnected) {
-                holder.txtValueSecondary.visibility = View.VISIBLE
-                holder.txtValueSecondary.text = "${item.batteryLevel}%"
+            if (item.isConnected) {
+                holder.layoutBatteryStack.visibility = View.VISIBLE
+                val battery = item.batteryLevel ?: 0
+                val iconRes = when {
+                    battery <= 33 -> R.drawable.ic_battery_low
+                    battery <= 66 -> R.drawable.ic_battery_mid
+                    else -> R.drawable.ic_battery_full
+                }
+                holder.imgBattery.setImageResource(iconRes)
+                holder.txtValueSecondary.text = if (item.batteryLevel != null) "${item.batteryLevel}%" else "--%"
             } else {
-                holder.txtValueSecondary.visibility = View.GONE
+                holder.layoutBatteryStack.visibility = View.GONE
             }
         }
 
@@ -461,6 +497,11 @@ class ReaderDiscoveryController(
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)
             val txtValueSecondary: TextView = v.findViewById(R.id.txtStatValueSecondary)
             val imgSignal: ImageView = v.findViewById(R.id.imgSignalIcon)
+            val imgBattery: ImageView = v.findViewById(R.id.imgBatteryIcon)
+            val layoutSignalStack: View = v.findViewById(R.id.layoutSignalStack)
+            val layoutBatteryStack: View = v.findViewById(R.id.layoutBatteryStack)
+            val layoutLegacyValueStack: View = v.findViewById(R.id.layoutLegacyValueStack)
+            val txtLegacyValue: TextView = v.findViewById(R.id.txtLegacyStatValue)
             val viewAccent: View = v.findViewById(R.id.viewConnectionAccent)
         }
     }

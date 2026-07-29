@@ -113,6 +113,7 @@ class ReaderProtocol {
             try {
                 val epoch = parts[0].trim().toLong()
                 val battery = parts[1].trim().toInt()
+                Log.d(TAG, "[Status] Received payload: '$payload'")
                 _domainEvents.emit(ProtocolEvent.Metrics(epoch, battery))
             } catch (e: Exception) {
                 Log.e(TAG, "[Protocol Error] Failed to parse status payload: '$payload'", e)

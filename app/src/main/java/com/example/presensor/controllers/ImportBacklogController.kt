@@ -223,11 +223,14 @@ class ImportBacklogController(
         override fun getItemCount() = items.size
 
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val cardRoot: com.google.android.material.card.MaterialCardView = view.findViewById(R.id.cardStatRoot)
             val nameText: TextView = view.findViewById(R.id.txtPrimaryLabel)
             val rfidText: TextView = view.findViewById(R.id.txtSecondaryLabel)
-            val timeText: TextView = view.findViewById(R.id.txtStatValue)
-            val dateText: TextView = view.findViewById(R.id.txtStatValueSecondary)
+            val timeText: TextView = view.findViewById(R.id.txtLegacyStatValue)
+            val dateText: TextView = view.findViewById(R.id.txtLegacyStatValueSecondary)
             val selectionAccent: View = view.findViewById(R.id.viewConnectionAccent)
+            val layoutSignalStack: View = view.findViewById(R.id.layoutSignalStack)
+            val layoutBatteryStack: View = view.findViewById(R.id.layoutBatteryStack)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -240,6 +243,10 @@ class ImportBacklogController(
             val item = items[position]
             holder.nameText.text = item.student?.name ?: "Unknown Student"
             holder.rfidText.text = item.tagId.chunked(2).joinToString(":")
+            
+            // Hide technical stacks
+            holder.layoutSignalStack.visibility = View.GONE
+            holder.layoutBatteryStack.visibility = View.GONE
 
             val date = java.util.Date(item.timestamp * 1000L)
             val timeFormat = java.time.format.DateTimeFormatter.ofPattern(
@@ -278,7 +285,7 @@ class ImportBacklogController(
             )
 
             val alpha = if (isSelected) 1.0f else 0.5f
-            holder.itemView.alpha = alpha
+            holder.cardRoot.alpha = alpha
             holder.nameText.alpha = alpha
             holder.rfidText.alpha = alpha
             holder.timeText.alpha = alpha

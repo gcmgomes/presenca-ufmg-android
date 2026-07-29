@@ -149,7 +149,7 @@ class ReaderOrchestrator(
                     device.isNearby || isCurrentlyActive
                 }
 
-                device.copy(isNearby = updatedNearby)
+                device.copy(isNearby = updatedNearby, lastSeen = currentTimeMillis())
             }.filter { (addr, device) ->
                 val normalizedAddr = addr.uppercase()
                 val isKnown = secureStoreManager.hasPasswordFor(device.name)
@@ -200,7 +200,13 @@ class ReaderOrchestrator(
 
                 // --- DYNAMIC LOADING: Only update once per cycle to prevent UI jitter ---
                 if (_emittedInCurrentCycle.add(address)) {
-                    _discoveredDevices.update { it + (address to device) }
+                    _discoveredDevices.update { currentMap ->
+                        val existing = currentMap[address]
+                        currentMap + (address to device.copy(
+                            batteryLevel = existing?.batteryLevel,
+                            deviceEpoch = existing?.deviceEpoch
+                        ))
+                    }
 
                     // Also update the active device's persistent state once per cycle if it matches
                     if (address == _activeDevice.value?.address) {
@@ -276,6 +282,10 @@ class ReaderOrchestrator(
                     // This is the ONLY place where devices can be downgraded to 'Offline'
                     Log.i(TAG, "[Orchestrator] Scan burst finished. Re-evaluating Nearby status.")
                     pruneDiscoveryMap(isCycleEnd = true)
+                    
+                    // Force refresh of the active device at cycle end
+                    _activeDevice.update { it?.copy(lastSeen = currentTimeMillis()) }
+                    
                     _emittedInCurrentCycle.clear()
                 } else if (!scanning) {
                     // Periodic idle maintenance (e.g. RSSI cleanup) but keep Nearby status sticky
@@ -340,14 +350,32 @@ class ReaderOrchestrator(
             is ProtocolEvent.InventoryItem -> _inventoryFlow.emit(event.tagId to event.timestamp)
             is ProtocolEvent.Metrics -> {
                 _metricsFlow.emit(event.timestamp to event.batteryLevel)
-                // Update the persistent active device with latest battery and epoch
+                
+                val currentAddr = connectedDeviceAddress
+                
                 _activeDevice.update { current ->
-                    if (current?.address == connectedDeviceAddress) {
+                    if (current?.address == currentAddr) {
                         current?.copy(
                             batteryLevel = event.batteryLevel,
-                            deviceEpoch = event.timestamp
+                            deviceEpoch = event.timestamp,
+                            lastSeen = currentTimeMillis()
                         )
                     } else current
+                }
+
+                // --- ATOMIC ANCHORING: Update the discovery map too ---
+                // This ensures scan hits don't overwrite technical metadata with nulls
+                if (currentAddr != null) {
+                    _discoveredDevices.update { currentMap ->
+                        val existing = currentMap[currentAddr]
+                        if (existing != null) {
+                            currentMap + (currentAddr to existing.copy(
+                                batteryLevel = event.batteryLevel,
+                                deviceEpoch = event.timestamp,
+                                lastSeen = currentTimeMillis()
+                            ))
+                        } else currentMap
+                    }
                 }
             }
 
@@ -500,6 +528,13 @@ class ReaderOrchestrator(
     fun startConnecting() {
         val name = secureStoreManager.deviceName
         val password = secureStoreManager.getAuthPasswordFor(name)
+
+        // --- AUTH-CHECK: If already authenticated, refresh status instead of full re-auth ---
+        if (isAuthenticated.value) {
+            Log.i(TAG, "[Autoconnect] Already authenticated. Requesting status refresh.")
+            requestStatus()
+            return
+        }
 
         // --- AUTO-CONNECT (Background): Try to get MAC from discovery map ---
         val address = _discoveredDevices.value.values.find { it.name == name }?.address

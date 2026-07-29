@@ -21,9 +21,11 @@ class StudentSearchAdapter(
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val nameText: TextView = view.findViewById(R.id.txtPrimaryLabel)
         val emailText: TextView = view.findViewById(R.id.txtSecondaryLabel)
-        val statText: TextView = view.findViewById(R.id.txtStatValue)
-        val dateText: TextView = view.findViewById(R.id.txtStatValueSecondary)
+        val statText: TextView = view.findViewById(R.id.txtLegacyStatValue)
+        val dateText: TextView = view.findViewById(R.id.txtLegacyStatValueSecondary)
         val selectionAccent: View = view.findViewById(R.id.viewConnectionAccent)
+        val layoutSignalStack: View = view.findViewById(R.id.layoutSignalStack)
+        val layoutBatteryStack: View = view.findViewById(R.id.layoutBatteryStack)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -36,6 +38,10 @@ class StudentSearchAdapter(
         val student = getItem(position)
         holder.nameText.text = student.name
         holder.emailText.text = student.email
+
+        // Hide technical stacks
+        holder.layoutSignalStack.visibility = View.GONE
+        holder.layoutBatteryStack.visibility = View.GONE
 
         // Hide irrelevant fields for search
         holder.statText.visibility = View.GONE
