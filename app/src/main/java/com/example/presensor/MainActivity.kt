@@ -363,14 +363,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             toastProvider = toastProvider
         )
         importStudentController = ImportStudentController(
-            activity = this,
-            context = this,
-            scope = lifecycleScope,
+            interactionProvider = interactionProvider,
             db = db,
-            dataProcessorProvider = dataProcessorProvider,
-            dialogProvider = dialogProvider,
-            loadingOverlayProvider = this,
-            toastProvider = toastProvider
+            scope = lifecycleScope,
+            dataProcessorProvider = dataProcessorProvider
         )
 
         // Initialize Dashboard Controller

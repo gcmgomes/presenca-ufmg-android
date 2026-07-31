@@ -109,6 +109,10 @@ class AndroidInteractionProvider(
 
     override fun isAnyDialogOpen(): Boolean = DialogFactory.isAnyDialogOpen()
 
+    override fun setLoadingJob(job: kotlinx.coroutines.Job?) {
+        activity.setCurrentOverlayJob(job)
+    }
+
     // --- Tag Interaction ---
 
     override fun toggleNfcScanning(enabled: Boolean, callback: Any?) {

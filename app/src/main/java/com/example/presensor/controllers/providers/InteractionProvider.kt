@@ -23,6 +23,7 @@ interface InteractionProvider {
     fun getContentResolver(): ContentResolver
     fun dismissActiveDialog()
     fun isAnyDialogOpen(): Boolean
+    fun setLoadingJob(job: kotlinx.coroutines.Job?)
 }
 
 /**
