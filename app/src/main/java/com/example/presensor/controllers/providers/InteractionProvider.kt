@@ -24,6 +24,13 @@ interface InteractionProvider {
     fun dismissActiveDialog()
     fun isAnyDialogOpen(): Boolean
     fun setLoadingJob(job: kotlinx.coroutines.Job?)
+    fun showMappingDialog(
+        fields: List<String>,
+        columns: List<String>,
+        sampleRow: List<String>?,
+        onDismissed: () -> Unit,
+        onConfirmed: (Map<String, String>) -> Unit
+    )
 }
 
 /**
@@ -55,14 +62,6 @@ interface TagInteractionProvider : InteractionProvider {
  * Specialized provider for Student-related import and mapping.
  */
 interface StudentInteractionProvider : InteractionProvider {
-    fun showMappingDialog(
-        fields: List<String>,
-        columns: List<String>,
-        sampleRow: List<String>?,
-        onDismissed: () -> Unit,
-        onConfirmed: (Map<String, String>) -> Unit
-    )
-
     fun showStudentImportPreview(
         students: List<Student>,
         onConfirm: (List<Student>) -> Unit,

@@ -1,15 +1,10 @@
 package com.example.presensor.controllers
 
-import android.content.Context
 import android.net.Uri
 import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
+import com.example.presensor.controllers.providers.SessionInteractionProvider
 import com.example.presensor.tools.providers.DataProcessorProvider
-import com.example.presensor.tools.providers.DialogProvider
-import com.example.presensor.tools.providers.LoadingOverlayProvider
-import com.example.presensor.tools.providers.ToastProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
@@ -20,14 +15,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class ImportSessionController(
-    private val activity: AppCompatActivity,
-    private val context: Context,
-    private val scope: CoroutineScope,
+    private val interactionProvider: SessionInteractionProvider,
     private val db: AppDatabase,
+    private val scope: CoroutineScope,
     private val dataProcessorProvider: DataProcessorProvider,
-    private val dialogProvider: DialogProvider,
-    private val loadingOverlayProvider: LoadingOverlayProvider,
-    private val toastProvider: ToastProvider,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -38,48 +29,46 @@ class ImportSessionController(
         onImportComplete: () -> Unit
     ) {
         scope.launch(mainDispatcher) {
-            dialogProvider.showMappingDialog(
-                context,
+            interactionProvider.showMappingDialog(
                 fields = listOf("name", "date"),
                 columns = table.headers,
                 sampleRow = table.rows.firstOrNull(),
-                onDismissed = { loadingOverlayProvider.toggleLoadingOverlay(false) },
+                onDismissed = { interactionProvider.toggleLoading(false) },
                 onConfirmed = { mapping ->
                     val result = dataProcessorProvider.parseSessionsFromTable(
-                        context,
+                        interactionProvider.getContext(),
                         table,
                         courseId,
                         mapping
                     )
                     if (result.items.isNotEmpty()) {
-                        dialogProvider.showSessionImportPreview(
-                            activity,
+                        interactionProvider.showSessionImportPreview(
                             result.items,
                             onConfirm = { selected -> executeImport(selected, onImportComplete) },
-                            onDismiss = { loadingOverlayProvider.toggleLoadingOverlay(false) }
+                            onDismiss = { interactionProvider.toggleLoading(false) }
                         )
                         if (result.errors.isNotEmpty()) {
-                            toastProvider.showToast(
-                                context.getString(
+                            interactionProvider.showToast(
+                                interactionProvider.getString(
                                     R.string.msg_imported_with_errors,
                                     result.items.size,
                                     result.errors.size
                                 ),
-                                Toast.LENGTH_LONG
+                                isShort = false
                             )
                             result.errors.forEach { Log.w("ImportSession", it) }
                         }
                     } else {
                         val errorMessage = if (result.errors.isNotEmpty()) {
-                            context.getString(
+                            interactionProvider.getString(
                                 R.string.msg_failed_to_parse_any,
                                 result.errors.take(2).joinToString("\n")
                             )
                         } else {
-                            context.getString(R.string.error_parsing_mapping_sessions)
+                            interactionProvider.getString(R.string.error_parsing_mapping_sessions)
                         }
-                        toastProvider.showToast(errorMessage, Toast.LENGTH_LONG)
-                        loadingOverlayProvider.toggleLoadingOverlay(false)
+                        interactionProvider.showToast(errorMessage, isShort = false)
+                        interactionProvider.toggleLoading(false)
                     }
                 }
             )
@@ -87,20 +76,20 @@ class ImportSessionController(
     }
 
     private fun executeImport(sessions: List<Session>, onImportComplete: () -> Unit) {
-        loadingOverlayProvider.toggleLoadingOverlay(true)
+        interactionProvider.toggleLoading(true)
         val job = scope.launch {
             withContext(ioDispatcher) {
                 db.insertSessions(sessions)
             }
 
             withContext(mainDispatcher) {
-                loadingOverlayProvider.toggleLoadingOverlay(false)
+                interactionProvider.toggleLoading(false)
                 onImportComplete()
-                val toastMsg = context.getString(R.string.toast_imported_sessions, sessions.size)
-                toastProvider.showToast(toastMsg)
+                val toastMsg = interactionProvider.getString(R.string.toast_imported_sessions, sessions.size)
+                interactionProvider.showToast(toastMsg)
             }
         }
-        loadingOverlayProvider.setCurrentOverlayJob(job)
+        interactionProvider.setLoadingJob(job)
     }
 
     fun importFromCloud(
@@ -111,13 +100,13 @@ class ImportSessionController(
         onImportComplete: () -> Unit
     ) {
         if (sheetsService == null) {
-            loadingOverlayProvider.toggleLoadingOverlay(false)
+            interactionProvider.toggleLoading(false)
             return
         }
         val job = scope.launch(ioDispatcher) {
             try {
                 val table = dataProcessorProvider.ingestFromGoogleSheets(
-                    context,
+                    interactionProvider.getContext(),
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'",
@@ -127,12 +116,12 @@ class ImportSessionController(
             } catch (e: Exception) {
                 Log.e("ImportSession", "Failed to ingest schedule from Sheets", e)
                 withContext(mainDispatcher) {
-                    loadingOverlayProvider.toggleLoadingOverlay(false)
-                    toastProvider.showToast(context.getString(R.string.toast_cloud_schedule_import_failed))
+                    interactionProvider.toggleLoading(false)
+                    interactionProvider.showToast(interactionProvider.getString(R.string.toast_cloud_schedule_import_failed))
                 }
             }
         }
-        loadingOverlayProvider.setCurrentOverlayJob(job)
+        interactionProvider.setLoadingJob(job)
     }
 
     fun importFromLocal(
@@ -143,7 +132,7 @@ class ImportSessionController(
         val job = scope.launch(ioDispatcher) {
             try {
                 val table = dataProcessorProvider.ingestFromCsv(
-                    context.contentResolver,
+                    interactionProvider.getContentResolver(),
                     uri,
                     caller = "ImportSessionController.importFromLocal"
                 )
@@ -151,11 +140,11 @@ class ImportSessionController(
             } catch (e: Exception) {
                 Log.e("ImportSession", "CSV Import error", e)
                 withContext(mainDispatcher) {
-                    loadingOverlayProvider.toggleLoadingOverlay(false)
-                    toastProvider.showToast(context.getString(R.string.toast_csv_import_error))
+                    interactionProvider.toggleLoading(false)
+                    interactionProvider.showToast(interactionProvider.getString(R.string.toast_csv_import_error))
                 }
             }
         }
-        loadingOverlayProvider.setCurrentOverlayJob(job)
+        interactionProvider.setLoadingJob(job)
     }
 }

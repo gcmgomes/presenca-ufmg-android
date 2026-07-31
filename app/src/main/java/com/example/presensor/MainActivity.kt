@@ -273,9 +273,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
 
-        val toastProvider = AndroidToastProvider(this)
         secureStoreManager = SecureStoreManager(this)
-
         val transport = BleTransport(this, lifecycleScope)
         readerOrchestrator = ReaderOrchestrator(
             secureStoreManager = secureStoreManager,
@@ -341,8 +339,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         val dataProcessorProvider = AndroidDataProcessorProvider()
-        val previewProvider = AndroidPreviewProvider()
-        val dialogProvider = AndroidDialogProvider(previewProvider)
 
         val interactionProvider = AndroidInteractionProvider(
             activity = this,
@@ -353,14 +349,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         importSessionController = ImportSessionController(
-            activity = this,
-            context = this,
-            scope = lifecycleScope,
+            interactionProvider = interactionProvider,
             db = db,
-            dataProcessorProvider = dataProcessorProvider,
-            dialogProvider = dialogProvider,
-            loadingOverlayProvider = this,
-            toastProvider = toastProvider
+            scope = lifecycleScope,
+            dataProcessorProvider = dataProcessorProvider
         )
         importStudentController = ImportStudentController(
             interactionProvider = interactionProvider,

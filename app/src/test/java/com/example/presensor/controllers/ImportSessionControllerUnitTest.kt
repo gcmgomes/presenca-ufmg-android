@@ -5,9 +5,7 @@ import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
 import com.example.presensor.tools.DataProcessor
 import com.example.presensor.tools.providers.DataProcessorProvider
-import com.example.presensor.tools.providers.DialogProvider
-import com.example.presensor.tools.providers.LoadingOverlayProvider
-import com.example.presensor.tools.providers.ToastProvider
+import com.example.presensor.controllers.providers.SessionInteractionProvider
 import com.google.api.services.sheets.v4.Sheets
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -21,9 +19,7 @@ import org.mockito.kotlin.*
 class ImportSessionControllerUnitTest : BaseControllerTest() {
 
     private val dataProcessorProvider: DataProcessorProvider = mock()
-    private val dialogProvider: DialogProvider = mock()
-    private val loadingOverlayProvider: LoadingOverlayProvider = mock()
-    private val toastProvider: ToastProvider = mock()
+    private val interactionProvider: SessionInteractionProvider = mock()
 
     private lateinit var controller: ImportSessionController
     private val testScope = TestScope(mainDispatcherRule.testDispatcher)
@@ -31,16 +27,15 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Before
     override fun setup() {
         super.setup()
+        
+        whenever(interactionProvider.getContext()).thenReturn(activity)
+        whenever(interactionProvider.getContentResolver()).thenReturn(activity.contentResolver)
 
         controller = ImportSessionController(
-            activity = activity,
-            context = activity,
-            scope = testScope,
+            interactionProvider = interactionProvider,
             db = db,
+            scope = testScope,
             dataProcessorProvider = dataProcessorProvider,
-            dialogProvider = dialogProvider,
-            loadingOverlayProvider = loadingOverlayProvider,
-            toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             ioDispatcher = mainDispatcherRule.testDispatcher
         )
@@ -55,8 +50,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(uri, 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            eq(activity),
+        verify(interactionProvider).showMappingDialog(
             any(),
             eq(table.headers),
             any(),
@@ -71,12 +65,13 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(
             RuntimeException("Error")
         )
+        whenever(interactionProvider.getString(any())).thenReturn("Error")
 
         controller.importFromLocal(uri, 1L, {})
         advanceUntilIdle()
 
-        verify(loadingOverlayProvider).toggleLoadingOverlay(false)
-        verify(toastProvider).showToast(any(), any())
+        verify(interactionProvider).toggleLoading(false)
+        verify(interactionProvider).showToast(any<String>(), any())
     }
 
     @Test
@@ -96,8 +91,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromCloud(sheets, "id", "tab", 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            eq(activity),
+        verify(interactionProvider).showMappingDialog(
             any(),
             eq(table.headers),
             any(),
@@ -118,19 +112,20 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
                 any()
             )
         ).thenThrow(RuntimeException("API Error"))
+        whenever(interactionProvider.getString(any())).thenReturn("Error")
 
         controller.importFromCloud(sheets, "id", "tab", 1L, {})
         advanceUntilIdle()
 
-        verify(loadingOverlayProvider).toggleLoadingOverlay(false)
-        verify(toastProvider).showToast(any(), any())
+        verify(interactionProvider).toggleLoading(false)
+        verify(interactionProvider).showToast(any<String>(), any())
     }
 
     @Test
     fun importFromCloud_nullService_hidesOverlay() = runTest {
         controller.importFromCloud(null, "id", "tab", 1L, {})
         advanceUntilIdle()
-        verify(loadingOverlayProvider).toggleLoadingOverlay(false)
+        verify(interactionProvider).toggleLoading(false)
     }
 
     @Test
@@ -148,14 +143,14 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
                 any()
             )
         ).thenReturn(result)
+        whenever(interactionProvider.getString(any(), any(), any())).thenReturn("Error")
 
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
 
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            any(),
+        verify(interactionProvider).showMappingDialog(
             any(),
             any(),
             any(),
@@ -165,7 +160,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(toastProvider).showToast(any(), any())
+        verify(interactionProvider).showToast(any<String>(), eq(false))
     }
 
     @Test
@@ -182,14 +177,15 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
                 any()
             )
         ).thenReturn(result)
+        whenever(interactionProvider.getString(any())).thenReturn("Error")
+        whenever(interactionProvider.getString(any(), any())).thenReturn("Error")
 
         val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
 
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            any(),
+        verify(interactionProvider).showMappingDialog(
             any(),
             any(),
             any(),
@@ -199,8 +195,8 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(toastProvider).showToast(any(), any())
-        verify(loadingOverlayProvider).toggleLoadingOverlay(false)
+        verify(interactionProvider).showToast(any<String>(), eq(false))
+        verify(interactionProvider).toggleLoading(false)
     }
 
     @Test
@@ -212,8 +208,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            any(),
+        verify(interactionProvider).showMappingDialog(
             any(),
             any(),
             any(),
@@ -222,7 +217,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         )
         onDismissedCaptor.firstValue.invoke()
 
-        verify(loadingOverlayProvider).toggleLoadingOverlay(false)
+        verify(interactionProvider).toggleLoading(false)
     }
 
     @Test
@@ -249,8 +244,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            any(),
+        verify(interactionProvider).showMappingDialog(
             any(),
             any(),
             any(),
@@ -260,18 +254,20 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showSessionImportPreview(
-            any(),
+        verify(interactionProvider).showSessionImportPreview(
             eq(sessions),
             onPreviewConfirmCaptor.capture(),
             any()
         )
+        
+        whenever(interactionProvider.getString(any(), any())).thenReturn("Success")
+        
         onPreviewConfirmCaptor.firstValue.invoke(sessions)
         advanceUntilIdle()
 
         val saved = db.getSessionsByCourse(1L)
         assert(saved.isNotEmpty())
-        verify(toastProvider, atLeastOnce()).showToast(any(), any())
+        verify(interactionProvider, atLeastOnce()).showToast(any<String>(), any())
     }
 
     @Test
@@ -298,8 +294,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         controller.importFromLocal(mock(), 1L, {})
         advanceUntilIdle()
 
-        verify(dialogProvider).showMappingDialog(
-            any(),
+        verify(interactionProvider).showMappingDialog(
             any(),
             any(),
             any(),
@@ -309,8 +304,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         onMappingConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
         advanceUntilIdle()
 
-        verify(dialogProvider).showSessionImportPreview(
-            any(),
+        verify(interactionProvider).showSessionImportPreview(
             any(),
             any(),
             onPreviewDismissCaptor.capture()
@@ -318,6 +312,6 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         onPreviewDismissCaptor.firstValue.invoke()
         advanceUntilIdle()
 
-        verify(loadingOverlayProvider, atLeastOnce()).toggleLoadingOverlay(false)
+        verify(interactionProvider, atLeastOnce()).toggleLoading(false)
     }
 }
