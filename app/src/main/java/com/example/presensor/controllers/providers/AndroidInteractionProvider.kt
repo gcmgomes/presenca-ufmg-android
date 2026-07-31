@@ -1,5 +1,7 @@
 package com.example.presensor.controllers.providers
 
+import android.nfc.NfcAdapter
+import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
@@ -105,10 +107,32 @@ class AndroidInteractionProvider(
         }
     }
 
+    override fun isAnyDialogOpen(): Boolean = DialogFactory.isAnyDialogOpen()
+
     // --- Tag Interaction ---
 
     override fun toggleNfcScanning(enabled: Boolean, callback: Any?) {
-        // Implementation remains tied to MainActivity/Controller logic for now
+        activity.runOnUiThread {
+            val adapter = NfcAdapter.getDefaultAdapter(activity) ?: return@runOnUiThread
+            if (enabled) {
+                val options = Bundle().apply {
+                    putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 500)
+                }
+
+                var readerFlags =
+                    NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
+
+                if (DialogFactory.isAnyDialogOpen()) {
+                    readerFlags = readerFlags or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
+                }
+
+                if (callback is NfcAdapter.ReaderCallback) {
+                    adapter.enableReaderMode(activity, callback, readerFlags, options)
+                }
+            } else {
+                adapter.disableReaderMode(activity)
+            }
+        }
     }
 
     override fun showOverwriteConfirmation(

@@ -6,6 +6,7 @@ import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.AndroidTagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
+import com.example.presensor.controllers.providers.AndroidInteractionProvider
 import com.example.presensor.tools.providers.AndroidToastProvider
 import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
@@ -343,6 +344,14 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         val previewProvider = AndroidPreviewProvider()
         val dialogProvider = AndroidDialogProvider(previewProvider)
 
+        val interactionProvider = AndroidInteractionProvider(
+            activity = this,
+            secureStoreManager = secureStoreManager,
+            tagDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
+            sessionDialogFactory = sessionDialogFactory,
+            courseDialogFactory = courseDialogFactory
+        )
+
         importSessionController = ImportSessionController(
             activity = this,
             context = this,
@@ -447,15 +456,12 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         // Initialize Tag Controller
         tagController = TagController(
-            activity = this,
+            interactionProvider = interactionProvider,
             db = db,
             scope = lifecycleScope,
             readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
-            toastProvider = AndroidToastProvider(this),
-            isDialogShowingCheck = { DialogFactory.isAnyDialogOpen() },
+            isDialogShowingCheck = { interactionProvider.isAnyDialogOpen() },
             disableRefreshSpinner = { sessionController.showLayoutRefreshSpinner(false) },
             resetSyncTimeout = { sessionController.resetSyncTimeout() }
         )
@@ -685,25 +691,12 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
     override fun onResume() {
         super.onResume()
-        val options = Bundle().apply {
-            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 500)
-        }
+        tagController.resumeNfcScanning()
+    }
 
-        // Determine the hardware reader flags dynamically
-        var readerFlags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-
-        // If your custom property says the sound shouldn't play (or a dialog is locking it),
-        // we tell Android to silence the platform beep. Otherwise, leave it out so it beeps naturally!
-        if (DialogFactory.isAnyDialogOpen()) { // Replace with your exact DialogFactory boolean variable
-            readerFlags = readerFlags or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
-        }
-
-        tagController.getNfcAdapter()?.enableReaderMode(
-            this,
-            tagController,
-            readerFlags,
-            options
-        )
+    override fun onPause() {
+        super.onPause()
+        tagController.pauseNfcScanning()
     }
 
     override fun onDestroy() {

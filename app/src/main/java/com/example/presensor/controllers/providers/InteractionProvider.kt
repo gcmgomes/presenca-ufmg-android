@@ -21,6 +21,8 @@ interface InteractionProvider {
     fun getString(resId: Int, vararg formatArgs: Any): String
     fun getContext(): Context
     fun getContentResolver(): ContentResolver
+    fun dismissActiveDialog()
+    fun isAnyDialogOpen(): Boolean
 }
 
 /**
@@ -104,8 +106,6 @@ interface SessionInteractionProvider : InteractionProvider {
         onStudentSelected: (Student) -> Unit,
         onManualRegistrationRequested: () -> Unit
     )
-
-    fun dismissActiveDialog()
 }
 
 /**
@@ -137,7 +137,6 @@ interface ReaderInteractionProvider : InteractionProvider {
     fun addBacklogItem(item: BacklogItem)
     fun removeBacklogItem(item: BacklogItem)
     fun updateBacklogCount(count: Int)
-    fun dismissActiveDialog()
 }
 
 /**

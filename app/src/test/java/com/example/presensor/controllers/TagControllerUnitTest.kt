@@ -1,14 +1,9 @@
 package com.example.presensor.controllers
 
-import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
-import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
-import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.communication.ReaderOrchestrator
-import androidx.appcompat.app.AlertDialog
+import com.example.presensor.controllers.providers.TagInteractionProvider
 import com.example.presensor.data.entities.Student
-import com.example.presensor.tools.providers.ToastProvider
 import android.nfc.Tag
-import android.nfc.NfcAdapter
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
@@ -25,10 +20,7 @@ class TagControllerUnitTest : BaseControllerTest() {
     private lateinit var tagController: TagController
     private val sessionController: SessionController = mock()
     private val readerOrchestrator: ReaderOrchestrator = mock()
-    private val sessionDialogFactory: SessionControllerDialogFactory = mock()
-    private val tagControllerDialogFactory: TagControllerDialogFactory = mock()
-    private val toastProvider: ToastProvider = mock()
-    private val nfcAdapter: NfcAdapter = mock()
+    private val interactionProvider: TagInteractionProvider = mock()
     private val disableRefreshSpinner: () -> Unit = mock()
     private val resetSyncTimeout: () -> Unit = mock()
     private lateinit var testScope: TestScope
@@ -41,16 +33,12 @@ class TagControllerUnitTest : BaseControllerTest() {
         whenever(readerOrchestrator.rfidSwipeFlow).thenReturn(rfidSwipeFlow)
 
         tagController = TagController(
-            activity = activity,
+            interactionProvider = interactionProvider,
             db = db,
             scope = testScope,
             readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = tagControllerDialogFactory,
-            toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
-            nfcAdapter = nfcAdapter,
             isDialogShowingCheck = { false },
             disableRefreshSpinner = disableRefreshSpinner,
             resetSyncTimeout = resetSyncTimeout
@@ -88,7 +76,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             advanceUntilIdle()
             ShadowLooper.idleMainLooper()
 
-            verify(tagControllerDialogFactory).showOverwriteConfirmation(any(), eq(rfid), any())
+            verify(interactionProvider).showOverwriteConfirmation(any(), eq(rfid), any())
         }
 
     @Test
@@ -103,7 +91,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             advanceUntilIdle()
             ShadowLooper.idleMainLooper()
 
-            verify(tagControllerDialogFactory).showBindingDialog(
+            verify(interactionProvider).showBindingDialog(
                 eq(rfid),
                 any(),
                 any(),
@@ -118,16 +106,12 @@ class TagControllerUnitTest : BaseControllerTest() {
         val time = 1000L
 
         val tagControllerWithOpenDialog = TagController(
-            activity = activity,
+            interactionProvider = interactionProvider,
             db = db,
             scope = testScope,
             readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = tagControllerDialogFactory,
-            toastProvider = toastProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
-            nfcAdapter = nfcAdapter,
             isDialogShowingCheck = { true },
             disableRefreshSpinner = {},
             resetSyncTimeout = {}
@@ -153,7 +137,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             ShadowLooper.idleMainLooper()
 
             val captor = argumentCaptor<() -> Unit>()
-            verify(tagControllerDialogFactory).showOverwriteConfirmation(
+            verify(interactionProvider).showOverwriteConfirmation(
                 any(),
                 eq(rfid),
                 captor.capture()
@@ -166,8 +150,8 @@ class TagControllerUnitTest : BaseControllerTest() {
             val updatedStudent = db.getStudentByRfid(rfid)
             assert(updatedStudent == null)
 
-            verify(toastProvider).showToast(any(), any())
-            verify(tagControllerDialogFactory).showBindingDialog(
+            verify(interactionProvider).showToast(any<Int>(), any())
+            verify(interactionProvider).showBindingDialog(
                 eq(rfid),
                 any(),
                 any(),
@@ -190,7 +174,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             ShadowLooper.idleMainLooper()
 
             val studentSelectedCaptor = argumentCaptor<(Student) -> Unit>()
-            verify(tagControllerDialogFactory).showBindingDialog(
+            verify(interactionProvider).showBindingDialog(
                 eq(rfid), any(), studentSelectedCaptor.capture(), any(), any()
             )
 
@@ -200,7 +184,7 @@ class TagControllerUnitTest : BaseControllerTest() {
 
             val boundStudent = db.getStudentByRfid(rfid)
             assert(boundStudent?.email == student.email)
-            verify(toastProvider).showToast(any(), any())
+            verify(interactionProvider).showToast(any<Int>(), any())
         }
 
     @Test
@@ -214,13 +198,13 @@ class TagControllerUnitTest : BaseControllerTest() {
             ShadowLooper.idleMainLooper()
 
             val manualAttendanceCaptor = argumentCaptor<() -> Unit>()
-            verify(tagControllerDialogFactory).showBindingDialog(
+            verify(interactionProvider).showBindingDialog(
                 eq(rfid), any(), any(), manualAttendanceCaptor.capture(), any()
             )
 
             manualAttendanceCaptor.firstValue.invoke()
 
-            verify(sessionDialogFactory).showManualRegistrationDialog(eq(rfid), any())
+            verify(interactionProvider).showManualRegistrationDialog(eq(rfid), any())
         }
 
     @Test
@@ -229,14 +213,13 @@ class TagControllerUnitTest : BaseControllerTest() {
             val rfid = "NEW:RFID"
             val name = "New User"
             val email = "new@user.com"
-            val mockDialog: AlertDialog = mock()
 
             tagController.handleTagDiscovered(rfid, 1000L)
             advanceUntilIdle()
             ShadowLooper.idleMainLooper()
 
             val manualAttendanceCaptor = argumentCaptor<() -> Unit>()
-            verify(tagControllerDialogFactory).showBindingDialog(
+            verify(interactionProvider).showBindingDialog(
                 any(),
                 any(),
                 any(),
@@ -245,49 +228,35 @@ class TagControllerUnitTest : BaseControllerTest() {
             )
             manualAttendanceCaptor.firstValue.invoke()
 
-            val onStudentSavedCaptor = argumentCaptor<(String, String, AlertDialog) -> Unit>()
-            verify(sessionDialogFactory).showManualRegistrationDialog(
+            val onStudentSavedCaptor = argumentCaptor<(String, String, Any) -> Unit>()
+            verify(interactionProvider).showManualRegistrationDialog(
                 eq(rfid),
                 onStudentSavedCaptor.capture()
             )
 
-            onStudentSavedCaptor.firstValue.invoke(name, email, mockDialog)
+            whenever(interactionProvider.getString(any(), any())).thenReturn("Success")
+
+            onStudentSavedCaptor.firstValue.invoke(name, email, mock())
             advanceUntilIdle()
             ShadowLooper.idleMainLooper()
 
             val student = db.getStudentByRfid(rfid)
             assert(student?.name == name)
             assert(student?.email == email)
-            verify(toastProvider).showToast(any(), any())
-            verify(mockDialog).dismiss()
+            verify(interactionProvider).showToast(any<String>(), any())
+            verify(interactionProvider).dismissActiveDialog()
         }
 
     @Test
-    fun pauseNfcScanning_callsDisableReaderMode() {
+    fun pauseNfcScanning_callsToggleNfcScanning() {
         tagController.pauseNfcScanning()
-        verify(nfcAdapter).disableReaderMode(any())
+        verify(interactionProvider).toggleNfcScanning(eq(false), anyOrNull())
     }
 
     @Test
-    fun resumeNfcScanning_callsEnableReaderMode() {
-        DialogFactory.setDialogOpenForTesting(false)
+    fun resumeNfcScanning_callsToggleNfcScanning() {
         tagController.resumeNfcScanning()
-
-        val flagsCaptor = argumentCaptor<Int>()
-        verify(nfcAdapter).enableReaderMode(any(), any(), flagsCaptor.capture(), any())
-
-        assert(flagsCaptor.firstValue and NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS == 0)
-    }
-
-    @Test
-    fun resumeNfcScanning_dialogOpen_usesNoPlatformSounds() {
-        DialogFactory.setDialogOpenForTesting(true)
-        tagController.resumeNfcScanning()
-
-        val flagsCaptor = argumentCaptor<Int>()
-        verify(nfcAdapter).enableReaderMode(any(), any(), flagsCaptor.capture(), any())
-
-        assert(flagsCaptor.firstValue and NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS != 0)
+        verify(interactionProvider).toggleNfcScanning(eq(true), eq(tagController))
     }
 
     @Test
@@ -303,81 +272,6 @@ class TagControllerUnitTest : BaseControllerTest() {
 
             verify(sessionController).activeSession
         }
-
-    @Test
-    fun getNfcAdapter_returnsAdapter() {
-        assert(tagController.getNfcAdapter() == nfcAdapter)
-    }
-
-    @Test
-    fun constructor_defaultParams_initializesCorrectly() {
-        val tc = TagController(
-            activity = activity,
-            db = db,
-            scope = testScope,
-            readerOrchestrator = readerOrchestrator,
-            sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = tagControllerDialogFactory,
-            toastProvider = toastProvider,
-            mainDispatcher = mainDispatcherRule.testDispatcher,
-            nfcAdapter = null,
-            isDialogShowingCheck = { false },
-            disableRefreshSpinner = {},
-            resetSyncTimeout = {}
-        )
-        // In Robolectric, NfcAdapter.getDefaultAdapter returns null if not shadowed properly
-        // or if the device doesn't support NFC.
-        // We just want to cover the branch.
-        tc.getNfcAdapter()
-    }
-
-    @Test
-    fun pauseScanning_nullAdapter_noCrash() {
-        val tc = TagController(
-            activity = activity,
-            db = db,
-            scope = testScope,
-            readerOrchestrator = readerOrchestrator,
-            sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = tagControllerDialogFactory,
-            toastProvider = toastProvider,
-            mainDispatcher = mainDispatcherRule.testDispatcher,
-            nfcAdapter = null,
-            isDialogShowingCheck = { false },
-            disableRefreshSpinner = {},
-            resetSyncTimeout = {}
-        )
-        tc.pauseNfcScanning()
-    }
-
-    @Test
-    fun resumeScanning_nullAdapter_noCrash() {
-        val tc = TagController(
-            activity = activity,
-            db = db,
-            scope = testScope,
-            readerOrchestrator = readerOrchestrator,
-            sessionController = sessionController,
-            sessionDialogFactory = sessionDialogFactory,
-            tagControllerDialogFactory = tagControllerDialogFactory,
-            toastProvider = toastProvider,
-            mainDispatcher = mainDispatcherRule.testDispatcher,
-            nfcAdapter = null,
-            isDialogShowingCheck = { false },
-            disableRefreshSpinner = {},
-            resetSyncTimeout = {}
-        )
-        tc.resumeNfcScanning()
-    }
-
-    @Test
-    fun handleTagDiscovered_anyDialogShowing_earlyExit() {
-        DialogFactory.setDialogOpenForTesting(true)
-        tagController.handleTagDiscovered("RFID", 1000L)
-        verifyNoInteractions(sessionController)
-    }
 
     @Test
     fun startReaderCollection_collectsTagsAndFormatsThem() = testScope.runTest {

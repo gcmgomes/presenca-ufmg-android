@@ -2,18 +2,13 @@ package com.example.presensor.controllers
 
 import android.nfc.NfcAdapter
 import android.nfc.Tag
-import android.os.Bundle
 import android.util.Log
-import androidx.appcompat.app.AppCompatActivity
 import com.example.presensor.R
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.communication.core.AppMode
-import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
-import com.example.presensor.controllers.dialogs.TagControllerDialogFactory
+import com.example.presensor.controllers.providers.TagInteractionProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Student
-import com.example.presensor.tools.providers.ToastProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,40 +17,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class TagController(
-    private val activity: AppCompatActivity,
+    private val interactionProvider: TagInteractionProvider,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
     private val readerOrchestrator: ReaderOrchestrator?,
     private val sessionController: SessionController,
-    private val sessionDialogFactory: SessionControllerDialogFactory,
-    private val tagControllerDialogFactory: TagControllerDialogFactory,
-    private val toastProvider: ToastProvider,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
-    private val nfcAdapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(activity),
     private val isDialogShowingCheck: () -> Boolean,
     private val disableRefreshSpinner: () -> Unit,
     private val resetSyncTimeout: () -> Unit,
 ) : NfcAdapter.ReaderCallback {
 
     internal var readerCollectionJob: Job? = null
-    fun getNfcAdapter(): NfcAdapter? = nfcAdapter
 
     fun pauseNfcScanning() {
-        nfcAdapter?.disableReaderMode(activity)
+        interactionProvider.toggleNfcScanning(false)
     }
 
     fun resumeNfcScanning() {
-        val options = Bundle().apply {
-            putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 500)
-        }
-
-        var readerFlags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-
-        if (DialogFactory.isAnyDialogOpen()) {
-            readerFlags = readerFlags or NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
-        }
-
-        nfcAdapter?.enableReaderMode(activity, this, readerFlags, options)
+        interactionProvider.toggleNfcScanning(true, this)
     }
 
     fun resumeReader() {
@@ -63,7 +43,6 @@ class TagController(
     }
 
     override fun onTagDiscovered(tag: Tag) {
-        Log.d("onTagDiscovered", "Is a dialog open ${DialogFactory.isAnyDialogOpen()}")
         val rfid = tag.id.joinToString(":") { "%02X".format(it) }
         val time = System.currentTimeMillis()
 
@@ -134,7 +113,7 @@ class TagController(
      * Entry-point for processing an incoming hardware tag discovery background pulse.
      */
     fun handleTagDiscovered(rfid: String, time: Long) {
-        if (isDialogShowingCheck() || DialogFactory.isAnyDialogOpen()) return
+        if (isDialogShowingCheck()) return
         Log.d("TagController", "Processing $rfid for timestamp $time.")
 
         scope.launch {
@@ -156,14 +135,14 @@ class TagController(
     }
 
     private fun showOverwriteConfirmation(existingStudent: Student, newRfid: String) {
-        tagControllerDialogFactory.showOverwriteConfirmation(
+        interactionProvider.showOverwriteConfirmation(
             existingStudent = existingStudent,
             newRfid = newRfid
         ) {
             scope.launch {
                 db.bindTagToStudent(null, existingStudent.email)
                 withContext(mainDispatcher) {
-                    toastProvider.showToast(activity.getString(R.string.toast_tag_unbound))
+                    interactionProvider.showToast(R.string.toast_tag_unbound)
                     showBindingDialog(newRfid)
                 }
             }
@@ -175,7 +154,7 @@ class TagController(
             val allStudents = db.getAllStudents().sortedBy { it.name }
 
             withContext(mainDispatcher) {
-                tagControllerDialogFactory.showBindingDialog(
+                interactionProvider.showBindingDialog(
                     newRfid = newRfid,
                     allStudents = allStudents,
                     onStudentSelected = { student ->
@@ -196,25 +175,25 @@ class TagController(
         scope.launch {
             db.clearAndBind(rfid, email)
             withContext(mainDispatcher) {
-                toastProvider.showToast(activity.getString(R.string.toast_tag_assigned_success))
+                interactionProvider.showToast(R.string.toast_tag_assigned_success)
             }
         }
     }
 
     private fun showRegistrationDialog(rfid: String) {
-        sessionDialogFactory.showManualRegistrationDialog(
+        interactionProvider.showManualRegistrationDialog(
             rfid = rfid,
-            onStudentSaved = { name, email, dialog ->
+            onStudentSaved = { name, email, _ ->
                 scope.launch {
                     db.insertStudents(listOf(Student(email = email, name = name, rfid = rfid)))
                     withContext(mainDispatcher) {
-                        toastProvider.showToast(
-                            activity.getString(
+                        interactionProvider.showToast(
+                            interactionProvider.getString(
                                 R.string.toast_student_registered_success,
                                 name
                             )
                         )
-                        dialog.dismiss()
+                        interactionProvider.dismissActiveDialog()
                     }
                 }
             }

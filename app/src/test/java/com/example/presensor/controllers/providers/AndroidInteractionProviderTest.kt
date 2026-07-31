@@ -32,9 +32,9 @@ class AndroidInteractionProviderTest {
 
     @Test
     fun `toggleLoading delegates to activity`() {
-        doAnswer { 
-            (it.arguments[0] as Runnable).run() 
-            null 
+        doAnswer {
+            (it.arguments[0] as Runnable).run()
+            null
         }.whenever(activity).runOnUiThread(any())
 
         provider.toggleLoading(true)
@@ -43,9 +43,9 @@ class AndroidInteractionProviderTest {
 
     @Test
     fun `showDeleteSessionDialog delegates to factory`() {
-        doAnswer { 
-            (it.arguments[0] as Runnable).run() 
-            null 
+        doAnswer {
+            (it.arguments[0] as Runnable).run()
+            null
         }.whenever(activity).runOnUiThread(any())
 
         val mockSession = mock<com.example.presensor.data.entities.Session>()
