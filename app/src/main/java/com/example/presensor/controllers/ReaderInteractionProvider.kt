@@ -5,7 +5,7 @@ package com.example.presensor.controllers
  * This allows controllers to remain headless and testable.
  */
 interface ReaderInteractionProvider {
-    
+
     /**
      * Displays a short or long duration toast message.
      */

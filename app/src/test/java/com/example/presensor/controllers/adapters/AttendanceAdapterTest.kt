@@ -1,8 +1,10 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
+import androidx.recyclerview.widget.AsyncDifferConfig
 import com.example.presensor.controllers.BaseControllerTest
 import com.example.presensor.data.entities.AttendanceRecord
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -17,7 +19,11 @@ class AttendanceAdapterTest : BaseControllerTest() {
     @Before
     override fun setup() {
         super.setup()
-        adapter = AttendanceAdapter()
+        val config = AsyncDifferConfig.Builder(AttendanceAdapter.AttendanceDiffCallback())
+            .setBackgroundThreadExecutor { it.run() }
+            .setMainThreadExecutor { it.run() }
+            .build()
+        adapter = AttendanceAdapter(config)
     }
 
     @Test
@@ -29,7 +35,8 @@ class AttendanceAdapterTest : BaseControllerTest() {
 
         adapter.submitList(records)
         
-        // ListAdapter updates asynchronously on the main thread
+        // ListAdapter updates asynchronously
+        advanceUntilIdle()
         ShadowLooper.idleMainLooper()
         
         assertEquals(2, adapter.itemCount)
@@ -43,6 +50,7 @@ class AttendanceAdapterTest : BaseControllerTest() {
             AttendanceRecord(1000L, "Student A", null, "a@test.com", "S1", 1L)
         )
         adapter.submitList(initial)
+        advanceUntilIdle()
         ShadowLooper.idleMainLooper()
 
         val updated = listOf(
@@ -50,7 +58,13 @@ class AttendanceAdapterTest : BaseControllerTest() {
             AttendanceRecord(3000L, "Student C", null, "c@test.com", "S1", 1L)
         )
         adapter.submitList(updated)
-        ShadowLooper.idleMainLooper()
+        
+        // ListAdapter diffing can be tricky in tests. 
+        // We ensure all pending tasks on both background and main threads are processed.
+        repeat(3) {
+            advanceUntilIdle()
+            ShadowLooper.idleMainLooper()
+        }
 
         assertEquals(2, adapter.itemCount)
         assertEquals("Student C", adapter.currentList[1].studentName)

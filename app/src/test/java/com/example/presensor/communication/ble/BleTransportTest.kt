@@ -169,6 +169,9 @@ class BleTransportTest {
         // Mock successful write
         `when`(bluetoothGatt.writeCharacteristic(any(), any(), anyInt())).thenReturn(BluetoothGatt.GATT_SUCCESS)
 
+        // MUST connect first to initialize bluetoothGatt
+        transport.connect("00:11:22:33:44:55")
+
         // Trigger two concurrent writes
         transport.write("W1".toByteArray(), TransportChannel.TIME)
         transport.write("W2".toByteArray(), TransportChannel.MODE)

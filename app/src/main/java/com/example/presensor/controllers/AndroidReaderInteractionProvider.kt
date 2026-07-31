@@ -33,7 +33,7 @@ class AndroidReaderInteractionProvider(
         val dialogView =
             LayoutInflater.from(activity).inflate(R.layout.dialog_reader_password, null)
         val inputField = dialogView.findViewById<TextInputEditText>(R.id.editReaderPassword)
-        
+
         val dialog = AlertDialog.Builder(activity)
             .setTitle(activity.getString(R.string.title_assign_tag, readerName))
             .setView(dialogView)

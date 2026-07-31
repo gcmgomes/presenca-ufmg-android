@@ -27,8 +27,8 @@ import com.example.presensor.MainUiBinder
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.MainActivity
 import com.example.presensor.cloud.DashboardCloudActions
-import com.example.presensor.adapters.ActionItem
-import com.example.presensor.adapters.ActionsPageAdapter
+import com.example.presensor.controllers.adapters.ActionsPageAdapter
+import com.example.presensor.controllers.items.ActionItem
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
 import com.google.android.material.floatingactionbutton.FloatingActionButton

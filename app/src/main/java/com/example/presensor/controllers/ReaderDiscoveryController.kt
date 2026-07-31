@@ -18,6 +18,7 @@ import com.example.presensor.communication.ReaderEvent
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.communication.core.AppMode
 import com.example.presensor.data.SecureStoreManager
+import com.example.presensor.controllers.items.DeviceItem
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -29,13 +30,14 @@ class ReaderDiscoveryController(
     private val interactionProvider: ReaderInteractionProvider,
     private val scope: CoroutineScope
 ) {
-    private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> = emptyList()
+    private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> =
+        emptyList()
     private var listAdapter: DeviceListAdapter? = null
-    
+
     private var statusJob: Job? = null
     private var refreshJob: Job? = null
     private var eventJob: Job? = null
-    
+
     private var pendingPassword: String? = null
     private var pendingDeviceName: String? = null
 
@@ -152,7 +154,7 @@ class ReaderDiscoveryController(
                 if (activity.readerOrchestrator?.isReaderEnabled?.value == true) {
                     startDiscovery()
                     activity.readerOrchestrator?.requestRssiUpdate()
-                    
+
                     // Always refresh status for authenticated device during refresh cycles
                     if (activity.readerOrchestrator?.isAuthenticated?.value == true) {
                         activity.readerOrchestrator?.requestStatus()
@@ -218,7 +220,12 @@ class ReaderDiscoveryController(
                     pendingPassword = password
                     pendingDeviceName = name
                     activity.readerOrchestrator?.isBroadDiscoveryMode = false
-                    activity.readerOrchestrator?.startConnecting(name, password, address, isManual = true)
+                    activity.readerOrchestrator?.startConnecting(
+                        name,
+                        password,
+                        address,
+                        isManual = true
+                    )
                     updateDeviceList()
                     logAndToast(R.string.status_connecting)
                 },
@@ -232,7 +239,12 @@ class ReaderDiscoveryController(
             )
         } else {
             activity.readerOrchestrator?.isBroadDiscoveryMode = false
-            activity.readerOrchestrator?.startConnecting(name, storedPassword, address, isManual = true)
+            activity.readerOrchestrator?.startConnecting(
+                name,
+                storedPassword,
+                address,
+                isManual = true
+            )
             updateDeviceList()
             logAndToast(R.string.status_connecting)
         }
@@ -254,12 +266,14 @@ class ReaderDiscoveryController(
                 }
                 updateDeviceList()
             }
+
             is ReaderEvent.AuthenticationFailed -> {
                 logAndToast(R.string.error_incorrect_password)
                 pendingPassword = null
                 pendingDeviceName = null
                 updateDeviceList()
             }
+
             is ReaderEvent.Error -> {
                 val displayMessage = if (event.message == ReaderOrchestrator.ERROR_TIMEOUT) {
                     activity.getString(R.string.toast_connection_timed_out)
@@ -274,17 +288,6 @@ class ReaderDiscoveryController(
         }
     }
 
-    internal data class DeviceItem(
-        val name: String,
-        val address: String,
-        val rssi: Int?,
-        val batteryLevel: Int? = null,
-        val deviceEpoch: Long? = null,
-        val isConnected: Boolean,
-        val isConnecting: Boolean,
-        val isNearby: Boolean = true,
-        val lastSeen: Long = 0
-    )
 
     private class DeviceListAdapter(
         private val onDeviceSelected: (String, String) -> Unit,
@@ -330,7 +333,10 @@ class ReaderDiscoveryController(
                     else false
                 }
 
-                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                override fun areContentsTheSame(
+                    oldItemPosition: Int,
+                    newItemPosition: Int
+                ): Boolean {
                     return items[oldItemPosition] == newList[newItemPosition]
                 }
 
@@ -359,7 +365,13 @@ class ReaderDiscoveryController(
         override fun getItemViewType(position: Int) = if (items[position] is String) 0 else 1
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
             val inflater = LayoutInflater.from(parent.context)
-            return if (viewType == 0) HeaderViewHolder(inflater.inflate(R.layout.item_list_header, parent, false))
+            return if (viewType == 0) HeaderViewHolder(
+                inflater.inflate(
+                    R.layout.item_list_header,
+                    parent,
+                    false
+                )
+            )
             else DeviceViewHolder(inflater.inflate(R.layout.item_stat_card, parent, false))
         }
 
@@ -367,7 +379,11 @@ class ReaderDiscoveryController(
             onBindViewHolder(holder, position, emptyList())
         }
 
-        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: List<Any>) {
+        override fun onBindViewHolder(
+            holder: RecyclerView.ViewHolder,
+            position: Int,
+            payloads: List<Any>
+        ) {
             val item = items[position]
             if (holder is HeaderViewHolder && item is String) {
                 holder.txtHeader.text = when (item) {
@@ -408,7 +424,10 @@ class ReaderDiscoveryController(
             updateBattery(holder, item)
             updateDimming(holder, item)
             holder.itemView.setOnClickListener {
-                if (item.isNearby || item.isConnected || item.isConnecting) onDeviceSelected(item.name, item.address)
+                if (item.isNearby || item.isConnected || item.isConnecting) onDeviceSelected(
+                    item.name,
+                    item.address
+                )
             }
             holder.itemView.setOnLongClickListener {
                 onDeviceLongClicked(item.name, item.address)
@@ -440,19 +459,21 @@ class ReaderDiscoveryController(
 
         private fun updateRssi(holder: DeviceViewHolder, item: DeviceItem) {
             val isOffline = !item.isNearby && !item.isConnected && !item.isConnecting
-            
+
             // Show/Hide Twin Stacks
             holder.layoutSignalStack.visibility = if (isOffline) View.GONE else View.VISIBLE
             holder.layoutLegacyValueStack.visibility = View.GONE
-            
+
             if (item.isConnecting) {
                 holder.layoutLegacyValueStack.visibility = View.VISIBLE
-                holder.txtLegacyValue.text = holder.itemView.context.getString(R.string.status_connecting)
+                holder.txtLegacyValue.text =
+                    holder.itemView.context.getString(R.string.status_connecting)
                 holder.layoutSignalStack.visibility = View.GONE
                 holder.layoutBatteryStack.visibility = View.GONE
             } else if (isOffline) {
                 holder.layoutLegacyValueStack.visibility = View.VISIBLE
-                holder.txtLegacyValue.text = holder.itemView.context.getString(R.string.status_not_found)
+                holder.txtLegacyValue.text =
+                    holder.itemView.context.getString(R.string.status_not_found)
                 holder.layoutSignalStack.visibility = View.GONE
                 holder.layoutBatteryStack.visibility = View.GONE
             } else {
@@ -464,7 +485,7 @@ class ReaderDiscoveryController(
                     else -> R.drawable.ic_signal_weak
                 }
                 holder.imgSignal.setImageResource(iconRes)
-                
+
                 // Row 2: Values (Primary text is RSSI) - Consistent 11sp orange
                 holder.txtValue.text = if (item.rssi != null) "${item.rssi} dBm" else "--"
             }
@@ -480,7 +501,8 @@ class ReaderDiscoveryController(
                     else -> R.drawable.ic_battery_full
                 }
                 holder.imgBattery.setImageResource(iconRes)
-                holder.txtValueSecondary.text = if (item.batteryLevel != null) "${item.batteryLevel}%" else "--%"
+                holder.txtValueSecondary.text =
+                    if (item.batteryLevel != null) "${item.batteryLevel}%" else "--%"
             } else {
                 holder.layoutBatteryStack.visibility = View.GONE
             }
@@ -490,8 +512,10 @@ class ReaderDiscoveryController(
         class HeaderViewHolder(v: View) : RecyclerView.ViewHolder(v) {
             val txtHeader: TextView = v.findViewById(R.id.txtHeader)
         }
+
         class DeviceViewHolder(v: View) : RecyclerView.ViewHolder(v) {
-            val cardRoot: com.google.android.material.card.MaterialCardView = v.findViewById(R.id.cardStatRoot)
+            val cardRoot: com.google.android.material.card.MaterialCardView =
+                v.findViewById(R.id.cardStatRoot)
             val txtName: TextView = v.findViewById(R.id.txtPrimaryLabel)
             val txtMac: TextView = v.findViewById(R.id.txtSecondaryLabel)
             val txtValue: TextView = v.findViewById(R.id.txtStatValue)

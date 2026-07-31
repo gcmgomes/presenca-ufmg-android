@@ -4,6 +4,8 @@ plugins {
     id("jacoco")
 }
 
+val isCoverageRequested = gradle.startParameter.taskNames.any { it.contains("jacoco", ignoreCase = true) } || project.hasProperty("coverage")
+
 android {
     namespace = "com.example.presensor"
     compileSdk {
@@ -36,13 +38,15 @@ android {
             )
         }
         getByName("debug") {
-            // Enable coverage for instrumentation (androidTest)
-            enableAndroidTestCoverage = true
+            enableAndroidTestCoverage = isCoverageRequested
+            enableUnitTestCoverage = isCoverageRequested
         }
     }
     testOptions {
         unitTests {
+            // Set to true because many controller tests depend on real resource inflation and string resolution
             isIncludeAndroidResources = true
+            isReturnDefaultValues = true
         }
     }
     compileOptions {
@@ -61,6 +65,9 @@ android {
 }
 
 tasks.withType<Test> {
+    maxHeapSize = "4096m" // Bumped memory to eliminate GC thrashing
+    maxParallelForks = 1 // Restrict to 1 for stability during optimization
+
     configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
@@ -75,25 +82,18 @@ val jacocoTestReport by tasks.registering(JacocoReport::class) {
         html.required.set(true)
     }
 
-    val fileFilter = listOf(
-        "**/R.class",
-        "**/R$*.class",
-        "**/BuildConfig.*",
-        "**/Manifest*.*",
-        "**/*Test*.*",
-        "android/**/*.*"
-    )
-    val debugTree = fileTree("${project.layout.buildDirectory.get()}/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes") {
-        include("**/TagController.class")
-        include("**/SessionController.class")
-        include("**/ImportSessionController.class")
-        include("**/ImportStudentController.class")
-        include("**/DetailedCourseController.class")
-        include("**/communication/ReaderOrchestrator.class")
-        include("**/communication/core/*.class")
-        include("**/communication/ble/*.class")
-        include("**/tools/providers/*.class")
-    }
+    val debugTree =
+        fileTree("${project.layout.buildDirectory.get()}/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes") {
+            include("**/TagController.class")
+            include("**/SessionController.class")
+            include("**/ImportSessionController.class")
+            include("**/ImportStudentController.class")
+            include("**/DetailedCourseController.class")
+            include("**/communication/ReaderOrchestrator.class")
+            include("**/communication/core/*.class")
+            include("**/communication/ble/*.class")
+            include("**/tools/providers/*.class")
+        }
     val mainSrc = "${project.projectDir}/src/main/java"
 
     sourceDirectories.setFrom(files(mainSrc))
@@ -110,45 +110,39 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     testImplementation(libs.junit)
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("org.robolectric:robolectric:4.11.1")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
     testImplementation("androidx.test:core-ktx:1.5.0")
     testImplementation("androidx.test.ext:junit-ktx:1.1.5")
+
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation("androidx.test:rules:1.5.0")
     androidTestImplementation("org.mockito:mockito-android:5.10.0")
     androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+
     val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    ksp("androidx.room:room-compiler:$roomVersion") // Use ksp here
-    // Note: If using Kotlin, use 'kapt' or 'ksp'. Ensure the plugin is applied.
-    annotationProcessor("androidx.room:room-compiler:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion") // Removed duplicate annotationProcessor
 
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("androidx.cardview:cardview:1.0.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
-    // Kotlin Coroutines Core (Provides Flow, StateFlow, SharedFlow)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-
-    // Android support for Coroutines (Provides Dispatchers.Main, lifecycleScope, etc.)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // 1. Authentication
+    // Google Services
     implementation("com.google.android.gms:play-services-auth:21.2.0")
-
-    // 2. Google Drive Client SDK
     implementation("com.google.api-client:google-api-client-android:2.6.0")
     implementation("com.google.apis:google-api-services-drive:v3-rev20240521-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }
-
-    // 3. Google Sheets Client SDK
     implementation("com.google.apis:google-api-services-sheets:v4-rev20240416-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }

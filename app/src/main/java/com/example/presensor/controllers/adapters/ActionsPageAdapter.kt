@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.view.LayoutInflater
 import android.view.View
@@ -7,12 +7,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.example.presensor.R
-
-data class ActionItem(
-    val text: String,
-    val iconResId: Int,
-    val onClick: () -> Unit
-)
+import com.example.presensor.controllers.items.ActionItem
 
 class ActionsPageAdapter(
     private val actionItems: List<ActionItem>,

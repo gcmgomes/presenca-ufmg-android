@@ -1,15 +1,15 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.recyclerview.widget.AsyncDifferConfig
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
 import com.example.presensor.data.entities.AttendanceRecord
-import com.example.presensor.tools.TimeUtils
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -17,8 +17,11 @@ import java.util.Locale
  * Adapter for displaying attendance records in a session.
  * Uses ListAdapter and DiffUtil for optimized updates.
  */
-class AttendanceAdapter :
-    ListAdapter<AttendanceRecord, AttendanceAdapter.ViewHolder>(AttendanceDiffCallback()) {
+class AttendanceAdapter(
+    config: AsyncDifferConfig<AttendanceRecord>? = null
+) : ListAdapter<AttendanceRecord, AttendanceAdapter.ViewHolder>(
+    config ?: AsyncDifferConfig.Builder(AttendanceDiffCallback()).build()
+) {
 
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
 
@@ -56,17 +59,13 @@ class AttendanceAdapter :
         val df = android.text.format.DateFormat.getDateFormat(holder.itemView.context)
         holder.txtDate.text = df.format(date)
         holder.txtDate.visibility = View.VISIBLE
-
-        // Show Chalk Green accent for all attended students
-//        holder.viewAccent.setBackgroundColor(holder.itemView.context.getColor(R.color.chalk_green))
     }
 
-    private class AttendanceDiffCallback : DiffUtil.ItemCallback<AttendanceRecord>() {
+    internal class AttendanceDiffCallback : DiffUtil.ItemCallback<AttendanceRecord>() {
         override fun areItemsTheSame(
             oldItem: AttendanceRecord,
             newItem: AttendanceRecord
         ): Boolean {
-            // Uniquely identified by student email and exact timestamp
             return oldItem.studentEmail == newItem.studentEmail && oldItem.timestamp == newItem.timestamp
         }
 

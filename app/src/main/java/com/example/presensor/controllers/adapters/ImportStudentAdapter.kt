@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.graphics.Color
 import android.view.LayoutInflater
@@ -21,7 +21,6 @@ class ImportStudentAdapter : ListAdapter<Student, ImportStudentAdapter.ViewHolde
 
     override fun submitList(list: List<Student>?) {
         super.submitList(list)
-        // All items are selected by default on first load
         list?.forEach { selectedEmails.add(it.email) }
     }
 
@@ -47,11 +46,9 @@ class ImportStudentAdapter : ListAdapter<Student, ImportStudentAdapter.ViewHolde
         holder.nameText.text = student.name
         holder.subText.text = student.email
         
-        // Hide technical stacks for student roster
         holder.layoutSignalStack.visibility = View.GONE
         holder.layoutBatteryStack.visibility = View.GONE
         
-        // Hide irrelevant fields for student roster
         holder.statText.visibility = View.GONE
         holder.dateText.visibility = View.GONE
 
@@ -60,7 +57,6 @@ class ImportStudentAdapter : ListAdapter<Student, ImportStudentAdapter.ViewHolde
             if (isSelected) "#4CAF50".toColorInt() else Color.TRANSPARENT
         )
         
-        // Dim the entire card and its text when deselected
         val alpha = if (isSelected) 1.0f else 0.5f
         holder.cardRoot.alpha = alpha
         holder.nameText.alpha = alpha

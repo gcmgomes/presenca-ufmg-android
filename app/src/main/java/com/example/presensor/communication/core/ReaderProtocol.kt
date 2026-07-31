@@ -47,6 +47,8 @@ class ReaderProtocol {
     fun resetAuth() {
         Log.d(TAG, "[Protocol] Explicit Auth Reset requested.")
         _isAuthenticated.value = false
+        lastProcessedTag = null
+        lastProcessedTimestamp = null
     }
 
     private suspend fun handleAuthPayload(payload: String) {

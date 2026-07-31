@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import com.example.presensor.controllers.BaseControllerTest
 import com.example.presensor.data.entities.Student

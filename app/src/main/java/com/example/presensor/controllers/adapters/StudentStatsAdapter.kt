@@ -1,11 +1,10 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -15,7 +14,7 @@ import com.example.presensor.data.entities.AttendanceRecord
 import com.example.presensor.R
 
 class StudentStatsAdapter(
-    private var activeStudents: List<Student>, // Changed from val to var to allow dataset updates
+    private var activeStudents: List<Student>,
     private val allSessions: List<Session>,
     private val allAttendance: List<AttendanceRecord>,
     private val sessionIds: Set<Long>,
@@ -24,7 +23,6 @@ class StudentStatsAdapter(
     private val fromMillisToLocalDate: (Long) -> LocalDate
 ) : RecyclerView.Adapter<StudentStatsAdapter.StudentViewHolder>() {
 
-    // Persistent storage tracking expanded states across text filter updates
     private val expandedStudentEmails = HashSet<String>()
 
     inner class StudentViewHolder(v: View) : RecyclerView.ViewHolder(v) {
@@ -36,10 +34,9 @@ class StudentStatsAdapter(
         val root: View = v.findViewById(R.id.cardStatRoot)
     }
 
-    // Public API function invoked by the Main UI search loop
     fun updateData(newStudentsList: List<Student>) {
         this.activeStudents = newStudentsList
-        notifyDataSetChanged() // Refreshes positions safely while maintaining adapter instance state
+        notifyDataSetChanged()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StudentViewHolder {
@@ -59,7 +56,6 @@ class StudentStatsAdapter(
         val studentAttendanceSet = allAttendance.filter { it.studentEmail == student.email }.map { it.sessionId }.distinct()
         holder.percentage.text = if (sessionIds.isNotEmpty()) "${100 * studentAttendanceSet.size / sessionIds.size}%" else "123%"
 
-        // Check if this student was expanded before the search filter updated
         if (expandedStudentEmails.contains(student.email)) {
             populateExpandedSessions(holder, student)
             holder.container.visibility = View.VISIBLE

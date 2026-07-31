@@ -6,7 +6,7 @@ import android.widget.LinearLayout
 import androidx.appcompat.widget.SearchView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
-import com.example.presensor.adapters.StudentStatsAdapter
+import com.example.presensor.controllers.adapters.StudentStatsAdapter
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Session

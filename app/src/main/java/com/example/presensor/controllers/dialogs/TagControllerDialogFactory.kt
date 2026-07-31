@@ -11,7 +11,7 @@ import androidx.core.widget.addTextChangedListener
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
-import com.example.presensor.adapters.StudentSearchAdapter
+import com.example.presensor.controllers.adapters.StudentSearchAdapter
 import com.example.presensor.data.entities.Student
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
@@ -67,18 +67,18 @@ class AndroidTagControllerDialogFactory(
         onManualAttendance: () -> Unit,
         onReassignConfirmed: (Student) -> Unit
     ) {
-        if(DialogFactory.isAnyDialogOpen()) return
+        if (DialogFactory.isAnyDialogOpen()) return
         val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
         val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
         val rvSearch = dialogView.findViewById<RecyclerView>(R.id.rvStudentSearch)
         val txtTitle = dialogView.findViewById<TextView>(R.id.txtSearchStudentTitle)
         val txtHint = dialogView.findViewById<TextView>(R.id.txtSearchStudentHint)
         val btnManual = dialogView.findViewById<MaterialButton>(R.id.btnSecondaryAction)
-        
+
         txtTitle.text = activity.getString(R.string.title_assign_tag, newRfid)
         txtHint.text = activity.getString(R.string.label_tag_id, newRfid)
         btnManual.visibility = View.VISIBLE
-        
+
         var bindingDialog: BottomSheetDialog? = null
 
         val adapter = StudentSearchAdapter { student ->
@@ -100,7 +100,7 @@ class AndroidTagControllerDialogFactory(
                 it.name.contains(query, true) || it.email.contains(query, true)
             }
             adapter.submitList(filtered)
-            
+
             if (filtered.isEmpty()) {
                 txtHint.text = activity.getString(R.string.msg_no_students_found)
             } else {
@@ -112,7 +112,7 @@ class AndroidTagControllerDialogFactory(
 
         bindingDialog = BottomSheetDialog(activity)
         bindingDialog?.setContentView(dialogView)
-        
+
         btnManual.setOnClickListener {
             bindingDialog?.dismiss()
             onManualAttendance()

@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.graphics.Color
 import android.view.LayoutInflater
@@ -27,7 +27,6 @@ class ImportPreviewAdapter : ListAdapter<Session, ImportPreviewAdapter.ViewHolde
 
     override fun submitList(list: List<Session>?) {
         super.submitList(list)
-        // All items selected by default. Use Name+Date as composite key for preview uniqueness
         list?.forEach { selectedIds.add(it.name + it.date) }
     }
 
@@ -54,7 +53,6 @@ class ImportPreviewAdapter : ListAdapter<Session, ImportPreviewAdapter.ViewHolde
         val instant = Instant.ofEpochMilli(session.date)
         holder.dateText.text = formatter.format(instant)
         
-        // Hide technical stacks
         holder.layoutSignalStack.visibility = View.GONE
         holder.layoutBatteryStack.visibility = View.GONE
         
@@ -66,7 +64,6 @@ class ImportPreviewAdapter : ListAdapter<Session, ImportPreviewAdapter.ViewHolde
             if (isSelected) "#4CAF50".toColorInt() else Color.TRANSPARENT
         )
         
-        // Dim the entire card and its text when deselected
         val alpha = if (isSelected) 1.0f else 0.5f
         holder.cardRoot.alpha = alpha
         holder.nameText.alpha = alpha

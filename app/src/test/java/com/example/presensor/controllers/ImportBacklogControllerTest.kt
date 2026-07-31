@@ -1,9 +1,11 @@
 package com.example.presensor.controllers
 
-import androidx.appcompat.app.AlertDialog
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.data.entities.Student
+import com.example.presensor.controllers.items.BacklogItem
+import com.example.presensor.controllers.adapters.ImportBacklogAdapter
 import com.example.presensor.tools.providers.ToastProvider
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,10 +59,9 @@ class ImportBacklogControllerTest : BaseControllerTest() {
     @Test
     fun `executeSequentialImport handles success and updates dialog`() = runTest {
         val student = Student(email = "test@example.com", name = "Test Student", rfid = "AA:BB:CC:DD")
-        val item = ImportBacklogController.BacklogUIItem("AABBCCDD", student, 1000L)
-        val mockAdapter: ImportBacklogController.ImportBacklogAdapter = mock()
-        whenever(mockAdapter.currentList).thenReturn(listOf(item))
-        val mockDialog: AlertDialog = mock()
+        val item = BacklogItem("AABBCCDD", student, 1000L)
+        val mockAdapter: ImportBacklogAdapter = mock()
+        val mockDialog: BottomSheetDialog = mock()
 
         // Trigger import
         controller.executeSequentialImport(listOf(item), mockAdapter, mockDialog)
@@ -72,7 +73,7 @@ class ImportBacklogControllerTest : BaseControllerTest() {
 
         verify(orchestrator).deleteBacklogItem("AABBCCDD", 1000L)
         verify(registerAttendance).invoke(eq(student), eq(1000000L))
-        verify(mockAdapter).submitList(emptyList())
+        verify(mockAdapter).removeItem(item)
         verify(mockDialog).dismiss()
         verify(refreshAttendanceList).invoke()
     }

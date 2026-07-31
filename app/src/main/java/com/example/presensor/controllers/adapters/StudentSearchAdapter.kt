@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.view.LayoutInflater
 import android.view.View
@@ -39,15 +39,12 @@ class StudentSearchAdapter(
         holder.nameText.text = student.name
         holder.emailText.text = student.email
 
-        // Hide technical stacks
         holder.layoutSignalStack.visibility = View.GONE
         holder.layoutBatteryStack.visibility = View.GONE
 
-        // Hide irrelevant fields for search
         holder.statText.visibility = View.GONE
         holder.dateText.visibility = View.GONE
         
-        // Definitively hide the selection accent to prevent dangling artifacts in search
         holder.selectionAccent.visibility = View.GONE
 
         holder.itemView.setOnClickListener {

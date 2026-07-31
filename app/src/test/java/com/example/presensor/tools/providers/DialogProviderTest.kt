@@ -16,7 +16,7 @@ class DialogProviderTest {
     @Test
     fun `showSessionImportPreview delegates to PreviewProvider`() {
         val sessions = listOf<Session>()
-        val onConfirm: () -> Unit = {}
+        val onConfirm: (List<Session>) -> Unit = {}
         val onDismiss: () -> Unit = {}
 
         dialogProvider.showSessionImportPreview(activity, sessions, onConfirm, onDismiss)
@@ -27,7 +27,7 @@ class DialogProviderTest {
     @Test
     fun `showStudentImportPreview delegates to PreviewProvider`() {
         val students = listOf<Student>()
-        val onConfirm: () -> Unit = {}
+        val onConfirm: (List<Student>) -> Unit = {}
         val onDismiss: () -> Unit = {}
 
         dialogProvider.showStudentImportPreview(activity, students, onConfirm, onDismiss)

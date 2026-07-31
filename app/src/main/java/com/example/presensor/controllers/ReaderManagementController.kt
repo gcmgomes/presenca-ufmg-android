@@ -19,6 +19,7 @@ import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.communication.core.AppMode
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.SecureStoreManager
+import com.example.presensor.controllers.items.BacklogItem
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.SimpleDateFormat
@@ -203,11 +204,10 @@ class ReaderManagementController(
                     refreshManagementData("Post-Deletion Refresh")
                 } else {
                     val tagId = rawTagId.chunked(2).joinToString(":")
-                    val studentName = withContext(Dispatchers.IO) {
-                        db.getStudentByRfid(tagId)?.name
-                            ?: activity.getString(R.string.label_unknown_student)
+                    val student = withContext(Dispatchers.IO) {
+                        db.getStudentByRfid(tagId)
                     }
-                    val item = BacklogItem(tagId, studentName, timestamp)
+                    val item = BacklogItem(tagId, student, timestamp)
                     if (isSyncInProgress) receivedInSync.add(item)
                     if (!backlogItems.contains(item)) {
                         backlogItems.add(item)
@@ -279,9 +279,10 @@ class ReaderManagementController(
     }
 
     internal fun handleBacklogItemLongClick(item: BacklogItem) {
+        val studentName = item.student?.name ?: activity.getString(R.string.label_unknown_student)
         interactionProvider.showDestructiveDeleteDialog(
             title = activity.getString(R.string.delete_action_text),
-            message = activity.getString(R.string.dialog_delete_session_message, item.studentName),
+            message = activity.getString(R.string.dialog_delete_session_message, studentName),
             onConfirmed = {
                 activity.readerOrchestrator?.deleteBacklogItem(item.tagId, item.timestamp)
             }
@@ -292,8 +293,6 @@ class ReaderManagementController(
         swipeRefreshLayout?.isRefreshing = true
         activity.readerOrchestrator?.rebootReader(newName, newPass, address)
     }
-
-    internal data class BacklogItem(val tagId: String, val studentName: String, val timestamp: Long)
 
     private class BacklogAdapter(private val onItemLongClicked: (BacklogItem) -> Unit) :
         RecyclerView.Adapter<BacklogAdapter.ViewHolder>() {
@@ -319,13 +318,14 @@ class ReaderManagementController(
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
-            holder.txtName.text = item.studentName
+            holder.txtName.text = item.student?.name
+                ?: holder.itemView.context.getString(R.string.label_unknown_student)
             holder.txtTag.text = item.tagId
-            
+
             // Hide technical stacks for backlog records
             holder.layoutSignalStack.visibility = View.GONE
             holder.layoutBatteryStack.visibility = View.GONE
-            
+
             val date = Date(item.timestamp * 1000L)
             holder.txtTime.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(date)
             val df = android.text.format.DateFormat.getDateFormat(holder.itemView.context)

@@ -282,10 +282,10 @@ class ReaderOrchestrator(
                     // This is the ONLY place where devices can be downgraded to 'Offline'
                     Log.i(TAG, "[Orchestrator] Scan burst finished. Re-evaluating Nearby status.")
                     pruneDiscoveryMap(isCycleEnd = true)
-                    
+
                     // Force refresh of the active device at cycle end
                     _activeDevice.update { it?.copy(lastSeen = currentTimeMillis()) }
-                    
+
                     _emittedInCurrentCycle.clear()
                 } else if (!scanning) {
                     // Periodic idle maintenance (e.g. RSSI cleanup) but keep Nearby status sticky
@@ -350,9 +350,9 @@ class ReaderOrchestrator(
             is ProtocolEvent.InventoryItem -> _inventoryFlow.emit(event.tagId to event.timestamp)
             is ProtocolEvent.Metrics -> {
                 _metricsFlow.emit(event.timestamp to event.batteryLevel)
-                
+
                 val currentAddr = connectedDeviceAddress
-                
+
                 _activeDevice.update { current ->
                     if (current?.address == currentAddr) {
                         current?.copy(
@@ -478,16 +478,16 @@ class ReaderOrchestrator(
         connectionTimeoutJob = scope.launch {
             var activeTimeMs = 0L
             val limitMs =
-                if (isManual) 10000L else 5000L // Manual attempts get 10s to account for reboots/discovery
+                if (isManual) 5000L else 2500L // Manual attempts get 5s to account for reboots/discovery
 
             while (activeTimeMs < limitMs) {
                 delay(500)
 
                 // If a dialog is open, we "pause" the timer
-                if (DialogFactory.isAnyDialogOpen()) {
-                    Log.v(TAG, "[Timeout] Connection timer paused: Dialog is OPEN.")
-                    continue
-                }
+//                if (DialogFactory.isAnyDialogOpen()) {
+//                    Log.v(TAG, "[Timeout] Connection timer paused: Dialog is OPEN.")
+//                    continue
+//                }
 
                 // Check if we are already connected (Success)
                 if (isAuthenticated.value) {
@@ -587,6 +587,7 @@ class ReaderOrchestrator(
     }
 
     fun setAppMode(mode: AppMode, caller: String) {
+        if (!isAuthenticated.value) return
         Log.i(TAG, "[Orchestrator] Setting App Mode: $mode (Caller: $caller)")
         currentMode = mode
         val data = protocol.formatAppModeCommand(mode)
@@ -594,12 +595,14 @@ class ReaderOrchestrator(
     }
 
     fun syncTime() {
+        if (!isAuthenticated.value) return
         val epoch = System.currentTimeMillis() / 1000
         val data = protocol.formatTimeSyncCommand(epoch)
         transport.write(data, TransportChannel.TIME)
     }
 
     fun updateReaderConfig(newName: String, newPassword: String) {
+        if (!isAuthenticated.value) return
         val data = protocol.formatConfigUpdateCommand(newName, newPassword)
         transport.write(data, TransportChannel.CONFIG)
     }
@@ -630,11 +633,13 @@ class ReaderOrchestrator(
     }
 
     fun requestInventory() {
+        if (!isAuthenticated.value) return
         val data = protocol.formatInventoryListCommand()
         transport.write(data, TransportChannel.INVENTORY)
     }
 
     fun deleteBacklogItem(tagId: String, timestamp: Long) {
+        if (!isAuthenticated.value) return
         val data = protocol.formatInventoryDeleteCommand(tagId, timestamp)
         transport.write(data, TransportChannel.INVENTORY)
     }
@@ -644,6 +649,7 @@ class ReaderOrchestrator(
     }
 
     fun requestBacklogSync() {
+        if (!isAuthenticated.value) return
         val data = protocol.formatSyncCommand()
         transport.write(data, TransportChannel.MODE)
     }

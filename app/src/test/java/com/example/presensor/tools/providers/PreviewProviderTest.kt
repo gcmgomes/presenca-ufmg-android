@@ -33,7 +33,7 @@ class PreviewProviderTest {
         val dialog = ShadowDialog.getLatestDialog()
         assertTrue(dialog.isShowing)
 
-        val btnConfirm = dialog.findViewById<Button>(R.id.btnConfirmImport)
+        val btnConfirm = dialog.findViewById<Button>(R.id.btnConfirmAction)
         btnConfirm.performClick()
 
         assertTrue(confirmed)
@@ -53,7 +53,7 @@ class PreviewProviderTest {
         val dialog = ShadowDialog.getLatestDialog()
         assertTrue(dialog.isShowing)
 
-        val btnConfirm = dialog.findViewById<Button>(R.id.btnConfirmStudentImport)
+        val btnConfirm = dialog.findViewById<Button>(R.id.btnConfirmAction)
         btnConfirm.performClick()
 
         assertTrue(confirmed)

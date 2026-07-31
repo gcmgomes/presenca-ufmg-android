@@ -33,7 +33,9 @@ import com.example.presensor.MainUiBinder
 import com.example.presensor.tools.DataProcessor
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
-import com.example.presensor.adapters.ImportPreviewAdapter
+import com.example.presensor.controllers.adapters.ImportPreviewAdapter
+import com.example.presensor.controllers.adapters.ActionsPageAdapter
+import com.example.presensor.controllers.items.ActionItem
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
@@ -79,8 +81,10 @@ class CourseController(
 
     // Layout view boundaries inside layoutCourseView
     private val sessionContainer: LinearLayout = activity.findViewById(R.id.sessionContainer)
-    private val utilsViewPager: androidx.viewpager2.widget.ViewPager2 = activity.findViewById(R.id.utilsViewPager)
-    private val utilsPageIndicator: com.google.android.material.tabs.TabLayout = activity.findViewById(R.id.utilsPageIndicator)
+    private val utilsViewPager: androidx.viewpager2.widget.ViewPager2 =
+        activity.findViewById(R.id.utilsViewPager)
+    private val utilsPageIndicator: com.google.android.material.tabs.TabLayout =
+        activity.findViewById(R.id.utilsPageIndicator)
 
     private val btnEditCourse: ImageView = activity.findViewById<ImageView>(R.id.btnEditCourse)
 
@@ -144,23 +148,22 @@ class CourseController(
 
 
     private fun setupOnClickListeners() {
-        // A single sequential list containing all 6 operations distributed in pairs
         val allActions = listOf(
             // PAGE 1 Items
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_statistics),
                 iconResId = R.drawable.ic_view,
                 onClick = { onOpenStatistics() }
             ),
 
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_postpone),
                 iconResId = R.drawable.ic_postpone,
                 onClick = { showMassDateChangeDialog() }
             ),
 
             // PAGE 2 Items
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_export),
                 iconResId = R.drawable.ic_export,
                 onClick = {
@@ -169,7 +172,7 @@ class CourseController(
                     exportLauncher.launch(fileName)
                 }
             ),
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_import),
                 iconResId = R.drawable.ic_import,
                 onClick = { triggerImportSessionPicker() }
@@ -177,12 +180,12 @@ class CourseController(
 
 
             // PAGE 3 Items
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_export),
                 iconResId = R.drawable.ic_export, // or your cloud icon
                 onClick = { cloudActions.triggerCloudAttendanceExport() }
             ),
-            com.example.presensor.adapters.ActionItem(
+            ActionItem(
                 text = activity.getString(R.string.menu_course_import),
                 iconResId = R.drawable.ic_import,
                 onClick = {
@@ -199,7 +202,7 @@ class CourseController(
         )
 
         // Bind your actions to the updated adapter
-        utilsViewPager.adapter = com.example.presensor.adapters.ActionsPageAdapter(
+        utilsViewPager.adapter = ActionsPageAdapter(
             actionItems = allActions,
             pageTitles = pageTitles,
             itemsPerPage = 2,
@@ -208,7 +211,10 @@ class CourseController(
         )
 
         // Re-attach mediator to seamlessly update the 3 dots indicator
-        com.google.android.material.tabs.TabLayoutMediator(utilsPageIndicator, utilsViewPager) { _, _ -> }.attach()
+        com.google.android.material.tabs.TabLayoutMediator(
+            utilsPageIndicator,
+            utilsViewPager
+        ) { _, _ -> }.attach()
     }
 
     private fun txtDetailCourseNameText(): String {
@@ -239,7 +245,7 @@ class CourseController(
                 layoutCourseView,
                 selectedCourse!!,
                 sessionList.map { it.id }.toSet(),
-                attendanceList.map{it.studentEmail}.toSet(),
+                attendanceList.map { it.studentEmail }.toSet(),
                 attendanceList
             )
         }

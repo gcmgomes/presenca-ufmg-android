@@ -389,8 +389,8 @@ class SessionControllerUnitTest : BaseControllerTest() {
         swipeRefreshLayout.isRefreshing = true
         sessionController.resetSyncTimeout()
         
-        // Advance 9 seconds - nothing should happen yet
-        advanceTimeBy(9000)
+        // Advance 4 seconds - nothing should happen yet
+        advanceTimeBy(4000)
         assert(swipeRefreshLayout.isRefreshing)
         
         // Advance the final second
@@ -405,13 +405,13 @@ class SessionControllerUnitTest : BaseControllerTest() {
         swipeRefreshLayout.isRefreshing = true
         sessionController.resetSyncTimeout()
         
-        advanceTimeBy(5000)
-        sessionController.resetSyncTimeout() // Reset at 5s
+        advanceTimeBy(3000)
+        sessionController.resetSyncTimeout() // Reset at 3s
         
-        advanceTimeBy(7000) // Total 12s, but only 7s since last reset
+        advanceTimeBy(4000) // Total 7s, but only 4s since last reset
         assert(swipeRefreshLayout.isRefreshing)
         
-        advanceTimeBy(3001) // Total 15s, 10s since last reset
+        advanceTimeBy(1001) // Total 8s, 5s since last reset
         assert(!swipeRefreshLayout.isRefreshing)
     }
 
@@ -420,10 +420,10 @@ class SessionControllerUnitTest : BaseControllerTest() {
         swipeRefreshLayout.isRefreshing = true
         sessionController.resetSyncTimeout()
         
-        advanceTimeBy(5000)
+        advanceTimeBy(3000)
         sessionController.cancelSyncTimeout()
         
-        advanceTimeBy(6000) // Past the original 10s mark
+        advanceTimeBy(3000) // Past the original 5s mark
         assert(swipeRefreshLayout.isRefreshing)
         verifyNoInteractions(toastProvider)
     }

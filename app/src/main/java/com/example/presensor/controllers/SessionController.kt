@@ -22,8 +22,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
-import com.example.presensor.adapters.AttendanceAdapter
-import com.example.presensor.adapters.StudentSearchAdapter
+import com.example.presensor.controllers.adapters.AttendanceAdapter
+import com.example.presensor.controllers.adapters.StudentSearchAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
@@ -100,7 +100,7 @@ class SessionController(
                 swipeRefreshLayout.isRefreshing = false
                 onSyncTimeout?.invoke()
                 toastProvider.showToast("Sync timed out. Connection lost.")
-                Log.w("SyncWatchdog", "Inactivity timeout: No tags received for 10 seconds.")
+                Log.w("SyncWatchdog", "Inactivity timeout: No tags received for 5 seconds.")
             }
         }
     }

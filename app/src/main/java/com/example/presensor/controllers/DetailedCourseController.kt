@@ -15,7 +15,7 @@ import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.R
 import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.adapters.StudentStatsAdapter
+import com.example.presensor.controllers.adapters.StudentStatsAdapter
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.Session
@@ -48,7 +48,8 @@ class DetailedCourseController(
      * fills metrics, and returns the view ready to be displayed.
      */
     fun inflateAndSetupStatsView(container: LinearLayout): View {
-        val course = courseController.getSelectedCourse() ?: throw IllegalStateException("No course selected")
+        val course = courseController.getSelectedCourse()
+            ?: throw IllegalStateException("No course selected")
 
         // Inflate the view inside the controller context
         val statsView = layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
@@ -63,7 +64,8 @@ class DetailedCourseController(
         }
 
         // 1. Setup SearchView Listeners
-        val detailedCourseSearchView = statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
+        val detailedCourseSearchView =
+            statsView.findViewById<SearchView>(R.id.searchStudentsAttendance)
         detailedCourseSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean = false
             override fun onQueryTextChange(newText: String?): Boolean {
@@ -95,7 +97,7 @@ class DetailedCourseController(
             withContext(mainDispatcher) {
                 val statsView = currentStatsView ?: return@withContext
                 val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats)
-                
+
                 // Initialize or update adapter
                 if (rv.adapter == null) {
                     rv.layoutManager = LinearLayoutManager(activity)
@@ -109,7 +111,7 @@ class DetailedCourseController(
                         fromMillisToLocalDate = { ms -> TimeUtils.fromMillisToLocalDate(ms) }
                     )
                 }
-                
+
                 refreshDetailedCourseUI(filter)
             }
         }
@@ -132,7 +134,7 @@ class DetailedCourseController(
             activeStudents.map { it.email }.toSet(),
             allAttendance
         )
-        
+
         val filteredStudents = if (filter.isBlank()) {
             activeStudents
         } else {

@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.content.Context
 import android.view.View
@@ -14,7 +14,7 @@ import org.mockito.kotlin.verify
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import com.google.android.material.button.MaterialButton
-
+import com.example.presensor.controllers.items.ActionItem
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32])
 class ActionsPageAdapterTest {

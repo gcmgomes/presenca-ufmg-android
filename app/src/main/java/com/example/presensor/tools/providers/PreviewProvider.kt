@@ -6,8 +6,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
-import com.example.presensor.adapters.ImportPreviewAdapter
-import com.example.presensor.adapters.ImportStudentAdapter
+import com.example.presensor.controllers.adapters.ImportPreviewAdapter
+import com.example.presensor.controllers.adapters.ImportStudentAdapter
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -66,14 +66,12 @@ class AndroidPreviewProvider : PreviewProvider {
             onConfirm(adapter.getSelectedItems())
         }
 
-        bottomSheet.setOnDismissListener {
-            if (!importConfirmed) {
-                onDismiss()
-            }
-        }
-
         with(com.example.presensor.controllers.dialogs.DialogFactory) {
-            bottomSheet.showWithSmartNfcReading()
+            bottomSheet.showWithSmartNfcReading(onDismiss = {
+                if (!importConfirmed) {
+                    onDismiss()
+                }
+            })
         }
     }
 
@@ -109,14 +107,12 @@ class AndroidPreviewProvider : PreviewProvider {
             onConfirm(adapter.getSelectedItems())
         }
 
-        bottomSheet.setOnDismissListener {
-            if (!importConfirmed) {
-                onDismiss()
-            }
-        }
-
         with(com.example.presensor.controllers.dialogs.DialogFactory) {
-            bottomSheet.showWithSmartNfcReading()
+            bottomSheet.showWithSmartNfcReading(onDismiss = {
+                if (!importConfirmed) {
+                    onDismiss()
+                }
+            })
         }
     }
 }

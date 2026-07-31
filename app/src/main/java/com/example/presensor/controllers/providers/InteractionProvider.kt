@@ -1,0 +1,194 @@
+package com.example.presensor.controllers.providers
+
+import android.content.ContentResolver
+import android.content.Context
+import com.example.presensor.controllers.items.ActionItem
+import com.example.presensor.controllers.items.BacklogItem
+import com.example.presensor.controllers.items.DeviceItem
+import com.example.presensor.data.entities.Course
+import com.example.presensor.data.entities.Session
+import com.example.presensor.data.entities.Student
+import com.example.presensor.data.entities.AttendanceRecord
+
+/**
+ * Universal UI actions available to all controllers.
+ */
+interface InteractionProvider {
+    fun showToast(message: String, isShort: Boolean = true)
+    fun showToast(resId: Int, isShort: Boolean = true)
+    fun toggleLoading(show: Boolean)
+    fun getString(resId: Int): String
+    fun getString(resId: Int, vararg formatArgs: Any): String
+    fun getContext(): Context
+    fun getContentResolver(): ContentResolver
+}
+
+/**
+ * Specialized provider for Tag discovery and registration logic.
+ */
+interface TagInteractionProvider : InteractionProvider {
+    fun toggleNfcScanning(enabled: Boolean, callback: Any? = null)
+    fun showOverwriteConfirmation(
+        existingStudent: Student,
+        newRfid: String,
+        onConfirm: () -> Unit
+    )
+
+    fun showBindingDialog(
+        newRfid: String,
+        allStudents: List<Student>,
+        onStudentSelected: (Student) -> Unit,
+        onManualAttendance: () -> Unit,
+        onReassignConfirmed: (Student) -> Unit
+    )
+
+    fun showManualRegistrationDialog(
+        rfid: String,
+        onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
+    )
+}
+
+/**
+ * Specialized provider for Student-related import and mapping.
+ */
+interface StudentInteractionProvider : InteractionProvider {
+    fun showMappingDialog(
+        fields: List<String>,
+        columns: List<String>,
+        sampleRow: List<String>?,
+        onDismissed: () -> Unit,
+        onConfirmed: (Map<String, String>) -> Unit
+    )
+
+    fun showStudentImportPreview(
+        students: List<Student>,
+        onConfirm: (List<Student>) -> Unit,
+        onDismiss: () -> Unit
+    )
+}
+
+/**
+ * Specialized provider for Session/Attendance management.
+ */
+interface SessionInteractionProvider : InteractionProvider {
+    fun showSessionImportPreview(
+        sessions: List<Session>,
+        onConfirm: (List<Session>) -> Unit,
+        onDismiss: () -> Unit
+    )
+
+    fun showEditSessionDialog(
+        session: Session,
+        onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
+    )
+
+    fun showCreateSessionDialog(
+        courseId: Long,
+        onSessionCreated: (Long, String, Long) -> Unit
+    )
+
+    fun showDeleteSessionDialog(session: Session)
+    fun showMassDateChangeDialog(courseId: Long)
+    fun showUnlockDialog(
+        sessionName: String,
+        onUnlocked: () -> Unit
+    )
+
+    fun updateSessionCard(name: String, date: Long, accentColor: Int)
+    fun updateLockState(isLocked: Boolean)
+    fun submitAttendanceList(records: List<AttendanceRecord>)
+    fun showLayoutRefreshSpinner(show: Boolean)
+    fun setOnRefreshListener(listener: () -> Unit)
+    fun showStudentSearchDialog(
+        allStudents: List<Student>,
+        onStudentSelected: (Student) -> Unit,
+        onManualRegistrationRequested: () -> Unit
+    )
+
+    fun dismissActiveDialog()
+}
+
+/**
+ * Specialized provider for Reader connectivity and management.
+ */
+interface ReaderInteractionProvider : InteractionProvider {
+    fun showPasswordPromptDialog(
+        readerName: String,
+        onPasswordEntered: (String) -> Unit,
+        onDismissed: () -> Unit
+    )
+
+    fun showEditReaderDialog(
+        readerName: String,
+        onConfigSaved: (newName: String, newPass: String) -> Unit
+    )
+
+    fun showDestructiveDeleteDialog(
+        title: String,
+        message: String,
+        onConfirmed: () -> Unit
+    )
+
+    fun showBacklogImportPreview(
+        onConfirm: (List<BacklogItem>) -> Unit,
+        onDismiss: () -> Unit
+    )
+
+    fun addBacklogItem(item: BacklogItem)
+    fun removeBacklogItem(item: BacklogItem)
+    fun updateBacklogCount(count: Int)
+    fun dismissActiveDialog()
+}
+
+/**
+ * Specialized provider for Course management.
+ */
+interface CourseInteractionProvider : InteractionProvider {
+    fun setupCourseUtilsAccordion(
+        onHeaderClicked: (isExpanded: Boolean) -> Unit
+    )
+
+    fun setUtilsExpandIconRotation(rotation: Float)
+    fun setUtilsContentVisibility(visible: Boolean)
+    fun refreshSessionsList(
+        sessions: List<Session>,
+        onSessionSelected: (Session) -> Unit,
+        onToggleLockRequested: (Session) -> Unit,
+        onEditSessionRequested: (Session) -> Unit,
+        onDeleteSessionRequested: (Session) -> Unit,
+        getColorForAccent: (String) -> Int
+    )
+
+    fun updateCourseHeader(
+        course: Course,
+        sessionIds: Set<Long>,
+        studentEmails: Set<String>,
+        attendance: List<AttendanceRecord>
+    )
+
+    fun setupQuickActions(
+        actions: List<ActionItem>,
+        titles: List<String>
+    )
+
+    fun launchExportPicker(fileName: String)
+    fun launchImportPicker()
+    fun openOutputStream(uri: android.net.Uri): java.io.OutputStream?
+    fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit)
+    fun showCreateCourseDialog(onCourseCreated: () -> Unit)
+    fun showMassDateChangeDialog(courseId: Long)
+    fun showDeleteSessionDialog(session: Session)
+}
+
+/**
+ * Specialized provider for Cloud Sync operations.
+ */
+interface CloudInteractionProvider : InteractionProvider {
+    fun <T> showCloudFileDialog(
+        title: String,
+        subtitle: String,
+        driveItems: List<T>,
+        getName: (T) -> String,
+        onItemSelected: (T) -> Unit
+    )
+}

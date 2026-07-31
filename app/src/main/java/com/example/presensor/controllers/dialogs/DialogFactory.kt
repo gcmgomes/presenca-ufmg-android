@@ -52,22 +52,25 @@ object DialogFactory {
 
 
     // Private helper extension that manages the state tracker centrally
-    fun AlertDialog.Builder.showWithSmartNfcReading(resumeReader: Boolean = false): AlertDialog {
+    fun AlertDialog.Builder.showWithSmartNfcReading(resumeReader: Boolean = false, onDismiss: (() -> Unit)? = null): AlertDialog {
         val dialog = this.create()
-        dialog.setOnShowListener { isDialogOpen = true
-            tagController?.pauseNfcScanning()}
+        dialog.setOnShowListener {
+            isDialogOpen = true
+            tagController?.pauseNfcScanning()
+        }
         dialog.setOnDismissListener {
             isDialogOpen = false
             tagController?.resumeNfcScanning()
-            if(resumeReader) {
+            if (resumeReader) {
                 tagController?.resumeReader()
             }
+            onDismiss?.invoke()
         }
         dialog.show()
         return dialog
     }
 
-    fun BottomSheetDialog.showWithSmartNfcReading(resumeReader: Boolean = false): BottomSheetDialog {
+    fun BottomSheetDialog.showWithSmartNfcReading(resumeReader: Boolean = false, onDismiss: (() -> Unit)? = null): BottomSheetDialog {
         this.setOnShowListener {
             isDialogOpen = true
             tagController?.pauseNfcScanning()
@@ -78,6 +81,7 @@ object DialogFactory {
             if (resumeReader) {
                 tagController?.resumeReader()
             }
+            onDismiss?.invoke()
         }
         this.show()
         return this

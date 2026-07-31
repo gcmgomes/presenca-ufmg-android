@@ -1,4 +1,4 @@
-package com.example.presensor.adapters
+package com.example.presensor.controllers.adapters
 
 import android.content.Context
 import android.widget.FrameLayout
@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32])
@@ -32,7 +33,9 @@ class ImportPreviewAdapterTest {
             Session(courseId = 1, name = "S1", date = 1000L),
             Session(courseId = 1, name = "S2", date = 2000L)
         )
-        val adapter = ImportPreviewAdapter(sessions)
+        val adapter = ImportPreviewAdapter()
+        adapter.submitList(sessions)
+        ShadowLooper.idleMainLooper()
         assertEquals(2, adapter.itemCount)
     }
 
@@ -41,7 +44,10 @@ class ImportPreviewAdapterTest {
         val sessions = listOf(
             Session(courseId = 1, name = "Test Session", date = 1625097600000L) // 01/07/2021
         )
-        val adapter = ImportPreviewAdapter(sessions)
+        val adapter = ImportPreviewAdapter()
+        adapter.submitList(sessions)
+        ShadowLooper.idleMainLooper()
+        
         val parent = FrameLayout(context)
         val viewHolder = adapter.onCreateViewHolder(parent, 0)
 
