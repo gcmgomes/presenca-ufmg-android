@@ -18,6 +18,11 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+data class ImportResult<T>(
+    val items: List<T>,
+    val errors: List<String>
+)
+
 object DataProcessor {
 
     fun parseCsvLine(line: String): List<String> {
@@ -114,11 +119,6 @@ object DataProcessor {
 
         return InternalDataTable(headers, rows)
     }
-
-    data class ImportResult<T>(
-        val items: List<T>,
-        val errors: List<String>
-    )
 
     fun parseSessionsFromTable(
         context: Context,

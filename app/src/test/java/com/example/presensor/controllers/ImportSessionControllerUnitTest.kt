@@ -3,8 +3,7 @@ package com.example.presensor.controllers
 import android.net.Uri
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
-import com.example.presensor.tools.DataProcessor
-import com.example.presensor.tools.providers.DataProcessorProvider
+import com.example.presensor.tools.ImportResult
 import com.example.presensor.controllers.providers.SessionInteractionProvider
 import com.google.api.services.sheets.v4.Sheets
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,7 +17,6 @@ import org.mockito.kotlin.*
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImportSessionControllerUnitTest : BaseControllerTest() {
 
-    private val dataProcessorProvider: DataProcessorProvider = mock()
     private val interactionProvider: SessionInteractionProvider = mock()
 
     private lateinit var controller: ImportSessionController
@@ -30,12 +28,14 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         
         whenever(interactionProvider.getContext()).thenReturn(activity)
         whenever(interactionProvider.getContentResolver()).thenReturn(activity.contentResolver)
+        whenever(interactionProvider.getString(any())).thenReturn("Mock String")
+        whenever(interactionProvider.getString(any(), any())).thenReturn("Mock String")
+        whenever(interactionProvider.getString(any(), any(), any())).thenReturn("Mock String")
 
         controller = ImportSessionController(
             interactionProvider = interactionProvider,
             db = db,
             scope = testScope,
-            dataProcessorProvider = dataProcessorProvider,
             mainDispatcher = mainDispatcherRule.testDispatcher,
             ioDispatcher = mainDispatcherRule.testDispatcher
         )
@@ -45,7 +45,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun importFromLocal_success_showsMappingDialog() = runTest {
         val uri: Uri = mock()
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(eq(uri), any())).thenReturn(table)
 
         controller.importFromLocal(uri, 1L, {})
         advanceUntilIdle()
@@ -62,7 +62,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Test
     fun importFromLocal_failure_showsToast() = runTest {
         val uri: Uri = mock()
-        whenever(dataProcessorProvider.ingestFromCsv(any(), eq(uri), any())).thenThrow(
+        whenever(interactionProvider.ingestFromCsv(eq(uri), any())).thenThrow(
             RuntimeException("Error")
         )
         whenever(interactionProvider.getString(any())).thenReturn("Error")
@@ -79,8 +79,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         val sheets: Sheets = mock()
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         whenever(
-            dataProcessorProvider.ingestFromGoogleSheets(
-                any(),
+            interactionProvider.ingestFromGoogleSheets(
                 eq(sheets),
                 any(),
                 any(),
@@ -104,8 +103,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun importFromCloud_failure_showsToast() = runTest {
         val sheets: Sheets = mock()
         whenever(
-            dataProcessorProvider.ingestFromGoogleSheets(
-                any(),
+            interactionProvider.ingestFromGoogleSheets(
                 eq(sheets),
                 any(),
                 any(),
@@ -132,12 +130,11 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     fun handleMappingConfirmed_withErrors_showsToast() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val sessions = listOf(Session(id = 1, courseId = 1L, name = "S1", date = 1000L))
-        val result = DataProcessor.ImportResult(sessions, listOf("Parse error"))
+        val result = ImportResult(sessions, listOf("Parse error"))
 
-        whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
         whenever(
-            dataProcessorProvider.parseSessionsFromTable(
-                any(),
+            interactionProvider.parseSessionsFromTable(
                 any(),
                 any(),
                 any()
@@ -166,12 +163,11 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Test
     fun handleMappingConfirmed_noItems_showsErrorToast() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        val result = DataProcessor.ImportResult(emptyList<Session>(), listOf("Critical error"))
+        val result = ImportResult(emptyList<Session>(), listOf("Critical error"))
 
-        whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
         whenever(
-            dataProcessorProvider.parseSessionsFromTable(
-                any(),
+            interactionProvider.parseSessionsFromTable(
                 any(),
                 any(),
                 any()
@@ -202,7 +198,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Test
     fun mappingDialog_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
 
         val onDismissedCaptor = argumentCaptor<() -> Unit>()
         controller.importFromLocal(mock(), 1L, {})
@@ -210,7 +206,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
 
         verify(interactionProvider).showMappingDialog(
             any(),
-            any(),
+            eq(table.headers),
             any(),
             onDismissedCaptor.capture(),
             any()
@@ -226,12 +222,11 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
 
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val sessions = listOf(Session(courseId = 1L, name = "S1", date = 1000L))
-        val result = DataProcessor.ImportResult(sessions, emptyList<String>())
+        val result = ImportResult(sessions, emptyList<String>())
 
-        whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
         whenever(
-            dataProcessorProvider.parseSessionsFromTable(
-                any(),
+            interactionProvider.parseSessionsFromTable(
                 any(),
                 any(),
                 any()
@@ -273,15 +268,14 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
     @Test
     fun preview_dismiss_hidesOverlay() = runTest {
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
-        val result = DataProcessor.ImportResult(
+        val result = ImportResult(
             listOf(Session(courseId = 1L, name = "S1", date = 1000L)),
             emptyList<String>()
         )
 
-        whenever(dataProcessorProvider.ingestFromCsv(any(), any(), any())).thenReturn(table)
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
         whenever(
-            dataProcessorProvider.parseSessionsFromTable(
-                any(),
+            interactionProvider.parseSessionsFromTable(
                 any(),
                 any(),
                 any()

@@ -6,6 +6,8 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.transition.AutoTransition
+import androidx.transition.TransitionManager
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import com.example.presensor.data.entities.Student
@@ -15,7 +17,7 @@ import com.example.presensor.R
 
 class StudentStatsAdapter(
     private var activeStudents: List<Student>,
-    private val allSessions: List<Session>,
+    allSessions: List<Session>,
     private val allAttendance: List<AttendanceRecord>,
     private val sessionIds: Set<Long>,
     private val getColorFromAttr: (Int) -> Int,
@@ -23,6 +25,7 @@ class StudentStatsAdapter(
     private val fromMillisToLocalDate: (Long) -> LocalDate
 ) : RecyclerView.Adapter<StudentStatsAdapter.StudentViewHolder>() {
 
+    private val sortedSessions = allSessions.sortedBy { it.id }
     private val expandedStudentEmails = HashSet<String>()
 
     inner class StudentViewHolder(v: View) : RecyclerView.ViewHolder(v) {
@@ -64,14 +67,23 @@ class StudentStatsAdapter(
         }
 
         holder.root.setOnClickListener {
-            if (expandedStudentEmails.contains(student.email)) {
-                expandedStudentEmails.remove(student.email)
-                holder.container.visibility = View.GONE
-            } else {
+            val parent = holder.itemView.parent as? ViewGroup
+            
+            val isExpanding = !expandedStudentEmails.contains(student.email)
+            if (isExpanding) {
                 expandedStudentEmails.add(student.email)
                 populateExpandedSessions(holder, student)
-                holder.container.visibility = View.VISIBLE
+            } else {
+                expandedStudentEmails.remove(student.email)
             }
+
+            if (parent != null) {
+                TransitionManager.beginDelayedTransition(parent, AutoTransition().apply {
+                    duration = 150L
+                })
+            }
+
+            holder.container.visibility = if (isExpanding) View.VISIBLE else View.GONE
         }
     }
 
@@ -80,7 +92,7 @@ class StudentStatsAdapter(
         val inflater = LayoutInflater.from(holder.itemView.context)
         val dateFormat = makeSessionTimeFormatter()
 
-        allSessions.sortedBy { it.id }.forEach { session ->
+        sortedSessions.forEach { session ->
             val mini = inflater.inflate(R.layout.item_mini_session_stat_card, holder.container, false)
             val miniSessionNameView = mini.findViewById<TextView>(R.id.txtMiniSessionName)
             miniSessionNameView.text = session.name

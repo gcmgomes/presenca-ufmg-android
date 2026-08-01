@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Log
 import com.example.presensor.R
 import com.example.presensor.controllers.providers.StudentInteractionProvider
-import com.example.presensor.tools.providers.DataProcessorProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Student
@@ -18,7 +17,6 @@ class ImportStudentController(
     private val interactionProvider: StudentInteractionProvider,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
-    private val dataProcessorProvider: DataProcessorProvider,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -34,7 +32,7 @@ class ImportStudentController(
                 onDismissed = { interactionProvider.toggleLoading(false) },
                 onConfirmed = { mapping ->
                     val result =
-                        dataProcessorProvider.parseStudentsFromTable(interactionProvider.getContext(), table, mapping)
+                        interactionProvider.parseStudentsFromTable(table, mapping)
                     if (result.items.isNotEmpty()) {
                         interactionProvider.showStudentImportPreview(
                             result.items,
@@ -97,8 +95,7 @@ class ImportStudentController(
         }
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromGoogleSheets(
-                    interactionProvider.getContext(),
+                val table = interactionProvider.ingestFromGoogleSheets(
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'",
@@ -121,8 +118,7 @@ class ImportStudentController(
     fun importFromLocal(uri: Uri) {
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromCsv(
-                    interactionProvider.getContentResolver(),
+                val table = interactionProvider.ingestFromCsv(
                     uri,
                     caller = "ImportStudentController.importFromLocal"
                 )

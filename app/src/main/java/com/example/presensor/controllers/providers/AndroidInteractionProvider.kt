@@ -2,6 +2,7 @@ package com.example.presensor.controllers.providers
 
 import android.nfc.NfcAdapter
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
@@ -14,6 +15,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
 import androidx.core.widget.addTextChangedListener
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -35,6 +37,9 @@ import com.example.presensor.data.entities.AttendanceRecord
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.cloud.CourseCloudActions
+import com.example.presensor.data.InternalDataTable
+import com.example.presensor.tools.DataProcessor
+import com.example.presensor.tools.ImportResult
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
@@ -87,6 +92,7 @@ class AndroidInteractionProvider(
                     }
                 } catch (e: Exception) {
                     showToast(R.string.toast_cloud_auth_failed)
+                    Log.e("CloudAuth", "Authorization result processing failed", e)
                 }
             } else {
                 toggleLoading(false)
@@ -171,6 +177,37 @@ class AndroidInteractionProvider(
 
     override fun setLoadingJob(job: kotlinx.coroutines.Job?) {
         activity.setCurrentOverlayJob(job)
+    }
+
+    override suspend fun ingestFromGoogleSheets(
+        sheetsService: com.google.api.services.sheets.v4.Sheets,
+        spreadsheetId: String,
+        range: String,
+        caller: String
+    ): InternalDataTable {
+        return DataProcessor.ingestFromGoogleSheets(activity, sheetsService, spreadsheetId, range, caller)
+    }
+
+    override suspend fun ingestFromCsv(
+        uri: android.net.Uri,
+        caller: String
+    ): InternalDataTable {
+        return DataProcessor.ingestFromCsv(activity.contentResolver, uri, caller)
+    }
+
+    override fun parseSessionsFromTable(
+        table: InternalDataTable,
+        courseId: Long,
+        mapping: Map<String, String>?
+    ): ImportResult<Session> {
+        return DataProcessor.parseSessionsFromTable(activity, table, courseId, mapping)
+    }
+
+    override fun parseStudentsFromTable(
+        table: InternalDataTable,
+        mapping: Map<String, String>?
+    ): ImportResult<Student> {
+        return DataProcessor.parseStudentsFromTable(activity, table, mapping)
     }
 
     // --- Tag Interaction ---
@@ -430,7 +467,7 @@ class AndroidInteractionProvider(
                 ?.setOnClickListener { onEditClicked() }
 
             val rv = activity.findViewById<RecyclerView>(R.id.rvAttendance)
-            if (rv != null && rv.adapter != attendanceAdapter) {
+            if (rv != null && (rv.adapter != attendanceAdapter)) {
                 rv.layoutManager = LinearLayoutManager(activity)
                 rv.adapter = attendanceAdapter
             }
@@ -981,7 +1018,7 @@ class AndroidInteractionProvider(
                 activity.findViewById<View>(R.id.layoutUtilsHeader) ?: return@runOnUiThread
             val expandableLayout = activity.findViewById<View>(R.id.layoutUtilsContent)
             headerClickArea.setOnClickListener {
-                onHeaderClicked(expandableLayout.visibility == View.VISIBLE)
+                onHeaderClicked(expandableLayout.isVisible)
             }
         }
     }

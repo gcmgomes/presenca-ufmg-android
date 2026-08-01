@@ -5,13 +5,13 @@ import android.content.Context
 import com.example.presensor.controllers.items.BacklogItem
 import com.example.presensor.controllers.items.DeviceItem
 import com.example.presensor.controllers.providers.ReaderInteractionProvider
+import com.example.presensor.data.InternalDataTable
+import com.example.presensor.data.entities.Session
+import com.example.presensor.data.entities.Student
+import com.example.presensor.tools.ImportResult
 import kotlinx.coroutines.Job
 import org.mockito.kotlin.mock
 
-/**
- * A test-only implementation of ReaderInteractionProvider.
- * Captures calls to UI methods for verification in unit tests.
- */
 class MockReaderInteractionProvider : ReaderInteractionProvider {
 
     var lastToastResId: Int? = null
@@ -53,14 +53,35 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         sampleRow: List<String>?,
         onDismissed: () -> Unit,
         onConfirmed: (Map<String, String>) -> Unit
-    ) {
-    }
+    ) {}
 
     override fun showManualRegistrationDialog(
         rfid: String,
         onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
-    ) {
-    }
+    ) {}
+
+    override suspend fun ingestFromGoogleSheets(
+        sheetsService: com.google.api.services.sheets.v4.Sheets,
+        spreadsheetId: String,
+        range: String,
+        caller: String
+    ): InternalDataTable = InternalDataTable(emptyList(), emptyList())
+
+    override suspend fun ingestFromCsv(
+        uri: android.net.Uri,
+        caller: String
+    ): InternalDataTable = InternalDataTable(emptyList(), emptyList())
+
+    override fun parseSessionsFromTable(
+        table: InternalDataTable,
+        courseId: Long,
+        mapping: Map<String, String>?
+    ): ImportResult<Session> = ImportResult(emptyList(), emptyList())
+
+    override fun parseStudentsFromTable(
+        table: InternalDataTable,
+        mapping: Map<String, String>?
+    ): ImportResult<Student> = ImportResult(emptyList(), emptyList())
 
     override fun showPasswordPromptDialog(
         readerName: String,
@@ -93,8 +114,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     override fun showBacklogImportPreview(
         onConfirm: (List<BacklogItem>) -> Unit,
         onDismiss: () -> Unit
-    ) {
-    }
+    ) {}
 
     override fun addBacklogItem(item: BacklogItem) {}
     override fun removeBacklogItem(item: BacklogItem) {}
@@ -105,8 +125,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     override fun setupReaderDiscoveryUI(
         onReaderEnabledChanged: (Boolean) -> Unit,
         onRefreshRequested: () -> Unit
-    ) {
-    }
+    ) {}
 
     override fun updateDeviceList(
         connected: List<DeviceItem>,
@@ -114,8 +133,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         unknown: List<DeviceItem>,
         onDeviceSelected: (String, String) -> Unit,
         onDeviceLongClicked: (String, String) -> Unit
-    ) {
-    }
+    ) {}
 
     override fun setReaderEnabledState(enabled: Boolean) {}
     override fun setDiscoveryRefreshing(isRefreshing: Boolean) {}
@@ -129,8 +147,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         onDisconnectRequested: () -> Unit,
         onConnectRequested: () -> Unit,
         onBacklogItemLongClicked: (BacklogItem) -> Unit
-    ) {
-    }
+    ) {}
 
     override fun updateReaderManagementHeader(
         deviceName: String,
@@ -138,8 +155,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         batteryLevel: String?,
         deviceTime: String?,
         backlogCount: String
-    ) {
-    }
+    ) {}
 
     override fun updateReaderManagementBacklog(items: List<BacklogItem>) {}
 

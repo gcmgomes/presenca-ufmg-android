@@ -10,6 +10,9 @@ import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.data.entities.AttendanceRecord
 
+import com.example.presensor.data.InternalDataTable
+import com.example.presensor.tools.ImportResult
+
 /**
  * Universal UI actions available to all controllers.
  */
@@ -31,6 +34,29 @@ interface InteractionProvider {
         onDismissed: () -> Unit,
         onConfirmed: (Map<String, String>) -> Unit
     )
+
+    suspend fun ingestFromGoogleSheets(
+        sheetsService: com.google.api.services.sheets.v4.Sheets,
+        spreadsheetId: String,
+        range: String,
+        caller: String
+    ): InternalDataTable
+
+    suspend fun ingestFromCsv(
+        uri: android.net.Uri,
+        caller: String
+    ): InternalDataTable
+
+    fun parseSessionsFromTable(
+        table: InternalDataTable,
+        courseId: Long,
+        mapping: Map<String, String>?
+    ): ImportResult<Session>
+
+    fun parseStudentsFromTable(
+        table: InternalDataTable,
+        mapping: Map<String, String>?
+    ): ImportResult<Student>
 
     fun showManualRegistrationDialog(
         rfid: String,

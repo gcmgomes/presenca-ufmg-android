@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Log
 import com.example.presensor.R
 import com.example.presensor.controllers.providers.SessionInteractionProvider
-import com.example.presensor.tools.providers.DataProcessorProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Session
@@ -18,7 +17,6 @@ class ImportSessionController(
     private val interactionProvider: SessionInteractionProvider,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
-    private val dataProcessorProvider: DataProcessorProvider,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -35,8 +33,7 @@ class ImportSessionController(
                 sampleRow = table.rows.firstOrNull(),
                 onDismissed = { interactionProvider.toggleLoading(false) },
                 onConfirmed = { mapping ->
-                    val result = dataProcessorProvider.parseSessionsFromTable(
-                        interactionProvider.getContext(),
+                    val result = interactionProvider.parseSessionsFromTable(
                         table,
                         courseId,
                         mapping
@@ -105,8 +102,7 @@ class ImportSessionController(
         }
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromGoogleSheets(
-                    interactionProvider.getContext(),
+                val table = interactionProvider.ingestFromGoogleSheets(
                     sheetsService,
                     spreadsheetId,
                     "'$tabTitle'",
@@ -131,8 +127,7 @@ class ImportSessionController(
     ) {
         val job = scope.launch(ioDispatcher) {
             try {
-                val table = dataProcessorProvider.ingestFromCsv(
-                    interactionProvider.getContentResolver(),
+                val table = interactionProvider.ingestFromCsv(
                     uri,
                     caller = "ImportSessionController.importFromLocal"
                 )

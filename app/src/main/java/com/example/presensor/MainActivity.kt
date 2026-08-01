@@ -7,9 +7,7 @@ import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.AndroidTagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.controllers.providers.AndroidInteractionProvider
-import com.example.presensor.tools.providers.AndroidToastProvider
 import android.content.pm.PackageManager
-import android.nfc.NfcAdapter
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -18,8 +16,6 @@ import android.view.View
 import android.widget.*
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.AttrRes
-import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
@@ -50,10 +46,6 @@ import com.example.presensor.data.entities.Course
 import com.example.presensor.controllers.ImportSessionController
 import com.example.presensor.controllers.ImportStudentController
 import com.example.presensor.services.ReaderStatusService
-import com.example.presensor.tools.providers.AndroidDataProcessorProvider
-import com.example.presensor.tools.providers.AndroidDialogProvider
-import com.example.presensor.tools.providers.AndroidPreviewProvider
-import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.data.SecureStoreManager
 import com.example.presensor.controllers.ReaderDiscoveryController
 import com.example.presensor.controllers.ReaderManagementController
@@ -64,7 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 
-class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
+class MainActivity : AppCompatActivity() {
 
     companion object {
         const val TAG = "MainActivity"
@@ -89,6 +81,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     lateinit var importBacklogController: ImportBacklogController
 
     lateinit var cloudSyncController: CloudSyncController
+    lateinit var interactionProvider: AndroidInteractionProvider
 
     // Keeps track of the user's intended action if they need to complete a sign-in flow first
     var pendingCloudAction: (() -> Unit)? = null
@@ -108,7 +101,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     var readerOrchestrator: ReaderOrchestrator? = null
 
 
-    override fun toggleLoadingOverlay(show: Boolean) {
+    fun toggleLoadingOverlay(show: Boolean) {
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
         if (!show) {
             currentOverlayJob?.cancel()
@@ -116,12 +109,11 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         }
     }
 
-    override fun setCurrentOverlayJob(job: Job?) {
+    fun setCurrentOverlayJob(job: Job?) {
         currentOverlayJob = job
     }
 
     // Flag to orchestrate the focus lock state safely
-    private var isWaitingForFocus = false
     private var isCloudAuthSuccessPendingRun = false
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -271,7 +263,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             scope = lifecycleScope
         )
 
-
         val dbCallback = object : RoomDatabase.Callback() {
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
@@ -280,9 +271,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 db.execSQL("PRAGMA optimize;")
             }
         }
-
-        checkAndRequestBluetoothPermissions()
-
 
         loadingOverlay = findViewById(R.id.loadingOverlay)
 
@@ -325,7 +313,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         // Initialize consolidated UI Interaction Provider
-        val interactionProvider = AndroidInteractionProvider(
+        interactionProvider = AndroidInteractionProvider(
             activity = this,
             secureStoreManager = secureStoreManager,
             tagDialogFactory = tagDialogFactory,
@@ -340,19 +328,15 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             interactionProvider = interactionProvider
         )
 
-        val dataProcessorProvider = AndroidDataProcessorProvider()
-
         importSessionController = ImportSessionController(
             interactionProvider = interactionProvider,
             db = db,
-            scope = lifecycleScope,
-            dataProcessorProvider = dataProcessorProvider
+            scope = lifecycleScope
         )
         importStudentController = ImportStudentController(
             interactionProvider = interactionProvider,
             db = db,
-            scope = lifecycleScope,
-            dataProcessorProvider = dataProcessorProvider
+            scope = lifecycleScope
         )
 
         // Initialize Dashboard Controller
@@ -487,6 +471,8 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         findViewById<FloatingActionButton>(R.id.btnRegisterManualAttendance).setOnClickListener {
             sessionController.showManualAttendanceDialog()
         }
+
+        checkAndRequestBluetoothPermissions()
 
         toggleAllViews(layoutDashboardView = true)
 
