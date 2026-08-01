@@ -42,16 +42,19 @@ class AndroidTagControllerDialogFactory(
         newRfid: String,
         onConfirm: () -> Unit
     ): AlertDialog {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_overwrite_confirmation, null)
+        val txtMessage = dialogView.findViewById<TextView>(R.id.txtMessage)
+
+        txtMessage.text = activity.getString(
+            R.string.dialog_tag_registered_message,
+            existingStudent.name,
+            existingStudent.email
+        )
+
         return with(DialogFactory) {
             AlertDialog.Builder(activity)
                 .setTitle(activity.getString(R.string.dialog_tag_registered_title))
-                .setMessage(
-                    activity.getString(
-                        R.string.dialog_tag_registered_message,
-                        existingStudent.name,
-                        existingStudent.email
-                    )
-                )
+                .setView(dialogView)
                 .setPositiveButton(activity.getString(R.string.action_yes)) { _, _ ->
                     onConfirm()
                 }
@@ -127,17 +130,20 @@ class AndroidTagControllerDialogFactory(
     }
 
     private fun showReassignConfirmation(student: Student, rfid: String, onConfirm: () -> Unit) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_overwrite_confirmation, null)
+        val txtMessage = dialogView.findViewById<TextView>(R.id.txtMessage)
+
+        txtMessage.text = activity.getString(
+            R.string.dialog_overwrite_tag_message,
+            student.name,
+            student.rfid,
+            rfid
+        )
+
         with(DialogFactory) {
             AlertDialog.Builder(activity)
                 .setTitle(activity.getString(R.string.dialog_overwrite_tag_title))
-                .setMessage(
-                    activity.getString(
-                        R.string.dialog_overwrite_tag_message,
-                        student.name,
-                        student.rfid,
-                        rfid
-                    )
-                )
+                .setView(dialogView)
                 .setPositiveButton(activity.getString(R.string.action_replace)) { _, _ ->
                     onConfirm()
                 }

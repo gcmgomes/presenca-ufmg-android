@@ -5,6 +5,7 @@ import android.util.Log
 import android.util.Patterns
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.LifecycleOwner
@@ -170,27 +171,17 @@ class SessionControllerDialogFactory(
         rfid: String,
         onStudentSaved: (name: String, email: String, dialog: AlertDialog) -> Unit
     ): AlertDialog {
-        val layout = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 10)
-        }
-        val nameInput = EditText(activity).apply {
-            hint = activity.getString(R.string.student_name)
-            inputType =
-                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-        }
-        val emailInput = EditText(activity).apply {
-            hint = activity.getString(R.string.student_email)
-            inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        }
-        layout.addView(nameInput)
-        layout.addView(emailInput)
+        val dialogView = activity.layoutInflater.inflate(R.layout.dialog_manual_registration, null)
+        val txtTagId = dialogView.findViewById<TextView>(R.id.txtTagId)
+        val nameInput = dialogView.findViewById<EditText>(R.id.edtStudentName)
+        val emailInput = dialogView.findViewById<EditText>(R.id.edtStudentEmail)
+
+        txtTagId.text = activity.getString(R.string.label_tag_id, rfid)
 
         with(DialogFactory) {
             val dialog = AlertDialog.Builder(activity)
                 .setTitle(R.string.title_manual_attendance)
-                .setMessage(activity.getString(R.string.label_tag_id, rfid))
-                .setView(layout)
+                .setView(dialogView)
                 .setPositiveButton(R.string.action_save, null)
                 .setNegativeButton(R.string.action_cancel, null)
                 .showWithSmartNfcReading()
