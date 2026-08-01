@@ -92,7 +92,7 @@ object DialogFactory {
         title: String,
         message: String,
         onConfirmed: () -> Unit
-    ) {
+    ): AlertDialog {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(60, 20, 60, 0)
@@ -119,6 +119,7 @@ object DialogFactory {
                 input.error = context.getString(R.string.error_delete_confirmation_mismatch)
             }
         }
+        return dialog
     }
 
     fun showMappingDialog(
@@ -128,7 +129,7 @@ object DialogFactory {
         sampleRow: List<String>? = null,
         onDismissed: (() -> Unit)? = null,
         onConfirmed: (Map<String, String>) -> Unit
-    ) {
+    ): AlertDialog {
         val layoutInflater = LayoutInflater.from(context)
         val view = layoutInflater.inflate(R.layout.dialog_import_mapping, null)
         val container = view.findViewById<LinearLayout>(R.id.mappingFieldsContainer)
@@ -194,6 +195,7 @@ object DialogFactory {
             onConfirmed(resultMapping)
             dialog.dismiss()
         }
+        return dialog
     }
 
     fun showSessionEntryDialog(
@@ -204,7 +206,7 @@ object DialogFactory {
         initialName: String = "",
         initialDate: Long = System.currentTimeMillis(),
         onConfirmed: (String, Long) -> Unit
-    ) {
+    ): AlertDialog {
         val layoutInflater = LayoutInflater.from(context)
         val dialogView = layoutInflater.inflate(R.layout.dialog_create_session, null)
         val edtName = dialogView.findViewById<EditText>(R.id.edtSessionName)
@@ -262,5 +264,6 @@ object DialogFactory {
                 Toast.makeText(context, context.getString(R.string.error_empty_name), Toast.LENGTH_SHORT).show()
             }
         }
+        return dialog
     }
 }

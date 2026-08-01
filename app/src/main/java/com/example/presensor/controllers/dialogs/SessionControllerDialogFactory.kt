@@ -28,8 +28,8 @@ class SessionControllerDialogFactory(
     fun showEditSessionDialog(
         session: Session,
         onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
-    ) {
-        DialogFactory.showSessionEntryDialog(
+    ): AlertDialog {
+        return DialogFactory.showSessionEntryDialog(
             context = activity,
             fragmentManager = activity.supportFragmentManager,
             titleResId = R.string.title_edit_session,
@@ -62,8 +62,8 @@ class SessionControllerDialogFactory(
         }
     }
 
-    fun showDeleteSessionDialog(session: Session) {
-        DialogFactory.showDestructiveDeleteDialog(
+    fun showDeleteSessionDialog(session: Session): AlertDialog {
+        return DialogFactory.showDestructiveDeleteDialog(
             context = activity,
             title = activity.getString(R.string.dialog_delete_session_title),
             message = activity.getString(R.string.dialog_delete_session_message, session.name),
@@ -83,7 +83,7 @@ class SessionControllerDialogFactory(
         )
     }
 
-    fun showMassDateChangeDialog(courseId: Long) {
+    fun showMassDateChangeDialog(courseId: Long): AlertDialog {
         val context = activity
         val dialogView = activity.layoutInflater.inflate(R.layout.dialog_date_change_sessions, null)
 
@@ -162,13 +162,14 @@ class SessionControllerDialogFactory(
                     dialog.dismiss()
                 }
             }
+            return dialog
         }
     }
 
     fun showManualRegistrationDialog(
         rfid: String,
         onStudentSaved: (name: String, email: String, dialog: AlertDialog) -> Unit
-    ) {
+    ): AlertDialog {
         val layout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(50, 40, 50, 10)
@@ -208,6 +209,7 @@ class SessionControllerDialogFactory(
                     onStudentSaved(name, email, dialog)
                 }
             }
+            return dialog
         }
     }
 }

@@ -21,7 +21,7 @@ interface TagControllerDialogFactory {
         existingStudent: Student,
         newRfid: String,
         onConfirm: () -> Unit
-    )
+    ): AlertDialog
 
     fun showBindingDialog(
         newRfid: String,
@@ -29,7 +29,7 @@ interface TagControllerDialogFactory {
         onStudentSelected: (Student) -> Unit,
         onManualAttendance: () -> Unit,
         onReassignConfirmed: (Student) -> Unit
-    )
+    ): BottomSheetDialog?
 }
 
 class AndroidTagControllerDialogFactory(
@@ -41,8 +41,8 @@ class AndroidTagControllerDialogFactory(
         existingStudent: Student,
         newRfid: String,
         onConfirm: () -> Unit
-    ) {
-        with(DialogFactory) {
+    ): AlertDialog {
+        return with(DialogFactory) {
             AlertDialog.Builder(activity)
                 .setTitle(activity.getString(R.string.dialog_tag_registered_title))
                 .setMessage(
@@ -66,8 +66,8 @@ class AndroidTagControllerDialogFactory(
         onStudentSelected: (Student) -> Unit,
         onManualAttendance: () -> Unit,
         onReassignConfirmed: (Student) -> Unit
-    ) {
-        if (DialogFactory.isAnyDialogOpen()) return
+    ): BottomSheetDialog? {
+        if (DialogFactory.isAnyDialogOpen()) return null
         val dialogView = layoutInflater.inflate(R.layout.dialog_search_student, null)
         val edtSearch = dialogView.findViewById<EditText>(R.id.edtStudentSearch)
         val rvSearch = dialogView.findViewById<RecyclerView>(R.id.rvStudentSearch)
@@ -123,6 +123,7 @@ class AndroidTagControllerDialogFactory(
         }
 
         edtSearch.addTextChangedListener { refreshList(it.toString()) }
+        return bindingDialog
     }
 
     private fun showReassignConfirmation(student: Student, rfid: String, onConfirm: () -> Unit) {

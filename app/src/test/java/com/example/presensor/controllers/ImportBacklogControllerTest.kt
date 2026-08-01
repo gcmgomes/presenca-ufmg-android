@@ -3,9 +3,7 @@ package com.example.presensor.controllers
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.data.entities.Student
 import com.example.presensor.controllers.items.BacklogItem
-import com.example.presensor.controllers.adapters.ImportBacklogAdapter
-import com.example.presensor.tools.providers.ToastProvider
-import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +20,7 @@ class ImportBacklogControllerTest : BaseControllerTest() {
 
     private lateinit var controller: ImportBacklogController
     private val orchestrator: ReaderOrchestrator = mock()
-    private val toastProvider: ToastProvider = mock()
+    private val interactionProvider: ReaderInteractionProvider = mock()
     private val toggleSpinner: (Boolean) -> Unit = mock()
     private val registerAttendance: (Student?, Long) -> Unit = mock()
     private val refreshAttendanceList: () -> Unit = mock()
@@ -37,11 +35,10 @@ class ImportBacklogControllerTest : BaseControllerTest() {
         whenever(orchestrator.isAuthenticated).thenReturn(MutableStateFlow(true))
 
         controller = ImportBacklogController(
-            activity = activity,
+            interactionProvider = interactionProvider,
             scope = TestScope(mainDispatcherRule.testDispatcher),
             db = db,
             orchestrator = orchestrator,
-            toastProvider = toastProvider,
             toggleSpinner = toggleSpinner,
             registerAttendance = registerAttendance,
             refreshAttendanceList = refreshAttendanceList
@@ -49,22 +46,21 @@ class ImportBacklogControllerTest : BaseControllerTest() {
     }
 
     @Test
-    fun `startImportFlow triggers LIST`() = runTest {
+    fun `startImportFlow triggers inventory request`() = runTest {
         controller.startImportFlow()
         advanceUntilIdle()
 
         verify(orchestrator).requestInventory()
+        verify(interactionProvider).showBacklogImportPreview(any(), any())
     }
 
     @Test
-    fun `executeSequentialImport handles success and updates dialog`() = runTest {
+    fun `executeSequentialImport handles success and updates UI`() = runTest {
         val student = Student(email = "test@example.com", name = "Test Student", rfid = "AA:BB:CC:DD")
         val item = BacklogItem("AABBCCDD", student, 1000L)
-        val mockAdapter: ImportBacklogAdapter = mock()
-        val mockDialog: BottomSheetDialog = mock()
 
         // Trigger import
-        controller.executeSequentialImport(listOf(item), mockAdapter, mockDialog)
+        controller.executeSequentialImport(listOf(item))
         
         // Simulate DEL_OK
         inventoryFlow.emit("DEL_OK" to 0L)
@@ -73,8 +69,8 @@ class ImportBacklogControllerTest : BaseControllerTest() {
 
         verify(orchestrator).deleteBacklogItem("AABBCCDD", 1000L)
         verify(registerAttendance).invoke(eq(student), eq(1000000L))
-        verify(mockAdapter).removeItem(item)
-        verify(mockDialog).dismiss()
+        verify(interactionProvider).removeBacklogItem(item)
+        verify(interactionProvider).dismissActiveDialog()
         verify(refreshAttendanceList).invoke()
     }
 }

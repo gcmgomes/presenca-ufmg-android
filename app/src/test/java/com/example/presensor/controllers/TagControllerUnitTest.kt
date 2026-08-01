@@ -244,6 +244,8 @@ class TagControllerUnitTest : BaseControllerTest() {
             assert(student?.name == name)
             assert(student?.email == email)
             verify(interactionProvider).showToast(any<String>(), any())
+            
+            // REGRESSION TEST: Ensure dialog is dismissed after saving
             verify(interactionProvider).dismissActiveDialog()
         }
 

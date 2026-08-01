@@ -44,6 +44,7 @@ class AndroidInteractionProvider(
     ReaderInteractionProvider, CloudInteractionProvider, CourseInteractionProvider {
 
     private var activeBottomSheet: BottomSheetDialog? = null
+    private var activeAlertDialog: AlertDialog? = null
     private var backlogAdapter: ImportBacklogAdapter? = null
     private var backlogCountText: TextView? = null
 
@@ -89,7 +90,7 @@ class AndroidInteractionProvider(
         onConfirmed: (Map<String, String>) -> Unit
     ) {
         activity.runOnUiThread {
-            DialogFactory.showMappingDialog(
+            activeAlertDialog = DialogFactory.showMappingDialog(
                 activity,
                 fields,
                 columns,
@@ -104,6 +105,8 @@ class AndroidInteractionProvider(
         activity.runOnUiThread {
             activeBottomSheet?.dismiss()
             activeBottomSheet = null
+            activeAlertDialog?.dismiss()
+            activeAlertDialog = null
         }
     }
 
@@ -145,7 +148,7 @@ class AndroidInteractionProvider(
         onConfirm: () -> Unit
     ) {
         activity.runOnUiThread {
-            tagDialogFactory.showOverwriteConfirmation(existingStudent, newRfid, onConfirm)
+            activeAlertDialog = tagDialogFactory.showOverwriteConfirmation(existingStudent, newRfid, onConfirm)
         }
     }
 
@@ -157,7 +160,7 @@ class AndroidInteractionProvider(
         onReassignConfirmed: (Student) -> Unit
     ) {
         activity.runOnUiThread {
-            tagDialogFactory.showBindingDialog(
+            activeBottomSheet = tagDialogFactory.showBindingDialog(
                 newRfid,
                 allStudents,
                 onStudentSelected,
@@ -172,7 +175,7 @@ class AndroidInteractionProvider(
         onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
     ) {
         activity.runOnUiThread {
-            sessionDialogFactory.showManualRegistrationDialog(rfid) { name, email, dialog ->
+            activeAlertDialog = sessionDialogFactory.showManualRegistrationDialog(rfid) { name, email, dialog ->
                 onStudentSaved(name, email, dialog)
             }
         }
@@ -271,7 +274,7 @@ class AndroidInteractionProvider(
         onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
     ) {
         activity.runOnUiThread {
-            sessionDialogFactory.showEditSessionDialog(session, onSessionUpdated)
+            activeAlertDialog = sessionDialogFactory.showEditSessionDialog(session, onSessionUpdated)
         }
     }
 
@@ -280,6 +283,7 @@ class AndroidInteractionProvider(
         onSessionCreated: (Long, String, Long) -> Unit
     ) {
         activity.runOnUiThread {
+            // Note: showCreateSessionDialog is currently Unit because it's launching a scope
             sessionDialogFactory.showCreateSessionDialog(courseId, onSessionCreated)
         }
     }
@@ -290,7 +294,7 @@ class AndroidInteractionProvider(
                 inputType = android.text.InputType.TYPE_CLASS_TEXT
             }
 
-            val dialog = AlertDialog.Builder(activity)
+            activeAlertDialog = AlertDialog.Builder(activity)
                 .setTitle(activity.getString(R.string.dialog_unlock_title, sessionName))
                 .setMessage(activity.getString(R.string.dialog_unlock_message))
                 .setView(input)
@@ -298,10 +302,10 @@ class AndroidInteractionProvider(
                 .setNegativeButton(activity.getString(R.string.action_cancel), null)
                 .showWithSmartNfcReading()
 
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            activeAlertDialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
                 if (input.text.toString() == sessionName) {
                     onUnlocked()
-                    dialog.dismiss()
+                    activeAlertDialog?.dismiss()
                 } else {
                     showToast(R.string.error_incorrect_password)
                 }
@@ -553,13 +557,26 @@ class AndroidInteractionProvider(
         }
     }
 
+    override fun toggleBacklogImportLoading(show: Boolean) {
+        activity.runOnUiThread {
+            val dialog = activeBottomSheet ?: return@runOnUiThread
+            val progressBar = dialog.findViewById<ProgressBar>(R.id.pbPreviewLoading)
+            val btnConfirm = dialog.findViewById<MaterialButton>(R.id.btnConfirmAction)
+
+            progressBar?.visibility = if (show) View.VISIBLE else View.GONE
+            btnConfirm?.isEnabled = !show
+        }
+    }
+
+    override fun getBacklogItemCount(): Int = backlogAdapter?.itemCount ?: 0
+
     override fun showDestructiveDeleteDialog(
         title: String,
         message: String,
         onConfirmed: () -> Unit
     ) {
         activity.runOnUiThread {
-            DialogFactory.showDestructiveDeleteDialog(activity, title, message, onConfirmed)
+            activeAlertDialog = DialogFactory.showDestructiveDeleteDialog(activity, title, message, onConfirmed)
         }
     }
 
@@ -771,25 +788,25 @@ class AndroidInteractionProvider(
 
     override fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
         activity.runOnUiThread {
-            courseDialogFactory.showEditCourseDialog(course, { _ -> }, onCourseEdited)
+            activeAlertDialog = courseDialogFactory.showEditCourseDialog(course, { _ -> }, onCourseEdited)
         }
     }
 
     override fun showCreateCourseDialog(onCourseCreated: () -> Unit) {
         activity.runOnUiThread {
-            courseDialogFactory.showCreateCourseDialog(onCourseCreated)
+            activeAlertDialog = courseDialogFactory.showCreateCourseDialog(onCourseCreated)
         }
     }
 
     override fun showMassDateChangeDialog(courseId: Long) {
         activity.runOnUiThread {
-            sessionDialogFactory.showMassDateChangeDialog(courseId)
+            activeAlertDialog = sessionDialogFactory.showMassDateChangeDialog(courseId)
         }
     }
 
     override fun showDeleteSessionDialog(session: Session) {
         activity.runOnUiThread {
-            sessionDialogFactory.showDeleteSessionDialog(session)
+            activeAlertDialog = sessionDialogFactory.showDeleteSessionDialog(session)
         }
     }
 }

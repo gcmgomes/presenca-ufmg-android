@@ -23,7 +23,7 @@ class CourseControllerDialogFactory(
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
-    fun showCreateCourseDialog(onCourseCreated: () -> Unit) {
+    fun showCreateCourseDialog(onCourseCreated: () -> Unit): AlertDialog {
         val context = activity
         val dialogView = activity.layoutInflater.inflate(R.layout.dialog_add_course, null)
 
@@ -34,7 +34,7 @@ class CourseControllerDialogFactory(
         val currentYear = Calendar.getInstance().get(Calendar.YEAR)
         edtYear.setText(currentYear.toString())
 
-        with(DialogFactory) {
+        return with(DialogFactory) {
             val dialog = AlertDialog.Builder(context)
                 .setTitle(context.getString(R.string.title_new_course))
                 .setView(dialogView)
@@ -71,10 +71,11 @@ class CourseControllerDialogFactory(
                     dialog.dismiss()
                 }
             }
+            dialog
         }
     }
 
-    fun showEditCourseDialog(course: Course, onUpdateSelectedCourse: (Course) -> Unit, onCourseEdited: () -> Unit) {
+    fun showEditCourseDialog(course: Course, onUpdateSelectedCourse: (Course) -> Unit, onCourseEdited: () -> Unit): AlertDialog {
         val context = activity
         val dialogView = activity.layoutInflater.inflate(R.layout.dialog_add_course, null)
 
@@ -87,7 +88,7 @@ class CourseControllerDialogFactory(
         val semesterIndex = if (course.semester == 2) 1 else 0
         spinnerSemester.setSelection(semesterIndex)
 
-        with(DialogFactory) {
+        return with(DialogFactory) {
             val dialog = AlertDialog.Builder(context)
                 .setTitle(context.getString(R.string.title_edit_course))
                 .setView(dialogView)
@@ -132,6 +133,7 @@ class CourseControllerDialogFactory(
                     dialog.dismiss()
                 }
             }
+            dialog
         }
     }
 }

@@ -126,6 +126,7 @@
     <string name="dialog_import_backlog_title">Revisar Importação de Pendências</string>
     <string name="dialog_import_backlog_hint">Encontrados %1$d registros pendentes. Selecione os itens para importar para a aula atual.</string>
     <string name="dialog_import_backlog_button_text">Importar Selecionados</string>
+    <string name="dialog_import_backlog_unknown_student">Aluno desconhecido</string>
     <string name="csv_header_student_identity">Nome do Aluno,Email,Tag</string>
     <string name="filename_attendance_fallback">Presenca</string>
     <string name="label_not_applicable">N/A</string>
@@ -172,6 +173,7 @@
     <string name="toast_course_deleted_success">Curso removido permanentemente</string>
     <string name="toast_session_properties_modified">Propriedades da aula modificadas</string>
     <string name="toast_imported_sessions">%1$d aulas importadas</string>
+    <string name="toast_imported_records">%1$d registros foram importados</string>
     <string name="toast_tag_not_registered">Tag não registrada</string>
     <string name="toast_tag_unbound">Tag desvinculada</string>
     <string name="toast_tag_assigned_success">Tag vinculada com sucesso!</string>

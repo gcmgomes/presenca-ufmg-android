@@ -432,11 +432,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         importBacklogController = ImportBacklogController(
-            activity = this,
+            interactionProvider = interactionProvider,
             scope = lifecycleScope,
             db = db,
             orchestrator = readerOrchestrator,
-            toastProvider = AndroidToastProvider(this),
             toggleSpinner = { sessionController.showLayoutRefreshSpinner(it) },
             registerAttendance = { student, time -> sessionController.registerAttendance(student, time) },
             refreshAttendanceList = { sessionController.loadAttendanceList() }

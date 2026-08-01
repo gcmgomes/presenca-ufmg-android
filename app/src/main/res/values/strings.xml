@@ -122,6 +122,7 @@
     <string name="dialog_import_backlog_title">Review Backlog Import</string>
     <string name="dialog_import_backlog_hint">Found %1$d backlogged records. Toggle items to import them into the current session.</string>
     <string name="dialog_import_backlog_button_text">Import Selected</string>
+    <string name="dialog_import_backlog_unknown_student">Aluno desconhecido</string>
     <string name="csv_header_student_identity">Student Name,Email,Tag</string>
     <string name="filename_attendance_fallback">Attendance</string>
     <string name="label_not_applicable">N/A</string>
@@ -167,6 +168,7 @@
     <string name="toast_course_deleted_success">Course permanently removed</string>
     <string name="toast_session_properties_modified">Session properties modified</string>
     <string name="toast_imported_sessions">Imported %1$d sessions</string>
+    <string name="toast_imported_records">Imported %1$d attendance records</string>
     <string name="toast_tag_not_registered">Tag not registered</string>
     <string name="toast_tag_unbound">Tag unbound</string>
     <string name="toast_tag_assigned_success">Tag successfully assigned!</string>

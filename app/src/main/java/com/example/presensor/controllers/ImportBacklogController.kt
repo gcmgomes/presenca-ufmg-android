@@ -1,32 +1,21 @@
 package com.example.presensor.controllers
 
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
-import android.widget.ProgressBar
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.example.presensor.R
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Student
 import com.example.presensor.controllers.items.BacklogItem
-import com.example.presensor.controllers.adapters.ImportBacklogAdapter
-import com.example.presensor.tools.providers.ToastProvider
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.button.MaterialButton
+import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.takeWhile
 
 class ImportBacklogController(
-    private val activity: AppCompatActivity,
+    private val interactionProvider: ReaderInteractionProvider,
     private val scope: CoroutineScope,
     private val db: AppDatabase,
     private val orchestrator: ReaderOrchestrator?,
-    private val toastProvider: ToastProvider,
     private val toggleSpinner: (Boolean) -> Unit,
     private val registerAttendance: (Student?, Long) -> Unit,
     private val refreshAttendanceList: () -> Unit,
@@ -34,20 +23,40 @@ class ImportBacklogController(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
 
-    private var activeDialog: BottomSheetDialog? = null
-
     fun startImportFlow() {
         if (orchestrator == null || orchestrator.isAuthenticated.value != true) {
             toggleSpinner(false)
-            toastProvider.showToast("No authenticated device found.")
+            interactionProvider.showToast("No authenticated device found.")
             return
         }
 
         // Show the dialog with a progress bar immediately
-        showPreviewDialog(isInitialFetch = true)
+        interactionProvider.showBacklogImportPreview(
+            onConfirm = { selected ->
+                if (selected.isNotEmpty()) {
+                    interactionProvider.toggleBacklogImportLoading(true)
+                    executeSequentialImport(selected)
+                } else {
+                    interactionProvider.showToast("Please select at least one item")
+                }
+            },
+            onDismiss = { /* Clean up if needed */ }
+        )
+
+        // Start fetching items
+        scope.launch(mainDispatcher) {
+            interactionProvider.toggleBacklogImportLoading(true)
+            fetchBacklogItems()
+            toggleSpinner(false)
+            interactionProvider.toggleBacklogImportLoading(false)
+
+            if (interactionProvider.getBacklogItemCount() == 0) {
+                interactionProvider.showToast(R.string.inventory_empty_message)
+            }
+        }
     }
 
-    private suspend fun fetchBacklogItems(adapter: ImportBacklogAdapter, txtCount: TextView) {
+    private suspend fun fetchBacklogItems() {
         val orch = orchestrator ?: return
         
         orch.requestInventory()
@@ -63,11 +72,8 @@ class ImportBacklogController(
                             }
                             val newItem = BacklogItem(tagId, student, timestamp)
                             withContext(mainDispatcher) {
-                                adapter.addItem(newItem)
-                                txtCount.text = activity.getString(
-                                    R.string.dialog_import_backlog_hint,
-                                    adapter.itemCount
-                                )
+                                interactionProvider.addBacklogItem(newItem)
+                                interactionProvider.updateBacklogCount(interactionProvider.getBacklogItemCount())
                             }
                         }
                     }
@@ -77,69 +83,12 @@ class ImportBacklogController(
         }
     }
 
-    private fun showPreviewDialog(isInitialFetch: Boolean) {
-        val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_list_preview, null)
-        val rvPreview = dialogView.findViewById<RecyclerView>(R.id.rvPreviewList)
-        val btnConfirm = dialogView.findViewById<MaterialButton>(R.id.btnConfirmAction)
-        val txtCount = dialogView.findViewById<TextView>(R.id.txtPreviewHint)
-        val txtTitle = dialogView.findViewById<TextView>(R.id.txtPreviewTitle)
-        val progressBar = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
-
-        txtTitle.text = activity.getString(R.string.dialog_import_backlog_title)
-        btnConfirm.text = activity.getString(R.string.dialog_import_backlog_button_text)
-
-        val adapter = ImportBacklogAdapter()
-        rvPreview.layoutManager = LinearLayoutManager(activity)
-        rvPreview.adapter = adapter
-
-        if (isInitialFetch) {
-            progressBar.visibility = View.VISIBLE
-            btnConfirm.isEnabled = false
-
-            scope.launch(mainDispatcher) {
-                fetchBacklogItems(adapter, txtCount)
-                toggleSpinner(false)
-                progressBar.visibility = View.GONE
-                btnConfirm.isEnabled = true
-
-                if (adapter.itemCount == 0) {
-                    toastProvider.showToast(activity.getString(R.string.inventory_empty_message))
-                }
-            }
-        }
-
-        val dialog = BottomSheetDialog(activity)
-        activeDialog = dialog
-        dialog.setContentView(dialogView)
-
-        dialog.setOnDismissListener {
-            activeDialog = null
-        }
-
-        btnConfirm.setOnClickListener {
-            val selected = adapter.getSelectedItems()
-            if (selected.isNotEmpty()) {
-                btnConfirm.isEnabled = false
-                executeSequentialImport(selected, adapter, dialog)
-            } else {
-                toastProvider.showToast("Please select at least one item")
-            }
-        }
-
-        with(com.example.presensor.controllers.dialogs.DialogFactory) {
-            dialog.showWithSmartNfcReading()
-        }
-    }
-
     fun dismissActiveDialog() {
-        activeDialog?.dismiss()
-        activeDialog = null
+        interactionProvider.dismissActiveDialog()
     }
 
     internal fun executeSequentialImport(
-        selected: List<BacklogItem>,
-        adapter: ImportBacklogAdapter,
-        dialog: BottomSheetDialog
+        selected: List<BacklogItem>
     ) {
         scope.launch(mainDispatcher) {
             var importedCount = 0
@@ -164,7 +113,7 @@ class ImportBacklogController(
                     if (result == "DEL_OK") {
                         registerAttendance(item.student, item.timestamp * 1000L)
                         importedCount++
-                        adapter.removeItem(item)
+                        interactionProvider.removeBacklogItem(item)
                     } else {
                         Log.e("ImportBacklog", "Failed to delete item ${item.tagId}")
                     }
@@ -172,11 +121,11 @@ class ImportBacklogController(
             } finally {
                 collectionJob.cancel()
                 eventChannel.close()
-                dialog.dismiss()
+                interactionProvider.dismissActiveDialog()
                 refreshAttendanceList()
                 if (importedCount > 0) {
-                    toastProvider.showToast(
-                        activity.getString(
+                    interactionProvider.showToast(
+                        interactionProvider.getString(
                             R.string.toast_imported_sessions,
                             importedCount
                         )

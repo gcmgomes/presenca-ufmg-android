@@ -137,6 +137,8 @@ interface ReaderInteractionProvider : InteractionProvider {
     fun addBacklogItem(item: BacklogItem)
     fun removeBacklogItem(item: BacklogItem)
     fun updateBacklogCount(count: Int)
+    fun toggleBacklogImportLoading(show: Boolean)
+    fun getBacklogItemCount(): Int
 }
 
 /**
