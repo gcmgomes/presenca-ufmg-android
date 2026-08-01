@@ -235,9 +235,37 @@ interface CourseInteractionProvider : InteractionProvider {
 }
 
 /**
+ * Specialized provider for Course Statistics/Detailed Roster.
+ */
+interface DetailedCourseInteractionProvider : InteractionProvider {
+    fun openDetailedCourseView(
+        onEditCourseRequested: () -> Unit,
+        onSearchQueryChanged: (String) -> Unit
+    )
+
+    fun updateDetailedCourseHeader(
+        course: Course,
+        sessionIds: Set<Long>,
+        studentEmails: Set<String>,
+        attendance: List<AttendanceRecord>
+    )
+
+    fun updateStudentStatsList(
+        students: List<Student>,
+        allSessions: List<Session>,
+        allAttendance: List<AttendanceRecord>,
+        getColorFromAttr: (Int) -> Int
+    )
+}
+
+/**
  * Specialized provider for Cloud Sync operations.
  */
 interface CloudInteractionProvider : InteractionProvider {
+    fun runWithCloudAuthentication(
+        onAuthSuccess: (accessToken: String) -> Unit
+    )
+
     fun <T> showCloudFileDialog(
         title: String,
         subtitle: String,

@@ -74,11 +74,7 @@ class DashboardCloudActions(
             }
         }
 
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(
-            activity.cloudSignInLauncher,
-            action
-        )
+        activity.runWithCloudAuthentication(action)
     }
 
     fun triggerDatabaseExportCloudPicker() {
@@ -103,16 +99,10 @@ class DashboardCloudActions(
 
                     val action = {
                         // Run the synchronized cloud task passing the customized suffix label
-                        activity.cloudSyncController.uploadBackupToDrive(inputSuffix) { isLoading ->
-                            activity.toggleLoadingOverlay(isLoading)
-                        }
+                        activity.cloudSyncController.uploadBackupToDrive(inputSuffix)
                     }
 
-                    activity.setPendingAction(action)
-                    activity.cloudSyncController.runWithCloudAuthentication(
-                        activity.cloudSignInLauncher,
-                        action
-                    )
+                    activity.runWithCloudAuthentication(action)
                 }
                 .setNegativeButton(R.string.action_cancel, null)
                 .showWithSmartNfcReading()
@@ -153,17 +143,12 @@ class DashboardCloudActions(
                     // Handle download sync restoration
                     activity.cloudSyncController.downloadAndRestoreBackup(
                         selectedFile.id,
-                        onLoadingToggle = { isLoading -> activity.toggleLoadingOverlay(isLoading) },
                         onComplete = { success -> if (success) refreshDashboard() }
                     )
                 }
             }
         }
 
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(
-            activity.cloudSignInLauncher,
-            action
-        )
+        activity.runWithCloudAuthentication(action)
     }
 }

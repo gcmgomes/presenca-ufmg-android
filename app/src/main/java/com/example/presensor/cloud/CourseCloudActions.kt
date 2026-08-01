@@ -85,8 +85,7 @@ class CourseCloudActions(
             }
         }
 
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(activity.cloudSignInLauncher, action)
+        activity.runWithCloudAuthentication(action)
     }
 
     /**
@@ -139,8 +138,7 @@ class CourseCloudActions(
             }
         }
 
-        activity.setPendingAction(action)
-        activity.cloudSyncController.runWithCloudAuthentication(activity.cloudSignInLauncher, action)
+        activity.runWithCloudAuthentication(action)
     }
 
     /**

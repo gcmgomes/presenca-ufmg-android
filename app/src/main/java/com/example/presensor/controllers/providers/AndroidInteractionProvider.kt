@@ -11,6 +11,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.addTextChangedListener
@@ -34,6 +35,7 @@ import com.example.presensor.data.entities.AttendanceRecord
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
 import com.example.presensor.cloud.CourseCloudActions
+import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
@@ -45,13 +47,15 @@ class AndroidInteractionProvider(
     private val sessionDialogFactory: SessionControllerDialogFactory,
     private val courseDialogFactory: CourseControllerDialogFactory
 ) : TagInteractionProvider, StudentInteractionProvider, SessionInteractionProvider,
-    ReaderInteractionProvider, CloudInteractionProvider, CourseInteractionProvider {
+    ReaderInteractionProvider, CloudInteractionProvider, CourseInteractionProvider,
+    DetailedCourseInteractionProvider {
 
     private var activeBottomSheet: BottomSheetDialog? = null
     private var activeAlertDialog: AlertDialog? = null
     private var backlogAdapter: ImportBacklogAdapter? = null
     private var backlogCountText: TextView? = null
     private val attendanceAdapter = AttendanceAdapter()
+    private var studentStatsAdapter: StudentStatsAdapter? = null
 
     private var onDisconnectRequested: (() -> Unit)? = null
     private var onConnectRequested: (() -> Unit)? = null
@@ -69,6 +73,24 @@ class AndroidInteractionProvider(
     private val exportLauncher: ActivityResultLauncher<String> =
         activity.activityResultRegistry.register("export_document", activity, ActivityResultContracts.CreateDocument("text/csv")) { uri ->
             uri?.let { onExportCallback?.invoke(it) }
+        }
+
+    private var onCloudAuthSuccessCallback: ((String) -> Unit)? = null
+    private val cloudSignInLauncher: ActivityResultLauncher<IntentSenderRequest> =
+        activity.activityResultRegistry.register("cloud_sign_in", activity, ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                try {
+                    val authorizationClient = Identity.getAuthorizationClient(activity)
+                    val authResult = authorizationClient.getAuthorizationResultFromIntent(result.data)
+                    authResult.accessToken?.let { token ->
+                        onCloudAuthSuccessCallback?.invoke(token)
+                    }
+                } catch (e: Exception) {
+                    showToast(R.string.toast_cloud_auth_failed)
+                }
+            } else {
+                toggleLoading(false)
+            }
         }
 
     private var courseCloudActions: CourseCloudActions? = null
@@ -828,6 +850,36 @@ class AndroidInteractionProvider(
         }
     }
 
+    override fun runWithCloudAuthentication(onAuthSuccess: (String) -> Unit) {
+        this.onCloudAuthSuccessCallback = onAuthSuccess
+        activity.runOnUiThread {
+            val authorizationClient = Identity.getAuthorizationClient(activity)
+            val requestedScopes = listOf(
+                com.google.android.gms.common.api.Scope("https://www.googleapis.com/auth/drive.metadata.readonly"),
+                com.google.android.gms.common.api.Scope(com.google.api.services.drive.DriveScopes.DRIVE_FILE),
+                com.google.android.gms.common.api.Scope(com.google.api.services.sheets.v4.SheetsScopes.SPREADSHEETS)
+            )
+            val authorizationRequest = com.google.android.gms.auth.api.identity.AuthorizationRequest.builder()
+                .setRequestedScopes(requestedScopes)
+                .build()
+
+            authorizationClient.authorize(authorizationRequest)
+                .addOnSuccessListener { result ->
+                    if (result.hasResolution()) {
+                        val pendingIntent = result.pendingIntent!!
+                        cloudSignInLauncher.launch(IntentSenderRequest.Builder(pendingIntent).build())
+                    } else {
+                        result.accessToken?.let { token ->
+                            onAuthSuccess(token)
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    showToast(R.string.toast_cloud_auth_failed)
+                }
+        }
+    }
+
     override fun <T> showCloudFileDialog(
         title: String,
         subtitle: String,
@@ -1098,6 +1150,79 @@ class AndroidInteractionProvider(
     override fun showDeleteSessionDialog(session: Session) {
         activity.runOnUiThread {
             activeAlertDialog = sessionDialogFactory.showDeleteSessionDialog(session)
+        }
+    }
+
+    override fun openDetailedCourseView(
+        onEditCourseRequested: () -> Unit,
+        onSearchQueryChanged: (String) -> Unit
+    ) {
+        activity.runOnUiThread {
+            val container = activity.findViewById<LinearLayout>(R.id.layoutCourseStatisticsView) ?: return@runOnUiThread
+            container.removeAllViews()
+            
+            val statsView = activity.layoutInflater.inflate(R.layout.layout_course_statistics, container, false)
+            container.addView(statsView)
+
+            statsView.findViewById<View>(R.id.btnEditCourse)?.setOnClickListener { onEditCourseRequested() }
+
+            val searchView = statsView.findViewById<androidx.appcompat.widget.SearchView>(R.id.searchStudentsAttendance)
+            searchView?.setOnQueryTextListener(object : androidx.appcompat.widget.SearchView.OnQueryTextListener {
+                override fun onQueryTextSubmit(query: String?): Boolean = false
+                override fun onQueryTextChange(newText: String?): Boolean {
+                    onSearchQueryChanged(newText ?: "")
+                    return true
+                }
+            })
+            
+            studentStatsAdapter = null // Reset for new view
+        }
+    }
+
+    override fun updateDetailedCourseHeader(
+        course: Course,
+        sessionIds: Set<Long>,
+        studentEmails: Set<String>,
+        attendance: List<AttendanceRecord>
+    ) {
+        activity.runOnUiThread {
+            val statsView = activity.findViewById<View>(R.id.layoutCourseStatisticsView) ?: return@runOnUiThread
+            UiUtils.fillCourseDetailedCardStatistics(
+                activity,
+                statsView,
+                course,
+                sessionIds,
+                studentEmails,
+                attendance
+            )
+        }
+    }
+
+    override fun updateStudentStatsList(
+        students: List<Student>,
+        allSessions: List<Session>,
+        allAttendance: List<AttendanceRecord>,
+        getColorFromAttr: (Int) -> Int
+    ) {
+        activity.runOnUiThread {
+            val statsView = activity.findViewById<View>(R.id.layoutCourseStatisticsView) ?: return@runOnUiThread
+            val rv = statsView.findViewById<RecyclerView>(R.id.rvStudentStats) ?: return@runOnUiThread
+
+            if (studentStatsAdapter == null) {
+                studentStatsAdapter = StudentStatsAdapter(
+                    students,
+                    allSessions,
+                    allAttendance,
+                    allSessions.map { it.id }.toSet(),
+                    getColorFromAttr = getColorFromAttr,
+                    makeSessionTimeFormatter = { TimeUtils.makeSessionTimeFormatter(activity) },
+                    fromMillisToLocalDate = { ms -> TimeUtils.fromMillisToLocalDate(ms) }
+                )
+                rv.layoutManager = LinearLayoutManager(activity)
+                rv.adapter = studentStatsAdapter
+            } else {
+                studentStatsAdapter?.updateData(students)
+            }
         }
     }
 }

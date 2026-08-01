@@ -123,25 +123,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     // Flag to orchestrate the focus lock state safely
     private var isWaitingForFocus = false
     private var isCloudAuthSuccessPendingRun = false
-    val cloudSignInLauncher =
-        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                cloudSyncController.handleSignInResult(result.data) {
-                    Toast.makeText(this@MainActivity, "Logged in successfully", Toast.LENGTH_SHORT)
-                        .show()
-
-                    // Mark that authentication is fully completed and ready to run
-                    isCloudAuthSuccessPendingRun = true
-
-                    // Attempt execution immediately if focus is already here
-                    checkAndRunPendingCloudAction()
-                }
-            } else {
-                pendingCloudAction = null
-                isCloudAuthSuccessPendingRun = false
-                toggleLoadingOverlay(false)
-            }
-        }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -175,6 +156,16 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                 pendingCloudAction?.invoke()
                 pendingCloudAction = null
             }
+        }
+    }
+
+    fun runWithCloudAuthentication(action: () -> Unit) {
+        setPendingAction(action)
+        cloudSyncController.runWithCloudAuthentication {
+            // Token handshake finished inside controller.
+            // Now mark as pending execution for the focus guard.
+            isCloudAuthSuccessPendingRun = true
+            checkAndRunPendingCloudAction()
         }
     }
 
@@ -319,17 +310,13 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         layoutCourseView = findViewById(R.id.layoutCourseView)
         layoutSessionView = findViewById(R.id.layoutSessionView)
 
-
-        cloudSyncController = CloudSyncController(this, this, db)
-
-        // Initialize Course related Dialog Factory
+        // Initialize Dialog Factories first
+        val tagDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater)
         val courseDialogFactory = CourseControllerDialogFactory(
             activity = this,
             lifecycleOwner = this,
             db = db
         )
-
-        // Initialize Session related Dialog Factory
         val sessionDialogFactory = SessionControllerDialogFactory(
             activity = this,
             lifecycleOwner = this,
@@ -337,15 +324,23 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
 
-        val dataProcessorProvider = AndroidDataProcessorProvider()
-
+        // Initialize consolidated UI Interaction Provider
         val interactionProvider = AndroidInteractionProvider(
             activity = this,
             secureStoreManager = secureStoreManager,
-            tagDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater),
+            tagDialogFactory = tagDialogFactory,
             sessionDialogFactory = sessionDialogFactory,
             courseDialogFactory = courseDialogFactory
         )
+
+        // Initialize Cloud Sync Controller
+        cloudSyncController = CloudSyncController(
+            scope = lifecycleScope,
+            db = db,
+            interactionProvider = interactionProvider
+        )
+
+        val dataProcessorProvider = AndroidDataProcessorProvider()
 
         importSessionController = ImportSessionController(
             interactionProvider = interactionProvider,
@@ -474,13 +469,15 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         detailedCourseController = DetailedCourseController(
-            activity = this,
-            lifecycleOwner = this,
+            scope = lifecycleScope,
             db = db,
             courseController = courseController,
-            getColorFromAttr = { attr -> getColorFromAttr(attr) },
-            mainDispatcher = Dispatchers.Main,
-            ioDispatcher = Dispatchers.IO
+            interactionProvider = interactionProvider,
+            getColorFromAttr = { attr ->
+                val typedValue = android.util.TypedValue()
+                theme.resolveAttribute(attr, typedValue, true)
+                typedValue.data
+            }
         )
 
 
@@ -630,30 +627,12 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             })
     }
 
-    @ColorInt
-    fun getColorFromAttr(@AttrRes attrColor: Int): Int {
-        val typedValue = TypedValue()
-        theme.resolveAttribute(attrColor, typedValue, true)
-        return typedValue.data
-    }
-
 
     private fun openCourseStatistics() {
         if (courseController.getSelectedCourse() == null) return
         currentState = AppState.COURSE_STATS
 
-        val container = findViewById<LinearLayout>(R.id.layoutCourseStatisticsView)
-        container.removeAllViews()
-        toggleAllViews() // Clears visible UI spaces
-
-        // Delegate both creation/inflation and configuration to the controller
-        val statsView = detailedCourseController.inflateAndSetupStatsView(container)
-
-        // Add the fully-configured view back into the layout tree
-        container.addView(statsView)
-
-        // Initial data sync for the student row filtering states
-        detailedCourseController.refreshDetailedCourseUI()
+        detailedCourseController.openDetailedCourseView()
 
         toggleAllViews(layoutCourseStatisticsView = true)
     }
