@@ -59,7 +59,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             advanceUntilIdle()
             ShadowLooper.idleMainLooper()
 
-            verify(sessionController).registerAttendance(any(), eq(time))
+            verify(sessionController).registerAttendance(any(), eq(time), any())
         }
 
     @Test
@@ -244,7 +244,7 @@ class TagControllerUnitTest : BaseControllerTest() {
             assert(student?.name == name)
             assert(student?.email == email)
             verify(interactionProvider).showToast(any<String>(), any())
-            
+
             // REGRESSION TEST: Ensure dialog is dismissed after saving
             verify(interactionProvider).dismissActiveDialog()
         }
@@ -288,7 +288,7 @@ class TagControllerUnitTest : BaseControllerTest() {
 
         // Verify formatting "AABBCCDD" -> "AA:BB:CC:DD"
         // And timestamp conversion 1625097600 * 1000
-        verify(sessionController).registerAttendance(anyOrNull(), eq(1625097600000L))
+        verify(sessionController).registerAttendance(anyOrNull(), eq(1625097600000L), any())
         verify(resetSyncTimeout).invoke()
 
         tagController.readerCollectionJob?.cancel()

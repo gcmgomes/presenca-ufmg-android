@@ -31,6 +31,11 @@ interface InteractionProvider {
         onDismissed: () -> Unit,
         onConfirmed: (Map<String, String>) -> Unit
     )
+
+    fun showManualRegistrationDialog(
+        rfid: String,
+        onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
+    )
 }
 
 /**
@@ -50,11 +55,6 @@ interface TagInteractionProvider : InteractionProvider {
         onStudentSelected: (Student) -> Unit,
         onManualAttendance: () -> Unit,
         onReassignConfirmed: (Student) -> Unit
-    )
-
-    fun showManualRegistrationDialog(
-        rfid: String,
-        onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
     )
 }
 
@@ -98,9 +98,10 @@ interface SessionInteractionProvider : InteractionProvider {
 
     fun updateSessionCard(name: String, date: Long, accentColor: Int)
     fun updateLockState(isLocked: Boolean)
-    fun submitAttendanceList(records: List<AttendanceRecord>)
+    fun submitAttendanceList(records: List<AttendanceRecord>, scrollToPosition: Int? = null)
     fun showLayoutRefreshSpinner(show: Boolean)
     fun setOnRefreshListener(listener: () -> Unit)
+    fun setupSessionListeners(onLockClicked: () -> Unit, onEditClicked: () -> Unit)
     fun showStudentSearchDialog(
         allStudents: List<Student>,
         onStudentSelected: (Student) -> Unit,

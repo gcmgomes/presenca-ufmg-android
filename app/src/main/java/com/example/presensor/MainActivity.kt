@@ -399,18 +399,9 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
 
         // Initialize Session Controller
         sessionController = SessionController(
-            activity = this,
-            context = this,
+            interactionProvider = interactionProvider,
             scope = lifecycleScope,
             db = db,
-            layoutInflater = layoutInflater,
-            rvAttendance = findViewById(R.id.rvAttendance),
-            swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout),
-            txtSessionTitle = findViewById(R.id.txtSessionTitle),
-            txtSessionSubtitle = findViewById(R.id.txtSessionSubtitle),
-            viewSessionDetailAccent = findViewById(R.id.viewSessionDetailAccent),
-            imgMasterLock = findViewById(R.id.imgMasterLock),
-            btnEditSession = findViewById(R.id.btnEditSessionInternal),
             getColorForAccent = { name ->
                 UiUtils.getColorForAccent(
                     name,
@@ -422,8 +413,6 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                     courseController.refreshCourseUI()
                 }
             },
-            dialogFactory = sessionDialogFactory,
-            toastProvider = AndroidToastProvider(this),
             onPulldown = { importBacklogController.startImportFlow() },
             onSyncTimeout = { importBacklogController.dismissActiveDialog() }
         )
@@ -434,7 +423,13 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             db = db,
             orchestrator = readerOrchestrator,
             toggleSpinner = { sessionController.showLayoutRefreshSpinner(it) },
-            registerAttendance = { student, time -> sessionController.registerAttendance(student, time) },
+            registerAttendance = { student, time, skip ->
+                sessionController.registerAttendance(
+                    student,
+                    time,
+                    skip
+                )
+            },
             refreshAttendanceList = { sessionController.loadAttendanceList() }
         )
 

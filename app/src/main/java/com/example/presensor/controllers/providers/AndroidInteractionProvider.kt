@@ -48,6 +48,7 @@ class AndroidInteractionProvider(
     private var activeAlertDialog: AlertDialog? = null
     private var backlogAdapter: ImportBacklogAdapter? = null
     private var backlogCountText: TextView? = null
+    private val attendanceAdapter = AttendanceAdapter()
 
     private var onDisconnectRequested: (() -> Unit)? = null
     private var onConnectRequested: (() -> Unit)? = null
@@ -152,7 +153,8 @@ class AndroidInteractionProvider(
         onConfirm: () -> Unit
     ) {
         activity.runOnUiThread {
-            activeAlertDialog = tagDialogFactory.showOverwriteConfirmation(existingStudent, newRfid, onConfirm)
+            activeAlertDialog =
+                tagDialogFactory.showOverwriteConfirmation(existingStudent, newRfid, onConfirm)
         }
     }
 
@@ -179,9 +181,10 @@ class AndroidInteractionProvider(
         onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
     ) {
         activity.runOnUiThread {
-            activeAlertDialog = sessionDialogFactory.showManualRegistrationDialog(rfid) { name, email, dialog ->
-                onStudentSaved(name, email, dialog)
-            }
+            activeAlertDialog =
+                sessionDialogFactory.showManualRegistrationDialog(rfid) { name, email, dialog ->
+                    onStudentSaved(name, email, dialog)
+                }
         }
     }
 
@@ -278,7 +281,8 @@ class AndroidInteractionProvider(
         onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
     ) {
         activity.runOnUiThread {
-            activeAlertDialog = sessionDialogFactory.showEditSessionDialog(session, onSessionUpdated)
+            activeAlertDialog =
+                sessionDialogFactory.showEditSessionDialog(session, onSessionUpdated)
         }
     }
 
@@ -337,10 +341,18 @@ class AndroidInteractionProvider(
         }
     }
 
-    override fun submitAttendanceList(records: List<AttendanceRecord>) {
+    override fun submitAttendanceList(records: List<AttendanceRecord>, scrollToPosition: Int?) {
         activity.runOnUiThread {
-            val rv = activity.findViewById<RecyclerView>(R.id.rvAttendance)
-            (rv?.adapter as? AttendanceAdapter)?.submitList(records)
+            val rv = activity.findViewById<RecyclerView>(R.id.rvAttendance) ?: return@runOnUiThread
+            if (rv.adapter != attendanceAdapter) {
+                rv.layoutManager = LinearLayoutManager(activity)
+                rv.adapter = attendanceAdapter
+            }
+            attendanceAdapter.submitList(records) {
+                if (scrollToPosition != null) {
+                    rv.smoothScrollToPosition(scrollToPosition)
+                }
+            }
         }
     }
 
@@ -353,10 +365,23 @@ class AndroidInteractionProvider(
 
     override fun setOnRefreshListener(listener: () -> Unit) {
         activity.runOnUiThread {
-            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshLayout)
+            activity.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshLayout)
                 ?.setOnRefreshListener {
                     listener()
                 }
+        }
+    }
+
+    override fun setupSessionListeners(onLockClicked: () -> Unit, onEditClicked: () -> Unit) {
+        activity.runOnUiThread {
+            activity.findViewById<View>(R.id.imgMasterLock)?.setOnClickListener { onLockClicked() }
+            activity.findViewById<View>(R.id.btnEditSessionInternal)?.setOnClickListener { onEditClicked() }
+            
+            val rv = activity.findViewById<RecyclerView>(R.id.rvAttendance)
+            if (rv != null && rv.adapter != attendanceAdapter) {
+                rv.layoutManager = LinearLayoutManager(activity)
+                rv.adapter = attendanceAdapter
+            }
         }
     }
 
@@ -579,10 +604,13 @@ class AndroidInteractionProvider(
         onRefreshRequested: () -> Unit
     ) {
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
-            val switchUseReader = rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
+            val rootView =
+                activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
+            val switchUseReader =
+                rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
             val recyclerView = rootView.findViewById<RecyclerView>(R.id.readerRecyclerView)
-            val listRefresh = rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+            val listRefresh =
+                rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
 
             switchUseReader?.setOnCheckedChangeListener { _, isChecked ->
                 onReaderEnabledChanged(isChecked)
@@ -605,7 +633,8 @@ class AndroidInteractionProvider(
         onDeviceLongClicked: (String, String) -> Unit
     ) {
         activity.runOnUiThread {
-            val recyclerView = activity.findViewById<RecyclerView>(R.id.readerRecyclerView) ?: return@runOnUiThread
+            val recyclerView =
+                activity.findViewById<RecyclerView>(R.id.readerRecyclerView) ?: return@runOnUiThread
             val adapter = if (recyclerView.adapter !is DeviceListAdapter) {
                 val newAdapter = DeviceListAdapter(onDeviceSelected, onDeviceLongClicked)
                 recyclerView.adapter = newAdapter
@@ -621,10 +650,13 @@ class AndroidInteractionProvider(
 
     override fun setReaderEnabledState(enabled: Boolean) {
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
-            val switchUseReader = rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
-            val listRefresh = rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
-            
+            val rootView =
+                activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
+            val switchUseReader =
+                rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
+            val listRefresh =
+                rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+
             switchUseReader?.isChecked = enabled
             listRefresh?.isEnabled = enabled
         }
@@ -632,7 +664,8 @@ class AndroidInteractionProvider(
 
     override fun setDiscoveryRefreshing(isRefreshing: Boolean) {
         activity.runOnUiThread {
-            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)?.isRefreshing = isRefreshing
+            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)?.isRefreshing =
+                isRefreshing
         }
     }
 
@@ -656,15 +689,20 @@ class AndroidInteractionProvider(
         this.onConnectRequested = onConnectRequested
 
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
-            
-            rootView.findViewById<View>(R.id.btnEditDevice)?.setOnClickListener { onEditDeviceRequested() }
-            rootView.findViewById<View>(R.id.btnSyncTime)?.setOnClickListener { onSyncTimeRequested() }
-            rootView.findViewById<View>(R.id.btnForget)?.setOnClickListener { onForgetDeviceRequested() }
-            
-            val swipeRefresh = rootView as? SwipeRefreshLayout ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
+            val rootView =
+                activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+
+            rootView.findViewById<View>(R.id.btnEditDevice)
+                ?.setOnClickListener { onEditDeviceRequested() }
+            rootView.findViewById<View>(R.id.btnSyncTime)
+                ?.setOnClickListener { onSyncTimeRequested() }
+            rootView.findViewById<View>(R.id.btnForget)
+                ?.setOnClickListener { onForgetDeviceRequested() }
+
+            val swipeRefresh = rootView as? SwipeRefreshLayout
+                ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
             swipeRefresh?.setOnRefreshListener { onRefreshRequested() }
-            
+
             val rvBacklog = rootView.findViewById<RecyclerView>(R.id.rvDeviceBacklog)
             rvBacklog?.layoutManager = LinearLayoutManager(activity)
             if (rvBacklog?.adapter !is BacklogAdapter) {
@@ -681,11 +719,12 @@ class AndroidInteractionProvider(
         backlogCount: String
     ) {
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            val rootView =
+                activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
             rootView.findViewById<TextView>(R.id.txtDeviceName)?.text = deviceName
             rootView.findViewById<TextView>(R.id.txtDeviceMac)?.text = deviceMac
             rootView.findViewById<TextView>(R.id.txtStatFilesCount)?.text = backlogCount
-            
+
             if (batteryLevel != null) {
                 rootView.findViewById<TextView>(R.id.txtStatBattery)?.text = batteryLevel
             }
@@ -704,9 +743,10 @@ class AndroidInteractionProvider(
 
     override fun updateReaderManagementStatus(isReady: Boolean, isConnecting: Boolean) {
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            val rootView =
+                activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
             val viewAccent = rootView.findViewById<View>(R.id.viewDeviceDetailAccent)
-            
+
             val accentColor = when {
                 isReady -> activity.getColor(R.color.chalk_green)
                 isConnecting -> activity.getColor(R.color.chalk_orange)
@@ -714,7 +754,8 @@ class AndroidInteractionProvider(
             }
             viewAccent?.setBackgroundColor(accentColor)
 
-            val btnDisconnect = rootView.findViewById<LinearLayout>(R.id.btnDisconnect) ?: return@runOnUiThread
+            val btnDisconnect =
+                rootView.findViewById<LinearLayout>(R.id.btnDisconnect) ?: return@runOnUiThread
             val imgDisconnect = btnDisconnect.getChildAt(0) as? ImageView
             val txtDisconnect = btnDisconnect.getChildAt(1) as? TextView
 
@@ -722,10 +763,10 @@ class AndroidInteractionProvider(
             // However, we need to know WHICH callback to trigger.
             // We can resolve this by passing the click listeners in setupReaderManagementUI
             // and just swapping them here based on state, but the original code had them logic-heavy.
-            
+
             // Let's re-trigger setupReaderManagementUI internally if needed, or better, 
             // expose the state and have the controller decide.
-            
+
             if (isReady || isConnecting) {
                 txtDisconnect?.text = activity.getString(R.string.action_disconnect)
                 imgDisconnect?.setImageResource(R.drawable.ic_reader_disconnected)
@@ -746,8 +787,10 @@ class AndroidInteractionProvider(
 
     override fun setManagementRefreshing(isRefreshing: Boolean) {
         activity.runOnUiThread {
-            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
-            val swipeRefresh = rootView as? SwipeRefreshLayout ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
+            val rootView =
+                activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            val swipeRefresh = rootView as? SwipeRefreshLayout
+                ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
             swipeRefresh?.isRefreshing = isRefreshing
         }
     }
@@ -758,7 +801,8 @@ class AndroidInteractionProvider(
         onConfirmed: () -> Unit
     ) {
         activity.runOnUiThread {
-            activeAlertDialog = DialogFactory.showDestructiveDeleteDialog(activity, title, message, onConfirmed)
+            activeAlertDialog =
+                DialogFactory.showDestructiveDeleteDialog(activity, title, message, onConfirmed)
         }
     }
 
@@ -970,7 +1014,8 @@ class AndroidInteractionProvider(
 
     override fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
         activity.runOnUiThread {
-            activeAlertDialog = courseDialogFactory.showEditCourseDialog(course, { _ -> }, onCourseEdited)
+            activeAlertDialog =
+                courseDialogFactory.showEditCourseDialog(course, { _ -> }, onCourseEdited)
         }
     }
 

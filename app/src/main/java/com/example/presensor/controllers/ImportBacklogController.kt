@@ -17,7 +17,7 @@ class ImportBacklogController(
     private val db: AppDatabase,
     private val orchestrator: ReaderOrchestrator?,
     private val toggleSpinner: (Boolean) -> Unit,
-    private val registerAttendance: (Student?, Long) -> Unit,
+    private val registerAttendance: (Student?, Long, Boolean) -> Unit,
     private val refreshAttendanceList: () -> Unit,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -58,7 +58,7 @@ class ImportBacklogController(
 
     private suspend fun fetchBacklogItems() {
         val orch = orchestrator ?: return
-        
+
         orch.requestInventory()
 
         try {
@@ -111,7 +111,7 @@ class ImportBacklogController(
                     }
 
                     if (result == "DEL_OK") {
-                        registerAttendance(item.student, item.timestamp * 1000L)
+                        registerAttendance(item.student, item.timestamp * 1000L, true)
                         importedCount++
                         interactionProvider.removeBacklogItem(item)
                     } else {
