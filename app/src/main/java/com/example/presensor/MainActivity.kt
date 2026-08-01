@@ -57,7 +57,6 @@ import com.example.presensor.tools.providers.LoadingOverlayProvider
 import com.example.presensor.data.SecureStoreManager
 import com.example.presensor.controllers.ReaderDiscoveryController
 import com.example.presensor.controllers.ReaderManagementController
-import com.example.presensor.controllers.AndroidReaderInteractionProvider
 import com.example.presensor.controllers.ImportBacklogController
 import com.example.presensor.communication.ble.BleTransport
 import com.example.presensor.communication.core.AppMode
@@ -383,12 +382,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
 
-        val readerInteractionProvider = AndroidReaderInteractionProvider(this, secureStoreManager)
-        
         readerDiscoveryController = ReaderDiscoveryController(
-            activity = this,
             secureStoreManager = secureStoreManager,
-            interactionProvider = readerInteractionProvider,
+            interactionProvider = interactionProvider,
+            orchestrator = readerOrchestrator!!,
             scope = lifecycleScope
         )
 
@@ -396,7 +393,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
             activity = this,
             db = db,
             secureStoreManager = secureStoreManager,
-            interactionProvider = readerInteractionProvider,
+            interactionProvider = interactionProvider,
             scope = lifecycleScope
         )
 
@@ -564,7 +561,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
     fun openReaderManagement() {
         currentState = AppState.READER_MANAGEMENT
         toggleAllViews(layoutReaderManagementView = true)
-        readerDiscoveryController.setupReaderList(findViewById<View>(R.id.layoutReaderManagementView))
+        readerDiscoveryController.setupReaderList()
     }
 
     fun openDeviceManager(address: String? = null) {

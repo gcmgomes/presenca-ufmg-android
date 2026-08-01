@@ -570,6 +570,75 @@ class AndroidInteractionProvider(
 
     override fun getBacklogItemCount(): Int = backlogAdapter?.itemCount ?: 0
 
+    override fun setupReaderDiscoveryUI(
+        onReaderEnabledChanged: (Boolean) -> Unit,
+        onRefreshRequested: () -> Unit
+    ) {
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
+            val switchUseReader = rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
+            val recyclerView = rootView.findViewById<RecyclerView>(R.id.readerRecyclerView)
+            val listRefresh = rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+
+            switchUseReader?.setOnCheckedChangeListener { _, isChecked ->
+                onReaderEnabledChanged(isChecked)
+            }
+
+            listRefresh?.setOnRefreshListener {
+                onRefreshRequested()
+            }
+
+            recyclerView?.layoutManager = LinearLayoutManager(activity)
+            // Adapter will be set in updateDeviceList
+        }
+    }
+
+    override fun updateDeviceList(
+        connected: List<DeviceItem>,
+        known: List<DeviceItem>,
+        unknown: List<DeviceItem>,
+        onDeviceSelected: (String, String) -> Unit,
+        onDeviceLongClicked: (String, String) -> Unit
+    ) {
+        activity.runOnUiThread {
+            val recyclerView = activity.findViewById<RecyclerView>(R.id.readerRecyclerView) ?: return@runOnUiThread
+            val adapter = if (recyclerView.adapter !is DeviceListAdapter) {
+                val newAdapter = DeviceListAdapter(onDeviceSelected, onDeviceLongClicked)
+                recyclerView.adapter = newAdapter
+                newAdapter
+            } else {
+                val existingAdapter = recyclerView.adapter as DeviceListAdapter
+                existingAdapter.updateCallbacks(onDeviceSelected, onDeviceLongClicked)
+                existingAdapter
+            }
+            adapter.submitList(connected, known, unknown)
+        }
+    }
+
+    override fun setReaderEnabledState(enabled: Boolean) {
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutReaderManagementView) ?: return@runOnUiThread
+            val switchUseReader = rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
+            val listRefresh = rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+            
+            switchUseReader?.isChecked = enabled
+            listRefresh?.isEnabled = enabled
+        }
+    }
+
+    override fun setDiscoveryRefreshing(isRefreshing: Boolean) {
+        activity.runOnUiThread {
+            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)?.isRefreshing = isRefreshing
+        }
+    }
+
+    override fun openDeviceManager(name: String, address: String) {
+        activity.runOnUiThread {
+            secureStoreManager.deviceName = name
+            activity.openDeviceManager(address)
+        }
+    }
+
     override fun showDestructiveDeleteDialog(
         title: String,
         message: String,

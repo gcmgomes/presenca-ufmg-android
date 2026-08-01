@@ -139,6 +139,23 @@ interface ReaderInteractionProvider : InteractionProvider {
     fun updateBacklogCount(count: Int)
     fun toggleBacklogImportLoading(show: Boolean)
     fun getBacklogItemCount(): Int
+
+    fun setupReaderDiscoveryUI(
+        onReaderEnabledChanged: (Boolean) -> Unit,
+        onRefreshRequested: () -> Unit
+    )
+
+    fun updateDeviceList(
+        connected: List<DeviceItem>,
+        known: List<DeviceItem>,
+        unknown: List<DeviceItem>,
+        onDeviceSelected: (String, String) -> Unit,
+        onDeviceLongClicked: (String, String) -> Unit
+    )
+
+    fun setReaderEnabledState(enabled: Boolean)
+    fun setDiscoveryRefreshing(isRefreshing: Boolean)
+    fun openDeviceManager(name: String, address: String)
 }
 
 /**

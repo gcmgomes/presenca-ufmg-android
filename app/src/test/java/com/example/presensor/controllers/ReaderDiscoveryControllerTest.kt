@@ -1,11 +1,10 @@
 package com.example.presensor.controllers
 
-import android.view.View
-import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.communication.ReaderEvent
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.data.SecureStoreManager
+import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +19,6 @@ import org.mockito.kotlin.*
 class ReaderDiscoveryControllerTest : BaseControllerTest() {
 
     private lateinit var controller: ReaderDiscoveryController
-    private val mockMainActivity: MainActivity = mock()
     private val mockSecureStore: SecureStoreManager = mock()
     private val mockOrchestrator: ReaderOrchestrator = mock()
     private val mockInteractionProvider = MockReaderInteractionProvider()
@@ -32,14 +30,14 @@ class ReaderDiscoveryControllerTest : BaseControllerTest() {
     override fun setup() {
         super.setup()
         
-        whenever(mockMainActivity.readerOrchestrator).thenReturn(mockOrchestrator)
         whenever(mockOrchestrator.eventFlow).thenReturn(eventFlow)
         whenever(mockOrchestrator.isReaderEnabled).thenReturn(isReaderEnabledFlow)
+        whenever(mockOrchestrator.discoveredDevices).thenReturn(MutableStateFlow(emptyList()))
         
         controller = ReaderDiscoveryController(
-            activity = mockMainActivity,
             secureStoreManager = mockSecureStore,
             interactionProvider = mockInteractionProvider,
+            orchestrator = mockOrchestrator,
             scope = TestScope(mainDispatcherRule.testDispatcher)
         )
     }

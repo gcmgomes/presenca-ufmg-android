@@ -20,6 +20,7 @@ import com.example.presensor.communication.core.AppMode
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.SecureStoreManager
 import com.example.presensor.controllers.items.BacklogItem
+import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.SimpleDateFormat
