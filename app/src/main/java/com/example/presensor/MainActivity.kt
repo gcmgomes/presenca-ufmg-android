@@ -6,7 +6,7 @@ import com.example.presensor.controllers.dialogs.CourseControllerDialogFactory
 import com.example.presensor.controllers.dialogs.SessionControllerDialogFactory
 import com.example.presensor.controllers.dialogs.AndroidTagControllerDialogFactory
 import com.example.presensor.controllers.dialogs.DialogFactory
-import com.example.presensor.controllers.providers.AndroidInteractionProvider
+import com.example.presensor.controllers.providers.*
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -56,7 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 
-class MainActivity : AppCompatActivity() {
+open class MainActivity : AppCompatActivity() {
 
     companion object {
         const val TAG = "MainActivity"
@@ -65,15 +65,15 @@ class MainActivity : AppCompatActivity() {
         enum class AppState { DASHBOARD, COURSE, SESSION, COURSE_STATS, READER_MANAGEMENT, DEVICE_MANAGER }
     }
 
-    private var currentState = AppState.DASHBOARD
+    protected var currentState = AppState.DASHBOARD
 
     private lateinit var db: AppDatabase
     fun getDb(): AppDatabase = db
-    private lateinit var dashboardController: DashboardController
-    private lateinit var courseController: CourseController
-    private lateinit var detailedCourseController: DetailedCourseController
-    private lateinit var sessionController: SessionController
-    private lateinit var tagController: TagController
+    lateinit var dashboardController: DashboardController
+    lateinit var courseController: CourseController
+    lateinit var detailedCourseController: DetailedCourseController
+    lateinit var sessionController: SessionController
+    lateinit var tagController: TagController
     lateinit var importSessionController: ImportSessionController
     lateinit var importStudentController: ImportStudentController
     lateinit var readerDiscoveryController: ReaderDiscoveryController
@@ -81,16 +81,15 @@ class MainActivity : AppCompatActivity() {
     lateinit var importBacklogController: ImportBacklogController
 
     lateinit var cloudSyncController: CloudSyncController
-    lateinit var interactionProvider: AndroidInteractionProvider
 
     // Keeps track of the user's intended action if they need to complete a sign-in flow first
     var pendingCloudAction: (() -> Unit)? = null
 
 
-    private lateinit var currentBackCallback: OnBackPressedCallback
-    private lateinit var dashboardView: View
-    private lateinit var layoutCourseView: View
-    private lateinit var layoutSessionView: View
+    protected lateinit var currentBackCallback: OnBackPressedCallback
+    protected lateinit var dashboardView: View
+    protected lateinit var layoutCourseView: View
+    protected lateinit var layoutSessionView: View
 
     lateinit var loadingOverlay: View
 
@@ -102,6 +101,7 @@ class MainActivity : AppCompatActivity() {
 
 
     fun toggleLoadingOverlay(show: Boolean) {
+        if (!::loadingOverlay.isInitialized) return
         loadingOverlay.visibility = if (show) View.VISIBLE else View.GONE
         if (!show) {
             currentOverlayJob?.cancel()
@@ -153,6 +153,7 @@ class MainActivity : AppCompatActivity() {
 
     fun runWithCloudAuthentication(action: () -> Unit) {
         setPendingAction(action)
+        // Note: This now delegates to the specific cloud controller
         cloudSyncController.runWithCloudAuthentication {
             // Token handshake finished inside controller.
             // Now mark as pending execution for the focus guard.
@@ -254,7 +255,18 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
+        loadingOverlay = findViewById(R.id.loadingOverlay)
+        dashboardView = findViewById(R.id.layoutDashboardView)
+        layoutCourseView = findViewById(R.id.layoutCourseView)
+        layoutSessionView = findViewById(R.id.layoutSessionView)
 
+        initializeDependenciesAndControllers()
+    }
+
+    /**
+     * Isolated initialization logic to allow test subclasses to override and skip heavy init.
+     */
+    open fun initializeDependenciesAndControllers() {
         secureStoreManager = SecureStoreManager(this)
         val transport = BleTransport(this, lifecycleScope)
         readerOrchestrator = ReaderOrchestrator(
@@ -272,7 +284,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        loadingOverlay = findViewById(R.id.loadingOverlay)
+        checkAndRequestBluetoothPermissions()
 
         db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, DATABASE_NAME)
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
@@ -294,10 +306,6 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsCompat.CONSUMED
         }
 
-        dashboardView = findViewById(R.id.layoutDashboardView)
-        layoutCourseView = findViewById(R.id.layoutCourseView)
-        layoutSessionView = findViewById(R.id.layoutSessionView)
-
         // Initialize Dialog Factories first
         val tagDialogFactory = AndroidTagControllerDialogFactory(this, layoutInflater)
         val courseDialogFactory = CourseControllerDialogFactory(
@@ -312,29 +320,29 @@ class MainActivity : AppCompatActivity() {
             refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
 
-        // Initialize consolidated UI Interaction Provider
-        interactionProvider = AndroidInteractionProvider(
-            activity = this,
-            secureStoreManager = secureStoreManager,
-            tagDialogFactory = tagDialogFactory,
-            sessionDialogFactory = sessionDialogFactory,
-            courseDialogFactory = courseDialogFactory
-        )
+        // Initialize Specialized Providers
+        val tagInteractionProvider = AndroidTagInteractionProvider(this, tagDialogFactory, sessionDialogFactory)
+        val studentInteractionProvider = AndroidStudentInteractionProvider(this)
+        val sessionInteractionProvider = AndroidSessionInteractionProvider(this, sessionDialogFactory)
+        val readerInteractionProvider = AndroidReaderInteractionProvider(this, secureStoreManager)
+        val courseInteractionProvider = AndroidCourseInteractionProvider(this, courseDialogFactory, sessionDialogFactory)
+        val detailedCourseInteractionProvider = AndroidDetailedCourseInteractionProvider(this)
+        val cloudInteractionProvider = AndroidCloudInteractionProvider(this)
 
         // Initialize Cloud Sync Controller
         cloudSyncController = CloudSyncController(
             scope = lifecycleScope,
             db = db,
-            interactionProvider = interactionProvider
+            interactionProvider = cloudInteractionProvider
         )
 
         importSessionController = ImportSessionController(
-            interactionProvider = interactionProvider,
+            interactionProvider = sessionInteractionProvider,
             db = db,
             scope = lifecycleScope
         )
         importStudentController = ImportStudentController(
-            interactionProvider = interactionProvider,
+            interactionProvider = studentInteractionProvider,
             db = db,
             scope = lifecycleScope
         )
@@ -363,7 +371,7 @@ class MainActivity : AppCompatActivity() {
 
         readerDiscoveryController = ReaderDiscoveryController(
             secureStoreManager = secureStoreManager,
-            interactionProvider = interactionProvider,
+            interactionProvider = readerInteractionProvider,
             orchestrator = readerOrchestrator!!,
             scope = lifecycleScope
         )
@@ -371,14 +379,14 @@ class MainActivity : AppCompatActivity() {
         readerManagementController = ReaderManagementController(
             db = db,
             secureStoreManager = secureStoreManager,
-            interactionProvider = interactionProvider,
+            interactionProvider = readerInteractionProvider,
             orchestrator = readerOrchestrator!!,
             scope = lifecycleScope
         )
 
         // Initialize Session Controller
         sessionController = SessionController(
-            interactionProvider = interactionProvider,
+            interactionProvider = sessionInteractionProvider,
             scope = lifecycleScope,
             db = db,
             getColorForAccent = { name ->
@@ -397,7 +405,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         importBacklogController = ImportBacklogController(
-            interactionProvider = interactionProvider,
+            interactionProvider = readerInteractionProvider,
             scope = lifecycleScope,
             db = db,
             orchestrator = readerOrchestrator,
@@ -414,19 +422,19 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize Tag Controller
         tagController = TagController(
-            interactionProvider = interactionProvider,
+            interactionProvider = tagInteractionProvider,
             db = db,
             scope = lifecycleScope,
             readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
-            isDialogShowingCheck = { interactionProvider.isAnyDialogOpen() },
+            isDialogShowingCheck = { tagInteractionProvider.isAnyDialogOpen() },
             disableRefreshSpinner = { sessionController.showLayoutRefreshSpinner(false) },
             resetSyncTimeout = { sessionController.resetSyncTimeout() }
         )
         DialogFactory.tagController = tagController
         tagController.startReaderCollection()
 
-        interactionProvider.initializeCourseCloudActions(
+        courseInteractionProvider.initializeCourseCloudActions(
             getSelectedCourse = { if (::courseController.isInitialized) courseController.getSelectedCourse() else null },
             onImportComplete = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
@@ -436,7 +444,7 @@ class MainActivity : AppCompatActivity() {
             lifecycleOwner = this,
             selectedCourse = null,
             db = db,
-            interactionProvider = interactionProvider,
+            interactionProvider = courseInteractionProvider,
             onSessionSelected = { session ->
                 openSessionView(session)
                 readerOrchestrator?.setAppMode(
@@ -456,7 +464,7 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             db = db,
             courseController = courseController,
-            interactionProvider = interactionProvider,
+            interactionProvider = detailedCourseInteractionProvider,
             getColorFromAttr = { attr ->
                 val typedValue = android.util.TypedValue()
                 theme.resolveAttribute(attr, typedValue, true)
@@ -471,10 +479,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<FloatingActionButton>(R.id.btnRegisterManualAttendance).setOnClickListener {
             sessionController.showManualAttendanceDialog()
         }
-
-        checkAndRequestBluetoothPermissions()
-
-        toggleAllViews(layoutDashboardView = true)
 
         currentBackCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -626,12 +630,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        tagController.resumeNfcScanning()
+        if (::tagController.isInitialized) {
+            tagController.resumeNfcScanning()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        tagController.pauseNfcScanning()
+        if (::tagController.isInitialized) {
+            tagController.pauseNfcScanning()
+        }
     }
 
     override fun onDestroy() {

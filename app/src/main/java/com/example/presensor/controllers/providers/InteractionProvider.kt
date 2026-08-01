@@ -32,7 +32,7 @@ interface InteractionProvider {
         columns: List<String>,
         sampleRow: List<String>?,
         onDismissed: () -> Unit,
-        onConfirmed: (Map<String, String>) -> Unit
+        onConfirmed: (Map<String, String>) -> Unit,
     )
 
     suspend fun ingestFromGoogleSheets(
