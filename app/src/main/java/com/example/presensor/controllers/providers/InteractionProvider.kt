@@ -201,8 +201,7 @@ interface CourseInteractionProvider : InteractionProvider {
         onSessionSelected: (Session) -> Unit,
         onToggleLockRequested: (Session) -> Unit,
         onEditSessionRequested: (Session) -> Unit,
-        onDeleteSessionRequested: (Session) -> Unit,
-        getColorForAccent: (String) -> Int
+        onDeleteSessionRequested: (Session) -> Unit
     )
 
     fun updateCourseHeader(
@@ -219,11 +218,20 @@ interface CourseInteractionProvider : InteractionProvider {
 
     fun launchExportPicker(fileName: String)
     fun launchImportPicker()
+    fun registerImportSessionLauncher(callback: (android.net.Uri) -> Unit)
+    fun registerExportLauncher(callback: (android.net.Uri) -> Unit)
+
+    fun triggerCloudScheduleImport(onImportComplete: () -> Unit)
+    fun triggerCloudAttendanceExport()
+
     fun openOutputStream(uri: android.net.Uri): java.io.OutputStream?
     fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit)
     fun showCreateCourseDialog(onCourseCreated: () -> Unit)
+    fun showCreateSessionDialog(courseId: Long, onSessionCreated: (Long, String, Long) -> Unit)
     fun showMassDateChangeDialog(courseId: Long)
     fun showDeleteSessionDialog(session: Session)
+
+    fun importSessionsFromCsv(uri: android.net.Uri, courseId: Long, onImportComplete: () -> Unit)
 }
 
 /**

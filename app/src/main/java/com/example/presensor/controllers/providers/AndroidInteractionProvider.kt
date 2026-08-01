@@ -10,6 +10,8 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.addTextChangedListener
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -31,6 +33,7 @@ import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.AttendanceRecord
 import com.example.presensor.tools.TimeUtils
 import com.example.presensor.tools.UiUtils
+import com.example.presensor.cloud.CourseCloudActions
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
@@ -52,6 +55,33 @@ class AndroidInteractionProvider(
 
     private var onDisconnectRequested: (() -> Unit)? = null
     private var onConnectRequested: (() -> Unit)? = null
+
+    private var onImportSessionCallback: ((android.net.Uri) -> Unit)? = null
+    private var onExportCallback: ((android.net.Uri) -> Unit)? = null
+
+    private val importSessionLauncher: ActivityResultLauncher<android.content.Intent> =
+        activity.activityResultRegistry.register("import_session", activity, ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                result.data?.data?.let { uri -> onImportSessionCallback?.invoke(uri) }
+            }
+        }
+
+    private val exportLauncher: ActivityResultLauncher<String> =
+        activity.activityResultRegistry.register("export_document", activity, ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+            uri?.let { onExportCallback?.invoke(it) }
+        }
+
+    private var courseCloudActions: CourseCloudActions? = null
+
+    fun initializeCourseCloudActions(getSelectedCourse: () -> Course?, onImportComplete: () -> Unit) {
+        courseCloudActions = CourseCloudActions(
+            activity = activity,
+            lifecycleOwner = activity,
+            db = activity.getDb(),
+            getSelectedCourse = getSelectedCourse,
+            onImportComplete = onImportComplete
+        )
+    }
 
     // --- Base Interaction ---
 
@@ -291,7 +321,6 @@ class AndroidInteractionProvider(
         onSessionCreated: (Long, String, Long) -> Unit
     ) {
         activity.runOnUiThread {
-            // Note: showCreateSessionDialog is currently Unit because it's launching a scope
             sessionDialogFactory.showCreateSessionDialog(courseId, onSessionCreated)
         }
     }
@@ -358,7 +387,7 @@ class AndroidInteractionProvider(
 
     override fun showLayoutRefreshSpinner(show: Boolean) {
         activity.runOnUiThread {
-            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshLayout)?.isRefreshing =
+            activity.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshLayout)?.isRefreshing =
                 show
         }
     }
@@ -375,8 +404,9 @@ class AndroidInteractionProvider(
     override fun setupSessionListeners(onLockClicked: () -> Unit, onEditClicked: () -> Unit) {
         activity.runOnUiThread {
             activity.findViewById<View>(R.id.imgMasterLock)?.setOnClickListener { onLockClicked() }
-            activity.findViewById<View>(R.id.btnEditSessionInternal)?.setOnClickListener { onEditClicked() }
-            
+            activity.findViewById<View>(R.id.btnEditSessionInternal)
+                ?.setOnClickListener { onEditClicked() }
+
             val rv = activity.findViewById<RecyclerView>(R.id.rvAttendance)
             if (rv != null && rv.adapter != attendanceAdapter) {
                 rv.layoutManager = LinearLayoutManager(activity)
@@ -610,7 +640,7 @@ class AndroidInteractionProvider(
                 rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
             val recyclerView = rootView.findViewById<RecyclerView>(R.id.readerRecyclerView)
             val listRefresh =
-                rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+                rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshReader)
 
             switchUseReader?.setOnCheckedChangeListener { _, isChecked ->
                 onReaderEnabledChanged(isChecked)
@@ -655,7 +685,7 @@ class AndroidInteractionProvider(
             val switchUseReader =
                 rootView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchUseReader)
             val listRefresh =
-                rootView.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)
+                rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshReader)
 
             switchUseReader?.isChecked = enabled
             listRefresh?.isEnabled = enabled
@@ -664,7 +694,7 @@ class AndroidInteractionProvider(
 
     override fun setDiscoveryRefreshing(isRefreshing: Boolean) {
         activity.runOnUiThread {
-            activity.findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.swipeRefreshReader)?.isRefreshing =
+            activity.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshReader)?.isRefreshing =
                 isRefreshing
         }
     }
@@ -759,14 +789,6 @@ class AndroidInteractionProvider(
             val imgDisconnect = btnDisconnect.getChildAt(0) as? ImageView
             val txtDisconnect = btnDisconnect.getChildAt(1) as? TextView
 
-            // This assumes the controller will provide the logic for what happens when clicked.
-            // However, we need to know WHICH callback to trigger.
-            // We can resolve this by passing the click listeners in setupReaderManagementUI
-            // and just swapping them here based on state, but the original code had them logic-heavy.
-
-            // Let's re-trigger setupReaderManagementUI internally if needed, or better, 
-            // expose the state and have the controller decide.
-
             if (isReady || isConnecting) {
                 txtDisconnect?.text = activity.getString(R.string.action_disconnect)
                 imgDisconnect?.setImageResource(R.drawable.ic_reader_disconnected)
@@ -857,6 +879,50 @@ class AndroidInteractionProvider(
 
     // --- Course Interaction ---
 
+    override fun registerImportSessionLauncher(callback: (android.net.Uri) -> Unit) {
+        this.onImportSessionCallback = callback
+    }
+
+    override fun registerExportLauncher(callback: (android.net.Uri) -> Unit) {
+        this.onExportCallback = callback
+    }
+
+    override fun launchImportPicker() {
+        val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "text/comma-separated-values"
+            putExtra(
+                android.content.Intent.EXTRA_MIME_TYPES,
+                arrayOf("text/csv", "text/comma-separated-values", "text/plain")
+            )
+        }
+        importSessionLauncher.launch(intent)
+    }
+
+    override fun launchExportPicker(fileName: String) {
+        exportLauncher.launch(fileName)
+    }
+
+    override fun triggerCloudScheduleImport(onImportComplete: () -> Unit) {
+        courseCloudActions?.triggerCloudScheduleImport()
+    }
+
+    override fun triggerCloudAttendanceExport() {
+        courseCloudActions?.triggerCloudAttendanceExport()
+    }
+
+    override fun importSessionsFromCsv(
+        uri: android.net.Uri,
+        courseId: Long,
+        onImportComplete: () -> Unit
+    ) {
+        activity.importSessionController.importFromLocal(
+            uri = uri,
+            courseId = courseId,
+            onImportComplete = onImportComplete
+        )
+    }
+
     override fun setupCourseUtilsAccordion(onHeaderClicked: (isExpanded: Boolean) -> Unit) {
         activity.runOnUiThread {
             val headerClickArea =
@@ -899,8 +965,7 @@ class AndroidInteractionProvider(
         onSessionSelected: (Session) -> Unit,
         onToggleLockRequested: (Session) -> Unit,
         onEditSessionRequested: (Session) -> Unit,
-        onDeleteSessionRequested: (Session) -> Unit,
-        getColorForAccent: (String) -> Int
+        onDeleteSessionRequested: (Session) -> Unit
     ) {
         activity.runOnUiThread {
             val sessionContainer =
@@ -930,7 +995,12 @@ class AndroidInteractionProvider(
                             false
                         )
                         itemView.findViewById<View>(R.id.viewSessionAccent)
-                            .setBackgroundColor(getColorForAccent(session.name))
+                            .setBackgroundColor(
+                                UiUtils.getColorForAccent(
+                                    session.name,
+                                    activity.resources.obtainTypedArray(R.array.chalk_colors_list)
+                                )
+                            )
                         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
                         itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
                             TimeUtils.fromMillisToLocalDate(session.date)
@@ -1001,12 +1071,6 @@ class AndroidInteractionProvider(
                 utilsViewPager
             ) { _, _ -> }.attach()
         }
-    }
-
-    override fun launchExportPicker(fileName: String) {
-    }
-
-    override fun launchImportPicker() {
     }
 
     override fun openOutputStream(uri: android.net.Uri): java.io.OutputStream? =

@@ -447,12 +447,17 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         DialogFactory.tagController = tagController
         tagController.startReaderCollection()
 
+        interactionProvider.initializeCourseCloudActions(
+            getSelectedCourse = { if (::courseController.isInitialized) courseController.getSelectedCourse() else null },
+            onImportComplete = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
+        )
+
         // Initialize Course Controller
         courseController = CourseController(
-            activity = this,
             lifecycleOwner = this,
             selectedCourse = null,
             db = db,
+            interactionProvider = interactionProvider,
             onSessionSelected = { session ->
                 openSessionView(session)
                 readerOrchestrator?.setAppMode(
@@ -460,14 +465,12 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
                     "MainActivity Session Selection"
                 )
             },
-            onToggleLockRequested = { session, _ ->
+            onToggleLockRequested = { session ->
                 sessionController.handleLockToggleSequence(session)
                 courseController.refreshCourseUI()
             },
-            onEditSessionRequested = { session, _ -> sessionController.showEditSessionDialog(session) },
-            onOpenStatistics = { openCourseStatistics() },
-            courseDialogFactory = courseDialogFactory,
-            sessionDialogFactory = sessionDialogFactory
+            onEditSessionRequested = { session -> sessionController.showEditSessionDialog(session) },
+            onOpenStatistics = { openCourseStatistics() }
         )
 
         detailedCourseController = DetailedCourseController(
