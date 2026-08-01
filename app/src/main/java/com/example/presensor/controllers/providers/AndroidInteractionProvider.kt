@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.addTextChangedListener
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.controllers.adapters.*
@@ -47,6 +48,9 @@ class AndroidInteractionProvider(
     private var activeAlertDialog: AlertDialog? = null
     private var backlogAdapter: ImportBacklogAdapter? = null
     private var backlogCountText: TextView? = null
+
+    private var onDisconnectRequested: (() -> Unit)? = null
+    private var onConnectRequested: (() -> Unit)? = null
 
     // --- Base Interaction ---
 
@@ -636,6 +640,115 @@ class AndroidInteractionProvider(
         activity.runOnUiThread {
             secureStoreManager.deviceName = name
             activity.openDeviceManager(address)
+        }
+    }
+
+    override fun setupReaderManagementUI(
+        onEditDeviceRequested: () -> Unit,
+        onSyncTimeRequested: () -> Unit,
+        onForgetDeviceRequested: () -> Unit,
+        onRefreshRequested: () -> Unit,
+        onDisconnectRequested: () -> Unit,
+        onConnectRequested: () -> Unit,
+        onBacklogItemLongClicked: (BacklogItem) -> Unit
+    ) {
+        this.onDisconnectRequested = onDisconnectRequested
+        this.onConnectRequested = onConnectRequested
+
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            
+            rootView.findViewById<View>(R.id.btnEditDevice)?.setOnClickListener { onEditDeviceRequested() }
+            rootView.findViewById<View>(R.id.btnSyncTime)?.setOnClickListener { onSyncTimeRequested() }
+            rootView.findViewById<View>(R.id.btnForget)?.setOnClickListener { onForgetDeviceRequested() }
+            
+            val swipeRefresh = rootView as? SwipeRefreshLayout ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
+            swipeRefresh?.setOnRefreshListener { onRefreshRequested() }
+            
+            val rvBacklog = rootView.findViewById<RecyclerView>(R.id.rvDeviceBacklog)
+            rvBacklog?.layoutManager = LinearLayoutManager(activity)
+            if (rvBacklog?.adapter !is BacklogAdapter) {
+                rvBacklog?.adapter = BacklogAdapter(onBacklogItemLongClicked)
+            }
+        }
+    }
+
+    override fun updateReaderManagementHeader(
+        deviceName: String,
+        deviceMac: String,
+        batteryLevel: String?,
+        deviceTime: String?,
+        backlogCount: String
+    ) {
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            rootView.findViewById<TextView>(R.id.txtDeviceName)?.text = deviceName
+            rootView.findViewById<TextView>(R.id.txtDeviceMac)?.text = deviceMac
+            rootView.findViewById<TextView>(R.id.txtStatFilesCount)?.text = backlogCount
+            
+            if (batteryLevel != null) {
+                rootView.findViewById<TextView>(R.id.txtStatBattery)?.text = batteryLevel
+            }
+            if (deviceTime != null) {
+                rootView.findViewById<TextView>(R.id.txtStatDeviceTime)?.text = deviceTime
+            }
+        }
+    }
+
+    override fun updateReaderManagementBacklog(items: List<BacklogItem>) {
+        activity.runOnUiThread {
+            val rv = activity.findViewById<RecyclerView>(R.id.rvDeviceBacklog)
+            (rv?.adapter as? BacklogAdapter)?.submitList(items)
+        }
+    }
+
+    override fun updateReaderManagementStatus(isReady: Boolean, isConnecting: Boolean) {
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            val viewAccent = rootView.findViewById<View>(R.id.viewDeviceDetailAccent)
+            
+            val accentColor = when {
+                isReady -> activity.getColor(R.color.chalk_green)
+                isConnecting -> activity.getColor(R.color.chalk_orange)
+                else -> android.graphics.Color.TRANSPARENT
+            }
+            viewAccent?.setBackgroundColor(accentColor)
+
+            val btnDisconnect = rootView.findViewById<LinearLayout>(R.id.btnDisconnect) ?: return@runOnUiThread
+            val imgDisconnect = btnDisconnect.getChildAt(0) as? ImageView
+            val txtDisconnect = btnDisconnect.getChildAt(1) as? TextView
+
+            // This assumes the controller will provide the logic for what happens when clicked.
+            // However, we need to know WHICH callback to trigger.
+            // We can resolve this by passing the click listeners in setupReaderManagementUI
+            // and just swapping them here based on state, but the original code had them logic-heavy.
+            
+            // Let's re-trigger setupReaderManagementUI internally if needed, or better, 
+            // expose the state and have the controller decide.
+            
+            if (isReady || isConnecting) {
+                txtDisconnect?.text = activity.getString(R.string.action_disconnect)
+                imgDisconnect?.setImageResource(R.drawable.ic_reader_disconnected)
+            } else {
+                txtDisconnect?.text = activity.getString(R.string.action_connect)
+                imgDisconnect?.setImageResource(R.drawable.ic_reader_connected)
+            }
+
+            btnDisconnect.setOnClickListener {
+                if (isReady || isConnecting) {
+                    onDisconnectRequested?.invoke()
+                } else {
+                    onConnectRequested?.invoke()
+                }
+            }
+        }
+    }
+
+    override fun setManagementRefreshing(isRefreshing: Boolean) {
+        activity.runOnUiThread {
+            val rootView = activity.findViewById<View>(R.id.layoutDeviceManagerView) ?: return@runOnUiThread
+            val swipeRefresh = rootView as? SwipeRefreshLayout ?: rootView.findViewById<SwipeRefreshLayout>(R.id.swipeRefreshDeviceManager)
+            swipeRefresh?.isRefreshing = isRefreshing
         }
     }
 

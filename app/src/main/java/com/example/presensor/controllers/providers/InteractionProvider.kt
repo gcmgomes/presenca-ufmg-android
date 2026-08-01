@@ -156,6 +156,33 @@ interface ReaderInteractionProvider : InteractionProvider {
     fun setReaderEnabledState(enabled: Boolean)
     fun setDiscoveryRefreshing(isRefreshing: Boolean)
     fun openDeviceManager(name: String, address: String)
+
+    fun setupReaderManagementUI(
+        onEditDeviceRequested: () -> Unit,
+        onSyncTimeRequested: () -> Unit,
+        onForgetDeviceRequested: () -> Unit,
+        onRefreshRequested: () -> Unit,
+        onDisconnectRequested: () -> Unit,
+        onConnectRequested: () -> Unit,
+        onBacklogItemLongClicked: (BacklogItem) -> Unit
+    )
+
+    fun updateReaderManagementHeader(
+        deviceName: String,
+        deviceMac: String,
+        batteryLevel: String?,
+        deviceTime: String?,
+        backlogCount: String
+    )
+
+    fun updateReaderManagementBacklog(items: List<BacklogItem>)
+
+    fun updateReaderManagementStatus(
+        isReady: Boolean,
+        isConnecting: Boolean
+    )
+
+    fun setManagementRefreshing(isRefreshing: Boolean)
 }
 
 /**

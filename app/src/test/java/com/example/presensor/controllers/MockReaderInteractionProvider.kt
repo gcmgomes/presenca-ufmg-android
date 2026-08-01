@@ -101,4 +101,28 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     override fun setReaderEnabledState(enabled: Boolean) {}
     override fun setDiscoveryRefreshing(isRefreshing: Boolean) {}
     override fun openDeviceManager(name: String, address: String) {}
+
+    override fun setupReaderManagementUI(
+        onEditDeviceRequested: () -> Unit,
+        onSyncTimeRequested: () -> Unit,
+        onForgetDeviceRequested: () -> Unit,
+        onRefreshRequested: () -> Unit,
+        onDisconnectRequested: () -> Unit,
+        onConnectRequested: () -> Unit,
+        onBacklogItemLongClicked: (BacklogItem) -> Unit
+    ) {}
+
+    override fun updateReaderManagementHeader(
+        deviceName: String,
+        deviceMac: String,
+        batteryLevel: String?,
+        deviceTime: String?,
+        backlogCount: String
+    ) {}
+
+    override fun updateReaderManagementBacklog(items: List<BacklogItem>) {}
+
+    override fun updateReaderManagementStatus(isReady: Boolean, isConnecting: Boolean) {}
+
+    override fun setManagementRefreshing(isRefreshing: Boolean) {}
 }

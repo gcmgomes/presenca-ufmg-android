@@ -390,10 +390,10 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         )
 
         readerManagementController = ReaderManagementController(
-            activity = this,
             db = db,
             secureStoreManager = secureStoreManager,
             interactionProvider = interactionProvider,
+            orchestrator = readerOrchestrator!!,
             scope = lifecycleScope
         )
 
@@ -572,19 +572,7 @@ class MainActivity : AppCompatActivity(), LoadingOverlayProvider {
         currentState = AppState.DEVICE_MANAGER
         toggleAllViews(layoutDeviceManagerView = true)
 
-        val managerView = findViewById<View>(R.id.layoutDeviceManagerView)
-        if (managerView != null) {
-            android.util.Log.i(
-                "MainActivity",
-                "[UI Flow] layoutDeviceManagerView found. ID: ${managerView.id}. Initializing controller..."
-            )
-            readerManagementController.setupReaderManagementView(managerView, address)
-        } else {
-            android.util.Log.e(
-                "MainActivity",
-                "[UI Flow Error] layoutDeviceManagerView NOT FOUND in main layout!"
-            )
-        }
+        readerManagementController.setupReaderManagementView(address)
     }
 
     private fun selectCourse(course: Course) {
