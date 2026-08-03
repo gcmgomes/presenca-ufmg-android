@@ -29,6 +29,7 @@ import com.example.presensor.MainActivity
 import com.example.presensor.cloud.DashboardCloudActions
 import com.example.presensor.controllers.adapters.ActionsPageAdapter
 import com.example.presensor.controllers.items.ActionItem
+import com.example.presensor.controllers.providers.DashboardInteractionProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.entities.Course
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -43,6 +44,9 @@ class DashboardController(
     private val activity: MainActivity,
     private val db: AppDatabase,
     private val scope: CoroutineScope,
+    private val uiProvider: DashboardInteractionProvider,
+    private val cloudSyncController: CloudSyncController,
+    private val importStudentController: ImportStudentController,
     private val onCourseSelected: (Course) -> Unit,
     private val onCourseLongClicked: (Course) -> Unit,
     private val onCourseCreateRequested: (() -> Unit) -> Unit,
@@ -54,7 +58,13 @@ class DashboardController(
     private val searchView: SearchView = activity.findViewById(R.id.courseSearchView)
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
-    private val cloudActions = DashboardCloudActions(activity) { refreshDashboard() }
+    private val cloudActions = DashboardCloudActions(
+        uiProvider = uiProvider,
+        cloudSyncController = cloudSyncController,
+        importStudentController = importStudentController,
+        runWithCloudAuthentication = { action: () -> Unit -> activity.runWithCloudAuthentication(action) },
+        refreshDashboard = { refreshDashboard() }
+    )
 
     init {
         setupSearchView()

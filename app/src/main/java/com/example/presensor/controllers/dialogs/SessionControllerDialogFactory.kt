@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.presensor.MainActivity
@@ -115,7 +116,7 @@ class SessionControllerDialogFactory(
         attachDatePicker(edtNewStartDate) { newStartTimestamp = it }
 
         with(DialogFactory) {
-            val dialog = AlertDialog.Builder(context)
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(context.getString(R.string.menu_course_postpone))
                 .setView(dialogView)
                 .setPositiveButton(context.getString(R.string.action_save), null)
@@ -179,7 +180,7 @@ class SessionControllerDialogFactory(
         txtTagId.text = activity.getString(R.string.label_tag_id, rfid)
 
         with(DialogFactory) {
-            val dialog = AlertDialog.Builder(activity)
+            val dialog = MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.title_manual_attendance)
                 .setView(dialogView)
                 .setPositiveButton(R.string.action_save, null)

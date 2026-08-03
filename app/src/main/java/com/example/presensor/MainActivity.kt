@@ -321,13 +321,17 @@ open class MainActivity : AppCompatActivity() {
         )
 
         // Initialize Specialized Providers
-        val tagInteractionProvider = AndroidTagInteractionProvider(this, tagDialogFactory, sessionDialogFactory)
+        val tagInteractionProvider =
+            AndroidTagInteractionProvider(this, tagDialogFactory, sessionDialogFactory)
         val studentInteractionProvider = AndroidStudentInteractionProvider(this)
-        val sessionInteractionProvider = AndroidSessionInteractionProvider(this, sessionDialogFactory)
+        val sessionInteractionProvider =
+            AndroidSessionInteractionProvider(this, sessionDialogFactory)
         val readerInteractionProvider = AndroidReaderInteractionProvider(this, secureStoreManager)
-        val courseInteractionProvider = AndroidCourseInteractionProvider(this, courseDialogFactory, sessionDialogFactory)
+        val courseInteractionProvider =
+            AndroidCourseInteractionProvider(this, courseDialogFactory, sessionDialogFactory)
         val detailedCourseInteractionProvider = AndroidDetailedCourseInteractionProvider(this)
         val cloudInteractionProvider = AndroidCloudInteractionProvider(this)
+        val dashboardInteractionProvider = AndroidDashboardInteractionProvider(this)
 
         // Initialize Cloud Sync Controller
         cloudSyncController = CloudSyncController(
@@ -352,6 +356,9 @@ open class MainActivity : AppCompatActivity() {
             activity = this,
             db = db,
             scope = lifecycleScope,
+            uiProvider = dashboardInteractionProvider,
+            cloudSyncController = cloudSyncController,
+            importStudentController = importStudentController,
             onCourseSelected = { course -> selectCourse(course) },
             onCourseLongClicked = { course -> showDeleteCourseDialog(course) },
             onCourseCreateRequested = {

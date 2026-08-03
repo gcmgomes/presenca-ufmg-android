@@ -285,6 +285,13 @@ interface DetailedCourseInteractionProvider : InteractionProvider {
 }
 
 /**
+ * Specialized provider for Dashboard UI actions.
+ */
+interface DashboardInteractionProvider : InteractionProvider {
+    fun getLayoutInflater(): android.view.LayoutInflater
+}
+
+/**
  * Specialized provider for Cloud Sync operations.
  */
 interface CloudInteractionProvider : InteractionProvider {

@@ -4,7 +4,12 @@ plugins {
     id("jacoco")
 }
 
-val isCoverageRequested = gradle.startParameter.taskNames.any { it.contains("jacoco", ignoreCase = true) } || project.hasProperty("coverage")
+val isCoverageRequested = gradle.startParameter.taskNames.any {
+    it.contains(
+        "jacoco",
+        ignoreCase = true
+    )
+} || project.hasProperty("coverage")
 
 android {
     namespace = "com.example.presensor"
@@ -84,15 +89,12 @@ val jacocoTestReport by tasks.registering(JacocoReport::class) {
 
     val debugTree =
         fileTree("${project.layout.buildDirectory.get()}/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes") {
-            include("**/TagController.class")
-            include("**/SessionController.class")
-            include("**/ImportSessionController.class")
-            include("**/ImportStudentController.class")
-            include("**/DetailedCourseController.class")
-            include("**/communication/ReaderOrchestrator.class")
-            include("**/communication/core/*.class")
-            include("**/communication/ble/*.class")
-            include("**/tools/providers/*.class")
+            exclude("**/R.class")
+            exclude("**/R$*.class")
+            exclude("**/BuildConfig.*")
+            exclude("**/Manifest*.*")
+            exclude("**/*Test*.*")
+            exclude("android/**/*.*")
         }
     val mainSrc = "${project.projectDir}/src/main/java"
 

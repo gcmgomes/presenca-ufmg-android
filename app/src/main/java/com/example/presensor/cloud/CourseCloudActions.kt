@@ -1,12 +1,12 @@
 package com.example.presensor.cloud
 
 import android.util.Log
-import android.widget.Toast
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.example.presensor.MainActivity
 import com.example.presensor.R
+import com.example.presensor.controllers.CloudSyncController
 import com.example.presensor.controllers.ImportSessionController
+import com.example.presensor.controllers.providers.InteractionProvider
 import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Course
@@ -15,6 +15,7 @@ import com.example.presensor.tools.DataProcessor
 import com.example.presensor.tools.TimeUtils
 import com.google.api.services.sheets.v4.model.ValueRange
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -22,11 +23,15 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class CourseCloudActions(
-    private val activity: MainActivity,
+    private val uiProvider: InteractionProvider,
+    private val cloudSyncController: CloudSyncController,
+    private val importSessionController: ImportSessionController,
     private val lifecycleOwner: LifecycleOwner,
     private val db: AppDatabase,
     private val getSelectedCourse: () -> Course?,
-    private val onImportComplete: () -> Unit
+    private val onImportComplete: () -> Unit,
+    private val runWithCloudAuthentication: (() -> Unit) -> Unit,
+    private val setCurrentOverlayJob: (Job?) -> Unit
 ) {
 
     /**
@@ -34,46 +39,46 @@ class CourseCloudActions(
      */
     fun triggerCloudScheduleImport() {
         getSelectedCourse() ?: return
-        activity.toggleLoadingOverlay(true)
+        uiProvider.toggleLoading(true)
 
         val action = {
-            activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
-                activity.toggleLoadingOverlay(false)
+            cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
+                uiProvider.toggleLoading(false)
 
                 if (spreadsheets.isEmpty()) {
-                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_sheets_empty), Toast.LENGTH_SHORT).show()
+                    uiProvider.showToast(R.string.toast_cloud_sheets_empty)
                     return@fetchAvailableSpreadsheets
                 }
 
                 // 1. Select the Spreadsheet file
-                activity.cloudSyncController.showCloudFileDialog(
-                    title = activity.getString(R.string.dialog_cloud_schedule_import_title),
-                    subtitle = activity.getString(R.string.dialog_cloud_schedule_import_subtitle),
+                cloudSyncController.showCloudFileDialog(
+                    title = uiProvider.getString(R.string.dialog_cloud_schedule_import_title),
+                    subtitle = uiProvider.getString(R.string.dialog_cloud_schedule_import_subtitle),
                     driveItems = spreadsheets,
                     getName = { it.name }
                 ) { selectedSpreadsheet ->
 
-                    activity.toggleLoadingOverlay(true)
+                    uiProvider.toggleLoading(true)
 
                     // 2. Fetch sheet tabs inside that workbook
-                    activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
-                        activity.toggleLoadingOverlay(false)
+                    cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
+                        uiProvider.toggleLoading(false)
 
                         if (tabs.isEmpty()) {
-                            Toast.makeText(activity, activity.getString(R.string.toast_cloud_tab_retrieval_failed), Toast.LENGTH_SHORT).show()
+                            uiProvider.showToast(R.string.toast_cloud_tab_retrieval_failed)
                             return@fetchSpreadsheetTabs
                         }
 
                         // 3. Select the target tab containing the schedule rows
-                        activity.cloudSyncController.showCloudFileDialog(
-                            title = activity.getString(R.string.dialog_cloud_select_schedule_tab_title),
-                            subtitle = activity.getString(R.string.dialog_cloud_select_schedule_tab_subtitle),
+                        cloudSyncController.showCloudFileDialog(
+                            title = uiProvider.getString(R.string.dialog_cloud_select_schedule_tab_title),
+                            subtitle = uiProvider.getString(R.string.dialog_cloud_select_schedule_tab_subtitle),
                             driveItems = tabs,
                             getName = { it }
                         ) { selectedTab ->
                             // 4. Trigger background parsing matching local structural rules
-                            activity.importSessionController.importFromCloud(
-                                sheetsService = activity.cloudSyncController.getSheetsService(),
+                            importSessionController.importFromCloud(
+                                sheetsService = cloudSyncController.getSheetsService(),
                                 spreadsheetId = selectedSpreadsheet.id,
                                 tabTitle = selectedTab,
                                 courseId = getSelectedCourse()?.id ?: -1,
@@ -85,7 +90,7 @@ class CourseCloudActions(
             }
         }
 
-        activity.runWithCloudAuthentication(action)
+        runWithCloudAuthentication(action)
     }
 
     /**
@@ -93,40 +98,40 @@ class CourseCloudActions(
      */
     fun triggerCloudAttendanceExport() {
         getSelectedCourse() ?: return
-        activity.toggleLoadingOverlay(true)
+        uiProvider.toggleLoading(true)
 
         val action = {
-            activity.cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
-                activity.toggleLoadingOverlay(false)
+            cloudSyncController.fetchAvailableSpreadsheets { spreadsheets ->
+                uiProvider.toggleLoading(false)
 
                 if (spreadsheets.isEmpty()) {
-                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_sheets_empty), Toast.LENGTH_SHORT).show()
+                    uiProvider.showToast(R.string.toast_cloud_sheets_empty)
                     return@fetchAvailableSpreadsheets
                 }
 
                 // Show file dialog matching the correct Drive File type signature
-                activity.cloudSyncController.showCloudFileDialog(
-                    title = activity.getString(R.string.dialog_cloud_export_attendance_title),
-                    subtitle = activity.getString(R.string.dialog_cloud_export_attendance_subtitle),
+                cloudSyncController.showCloudFileDialog(
+                    title = uiProvider.getString(R.string.dialog_cloud_export_attendance_title),
+                    subtitle = uiProvider.getString(R.string.dialog_cloud_export_attendance_subtitle),
                     driveItems = spreadsheets,
                     getName = { it.name }
                 ) { selectedSpreadsheet ->
 
-                    activity.toggleLoadingOverlay(true)
+                    uiProvider.toggleLoading(true)
 
                     // Fetch sheets/tabs inside workbook
-                    activity.cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
-                        activity.toggleLoadingOverlay(false)
+                    cloudSyncController.fetchSpreadsheetTabs(selectedSpreadsheet.id) { tabs ->
+                        uiProvider.toggleLoading(false)
 
                         if (tabs.isEmpty()) {
-                            Toast.makeText(activity, activity.getString(R.string.toast_cloud_sheet_tabs_failed), Toast.LENGTH_SHORT).show()
+                            uiProvider.showToast(R.string.toast_cloud_sheet_tabs_failed)
                             return@fetchSpreadsheetTabs
                         }
 
                         // Select target tab using the exact same dialog container mapped to Strings
-                        activity.cloudSyncController.showCloudFileDialog(
-                            title = activity.getString(R.string.dialog_cloud_select_target_tab_title),
-                            subtitle = activity.getString(R.string.dialog_cloud_select_target_tab_subtitle),
+                        cloudSyncController.showCloudFileDialog(
+                            title = uiProvider.getString(R.string.dialog_cloud_select_target_tab_title),
+                            subtitle = uiProvider.getString(R.string.dialog_cloud_select_target_tab_subtitle),
                             driveItems = tabs,
                             getName = { it }
                         ) { selectedTab ->
@@ -138,7 +143,7 @@ class CourseCloudActions(
             }
         }
 
-        activity.runWithCloudAuthentication(action)
+        runWithCloudAuthentication(action)
     }
 
     /**
@@ -146,14 +151,14 @@ class CourseCloudActions(
      */
     private fun performCloudSpreadsheetMatrixSync(spreadsheetId: String, tabName: String) {
         val course = getSelectedCourse() ?: return
-        activity.toggleLoadingOverlay(true)
+        uiProvider.toggleLoading(true)
 
         val job = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val sheetsService = activity.cloudSyncController.getSheetsService()
+                val sheetsService = cloudSyncController.getSheetsService()
                     ?: throw IllegalStateException("Sheets service was not initialized properly")
 
-                val dateFormat = TimeUtils.makeSessionTimeFormatter(activity)
+                val dateFormat = TimeUtils.makeSessionTimeFormatter(uiProvider.getContext())
 
                 // 1. Query Local Room DB State Trees
                 val localSessions = db.getSessionsByCourse(course.id).sortedBy { it.date }
@@ -163,7 +168,7 @@ class CourseCloudActions(
 
                 // 2. Fetch Existing Cloud Layout Bounds
                 val table = DataProcessor.ingestFromGoogleSheets(
-                    activity,
+                    uiProvider.getContext(),
                     sheetsService,
                     spreadsheetId,
                     "'$tabName'",
@@ -176,8 +181,8 @@ class CourseCloudActions(
                 if (currentGrid.size <= 1 && table.headers.isEmpty()) {
                     currentGrid.clear()
                     currentGrid.add(mutableListOf(
-                        activity.getString(R.string.label_student_email_column),
-                        activity.getString(R.string.label_student_name_column)
+                        uiProvider.getString(R.string.label_student_email_column),
+                        uiProvider.getString(R.string.label_student_name_column)
                     ))
                 }
 
@@ -240,17 +245,17 @@ class CourseCloudActions(
                     .execute()
 
                 withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_attendance_sync_success), Toast.LENGTH_SHORT).show()
+                    uiProvider.toggleLoading(false)
+                    uiProvider.showToast(R.string.toast_cloud_attendance_sync_success)
                 }
             } catch (e: Exception) {
                 Log.e("CourseCloudActions", "Cloud spreadsheet matching sync execution crash", e)
                 withContext(Dispatchers.Main) {
-                    activity.toggleLoadingOverlay(false)
-                    Toast.makeText(activity, activity.getString(R.string.toast_cloud_sync_failed), Toast.LENGTH_SHORT).show()
+                    uiProvider.toggleLoading(false)
+                    uiProvider.showToast(R.string.toast_cloud_sync_failed)
                 }
             }
         }
-        activity.setCurrentOverlayJob(job)
+        setCurrentOverlayJob(job)
     }
 }

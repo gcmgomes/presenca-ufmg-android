@@ -58,7 +58,7 @@ class CloudSyncController(
     private fun initializeCloudServices(accessToken: String?) {
         if (accessToken == null) return
         if (accessToken == currentAccessToken && driveService != null && sheetsService != null) return
-        
+
         currentAccessToken = accessToken
         val requestInitializer = HttpRequestInitializer { request ->
             request.headers.authorization = "Bearer $accessToken"
@@ -98,14 +98,18 @@ class CloudSyncController(
                     val cleanSuffix = customSuffix.trim().ifEmpty {
                         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
                     }
-                    name = "${interactionProvider.getString(R.string.dialog_cloud_backup_prefix)}${cleanSuffix}.csv"
+                    name =
+                        "${interactionProvider.getString(R.string.dialog_cloud_backup_prefix)}${cleanSuffix}.csv"
                 }
 
                 service.files().create(fileMetadata, mediaContent).setFields("id").execute()
 
                 withContext(mainDispatcher) {
                     interactionProvider.toggleLoading(false)
-                    interactionProvider.showToast(interactionProvider.getString(R.string.toast_cloud_upload_success), isShort = false)
+                    interactionProvider.showToast(
+                        interactionProvider.getString(R.string.toast_cloud_upload_success),
+                        isShort = false
+                    )
                 }
             } catch (e: Exception) {
                 Log.e("CloudSync", "Google Drive file delivery failure", e)
@@ -157,7 +161,10 @@ class CloudSyncController(
                 withContext(mainDispatcher) {
                     interactionProvider.toggleLoading(false)
                     if (success) {
-                        interactionProvider.showToast(interactionProvider.getString(R.string.toast_cloud_restore_success), isShort = false)
+                        interactionProvider.showToast(
+                            interactionProvider.getString(R.string.toast_cloud_restore_success),
+                            isShort = false
+                        )
                     } else {
                         interactionProvider.showToast(R.string.toast_cloud_restore_failed_parse)
                     }
@@ -223,6 +230,12 @@ class CloudSyncController(
         getName: (T) -> String,
         onItemSelected: (T) -> Unit
     ) {
-        interactionProvider.showCloudFileDialog(title, subtitle, driveItems, getName, onItemSelected)
+        interactionProvider.showCloudFileDialog(
+            title,
+            subtitle,
+            driveItems,
+            getName,
+            onItemSelected
+        )
     }
 }

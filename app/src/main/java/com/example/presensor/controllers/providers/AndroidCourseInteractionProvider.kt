@@ -46,13 +46,20 @@ class AndroidCourseInteractionProvider(
 
     private var courseCloudActions: CourseCloudActions? = null
 
-    fun initializeCourseCloudActions(getSelectedCourse: () -> Course?, onImportComplete: () -> Unit) {
+    fun initializeCourseCloudActions(
+        getSelectedCourse: () -> Course?,
+        onImportComplete: () -> Unit
+    ) {
         courseCloudActions = CourseCloudActions(
-            activity = activity,
+            uiProvider = this,
+            cloudSyncController = activity.cloudSyncController,
+            importSessionController = activity.importSessionController,
             lifecycleOwner = activity,
             db = activity.getDb(),
             getSelectedCourse = getSelectedCourse,
-            onImportComplete = onImportComplete
+            onImportComplete = onImportComplete,
+            runWithCloudAuthentication = { action -> activity.runWithCloudAuthentication(action) },
+            setCurrentOverlayJob = { job -> activity.setCurrentOverlayJob(job) }
         )
     }
 

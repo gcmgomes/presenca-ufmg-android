@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import com.example.presensor.R
 import com.example.presensor.communication.ReaderOrchestrator.ConnectionState
@@ -17,7 +18,8 @@ class ReaderStatusService : Service() {
         private const val ACTION_STOP = "STOP_SERVICE"
 
         // Single reference to look up the active instance
-        private var instance: ReaderStatusService? = null
+        @VisibleForTesting
+        internal var instance: ReaderStatusService? = null
 
         /**
          * Pure lambda API: Anyone can call this from anywhere to update the icon!
@@ -50,7 +52,8 @@ class ReaderStatusService : Service() {
         updateNotification(ConnectionState.DISCONNECTED)
     }
 
-    private fun updateNotification(state: ConnectionState) {
+    @VisibleForTesting
+    internal fun updateNotification(state: ConnectionState) {
         val (icon, text) = when (state) {
             ConnectionState.CONNECTED -> Pair(
                 R.drawable.ic_reader_connected,

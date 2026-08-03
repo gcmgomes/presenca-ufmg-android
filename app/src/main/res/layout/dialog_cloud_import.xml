@@ -4,7 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:paddingStart="24dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="16dp">
 
     <TextView
         android:id="@+id/dialogSubtitle"
@@ -15,19 +18,28 @@
         android:textSize="14sp"
         android:paddingBottom="12dp" />
 
-    <androidx.appcompat.widget.SearchView
-        android:id="@+id/dialogSearchView"
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilCloudSearch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
-        app:iconifiedByDefault="false"
-        app:queryHint="Search file name..."
-        app:queryBackground="@android:color/transparent" />
+        android:hint="Search..."
+        app:startIconDrawable="@android:drawable/ic_menu_search"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-    <ListView
-        android:id="@+id/backupListView"
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/edtCloudSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvCloudFiles"
         android:layout_width="match_parent"
-        android:layout_height="240dp"
-        android:divider="?android:attr/listDivider"
-        android:dividerHeight="1dp" />
+        android:layout_height="320dp"
+        android:layout_marginTop="12dp"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp" />
+
 </LinearLayout>

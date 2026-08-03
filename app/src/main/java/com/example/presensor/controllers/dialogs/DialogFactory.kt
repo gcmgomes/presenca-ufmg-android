@@ -13,6 +13,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.FragmentManager
 import com.example.presensor.R
 import com.example.presensor.controllers.TagController
@@ -103,7 +104,7 @@ object DialogFactory {
         }
         container.addView(input)
 
-        val dialog = AlertDialog.Builder(context)
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(title)
             .setMessage(message)
             .setView(container)
@@ -175,7 +176,7 @@ object DialogFactory {
         }
 
         var confirmed = false
-        val dialog = AlertDialog.Builder(context)
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(context.getString(R.string.dialog_mapping_title))
             .setView(view)
             .setCancelable(true)
@@ -245,7 +246,7 @@ object DialogFactory {
             }
         }
 
-        val dialog = AlertDialog.Builder(context)
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(titleResId)
             .setView(dialogView)
             .setPositiveButton(positiveButtonResId, null)

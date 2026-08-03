@@ -5,6 +5,7 @@ import android.widget.EditText
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.presensor.MainActivity
@@ -35,7 +36,7 @@ class CourseControllerDialogFactory(
         edtYear.setText(currentYear.toString())
 
         return with(DialogFactory) {
-            val dialog = AlertDialog.Builder(context)
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(context.getString(R.string.title_new_course))
                 .setView(dialogView)
                 .setPositiveButton(context.getString(R.string.action_create), null)
@@ -89,7 +90,7 @@ class CourseControllerDialogFactory(
         spinnerSemester.setSelection(semesterIndex)
 
         return with(DialogFactory) {
-            val dialog = AlertDialog.Builder(context)
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(context.getString(R.string.title_edit_course))
                 .setView(dialogView)
                 .setPositiveButton(context.getString(R.string.action_save), null)
