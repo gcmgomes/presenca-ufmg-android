@@ -123,7 +123,7 @@ object DataProcessor {
     fun parseSessionsFromTable(
         context: Context,
         table: InternalDataTable,
-        courseId: Long,
+        course: Course,
         mapping: Map<String, String>? = null
     ): ImportResult<Session> {
         val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
@@ -132,6 +132,10 @@ object DataProcessor {
 
         val nameCol = mapping?.get("name")
         val dateCol = mapping?.get("date")
+        val startCol = mapping?.get("start_time")
+        val endCol = mapping?.get("end_time")
+
+        val noneLabel = context.getString(R.string.label_mapping_none)
 
         for (i in 0 until table.rowCount) {
             val tokens = table.rows[i]
@@ -139,13 +143,30 @@ object DataProcessor {
             
             var sessionName = ""
             var localDate: LocalDate? = null
+            var startTime: Long? = course.startTime
+            var endTime: Long? = course.endTime
             var dateStrForError = ""
 
-            if (nameCol != null && dateCol != null) {
+            if (nameCol != null && dateCol != null && nameCol != noneLabel && dateCol != noneLabel) {
                 sessionName = table.getCellValue(i, nameCol)
                 val dateStr = table.getCellValue(i, dateCol)
                 dateStrForError = dateStr
                 localDate = TimeUtils.tryParseDate(dateStr, formatter)
+
+                if (startCol != null && startCol != noneLabel) {
+                    val importedValue = table.getCellValue(i, startCol)
+                    if (importedValue.isNotBlank()) {
+                        val importedStart = TimeUtils.parseTimeToMinutes(importedValue)
+                        if (importedStart != null) startTime = importedStart
+                    }
+                }
+                if (endCol != null && endCol != noneLabel) {
+                    val importedValue = table.getCellValue(i, endCol)
+                    if (importedValue.isNotBlank()) {
+                        val importedEnd = TimeUtils.parseTimeToMinutes(importedValue)
+                        if (importedEnd != null) endTime = importedEnd
+                    }
+                }
             } else if (tokens.size >= 2) {
                 val firstTokenDate = TimeUtils.tryParseDate(tokens[0], formatter)
                 val secondTokenDate = TimeUtils.tryParseDate(tokens[1], formatter)
@@ -172,9 +193,11 @@ object DataProcessor {
 
                 sessionsToInsert.add(
                     Session(
-                        courseId = courseId,
+                        courseId = course.id,
                         name = sessionName,
-                        date = timestamp
+                        date = timestamp,
+                        startTime = startTime,
+                        endTime = endTime
                     )
                 )
             } else {

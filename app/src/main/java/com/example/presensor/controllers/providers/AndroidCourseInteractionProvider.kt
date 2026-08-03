@@ -142,9 +142,14 @@ class AndroidCourseInteractionProvider(
                                 )
                             )
                         itemView.findViewById<TextView>(R.id.txtSessionName).text = session.name
-                        itemView.findViewById<TextView>(R.id.txtSessionDetails).text =
-                            TimeUtils.fromMillisToLocalDate(session.date)
-                                .format(TimeUtils.makeSessionTimeFormatter(activity))
+                        val dateStr = TimeUtils.fromMillisToLocalDate(session.date)
+                            .format(TimeUtils.makeSessionTimeFormatter(activity))
+                        val timeStr = if (session.startTime != null && session.endTime != null) {
+                            " | ${TimeUtils.formatMinutesToTime(session.startTime)} - ${
+                                TimeUtils.formatMinutesToTime(session.endTime)
+                            }"
+                        } else ""
+                        itemView.findViewById<TextView>(R.id.txtSessionDetails).text = "$dateStr$timeStr"
 
                         val imgLock =
                             itemView.findViewById<ImageView>(R.id.imgSessionLockOnSessionView)
@@ -175,11 +180,13 @@ class AndroidCourseInteractionProvider(
         course: Course,
         sessionIds: Set<Long>,
         studentEmails: Set<String>,
-        attendance: List<AttendanceRecord>
+        attendance: List<AttendanceRecord>,
+        onEditRequested: (Course) -> Unit
     ) {
         activity.runOnUiThread {
             val layoutCourseView =
                 activity.findViewById<View>(R.id.layoutCourseView) ?: return@runOnUiThread
+            
             UiUtils.fillCourseDetailedCardStatistics(
                 activity,
                 layoutCourseView,
@@ -188,6 +195,10 @@ class AndroidCourseInteractionProvider(
                 studentEmails,
                 attendance
             )
+
+            layoutCourseView.findViewById<View>(R.id.btnEditCourse)?.setOnClickListener {
+                onEditRequested(course)
+            }
         }
     }
 
@@ -248,10 +259,10 @@ class AndroidCourseInteractionProvider(
     override fun openOutputStream(uri: Uri): OutputStream? =
         activity.contentResolver.openOutputStream(uri)
 
-    override fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
+    override fun showEditCourseDialog(course: Course, onUpdateSelectedCourse: (Course) -> Unit, onCourseEdited: () -> Unit) {
         activity.runOnUiThread {
             activeAlertDialog =
-                courseDialogFactory.showEditCourseDialog(course, { _ -> }, onCourseEdited)
+                courseDialogFactory.showEditCourseDialog(course, onUpdateSelectedCourse, onCourseEdited)
         }
     }
 
@@ -263,7 +274,7 @@ class AndroidCourseInteractionProvider(
 
     override fun showCreateSessionDialog(
         courseId: Long,
-        onSessionCreated: (Long, String, Long) -> Unit
+        onSessionCreated: (Long, String, Long, Long?, Long?) -> Unit
     ) {
         activity.runOnUiThread {
             sessionDialogFactory.showCreateSessionDialog(courseId, onSessionCreated)

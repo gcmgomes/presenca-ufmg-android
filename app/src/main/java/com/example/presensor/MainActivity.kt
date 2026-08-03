@@ -407,7 +407,13 @@ open class MainActivity : AppCompatActivity() {
                     courseController.refreshCourseUI()
                 }
             },
-            onPulldown = { importBacklogController.startImportFlow() },
+            onPulldown = { session ->
+                importBacklogController.startImportFlow(
+                    startTimeMinutes = session?.startTime,
+                    endTimeMinutes = session?.endTime,
+                    sessionDateMillis = session?.date
+                )
+            },
             onSyncTimeout = { importBacklogController.dismissActiveDialog() }
         )
 
@@ -464,6 +470,12 @@ open class MainActivity : AppCompatActivity() {
                 courseController.refreshCourseUI()
             },
             onEditSessionRequested = { session -> sessionController.showEditSessionDialog(session) },
+            onEditCourseRequested = { course ->
+                courseController.showEditCourseDialog(course) {
+                    courseController.refreshCourseUI()
+                    dashboardController.refreshDashboard()
+                }
+            },
             onOpenStatistics = { openCourseStatistics() }
         )
 

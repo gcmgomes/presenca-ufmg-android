@@ -24,6 +24,10 @@
     <string name="hint_course_semester">Semestre do curso</string>
     <string name="label_year">Ano</string>
     <string name="label_semester">Semestre</string>
+    <string name="label_start_time">Hora de Início</string>
+    <string name="label_end_time">Hora de Término</string>
+    <string name="hint_start_time">Início</string>
+    <string name="hint_end_time">Término</string>
     <string name="select_year">Selecionar Ano</string>
     <string name="select_semester">Selecionar Semestre</string>
     <string name="menu_title_course_management">Gerenciar curso</string>
@@ -222,6 +226,7 @@
     <string name="toast_csv_import_error">Erro na importação do CSV</string>
     <string name="label_student_email_column">E-mail do Aluno</string>
     <string name="label_student_name_column">Nome do Aluno</string>
+    <string name="label_mapping_none">Nenhum (Pular)</string>
 
     <string name="label_new_reader_name">Novo Nome do Leitor</string>
     <string name="label_old_password">Senha Antiga</string>

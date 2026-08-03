@@ -65,8 +65,12 @@ class CourseCache {
     }
 
     fun updateSession(session: Session) {
-        allSessions.find { it.id == session.id }?.name = session.name
-        allSessions.find { it.id == session.id }?.date = session.date
+        allSessions.find { it.id == session.id }?.let {
+            it.name = session.name
+            it.date = session.date
+            it.startTime = session.startTime
+            it.endTime = session.endTime
+        }
     }
 
 

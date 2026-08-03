@@ -10,5 +10,7 @@ data class Course(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val year: Int = Calendar.getInstance().get(Calendar.YEAR),
-    val semester: Int = if (Calendar.getInstance().get(Calendar.MONTH) < 6) 1 else 2
+    val semester: Int = if (Calendar.getInstance().get(Calendar.MONTH) < 6) 1 else 2,
+    val startTime: Long? = null, // Minutes from midnight
+    val endTime: Long? = null    // Minutes from midnight
 )

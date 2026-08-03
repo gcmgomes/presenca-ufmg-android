@@ -21,6 +21,8 @@ data class Session(
     val courseId: Long,
     var name: String,
     var date: Long,
-    var isLocked: Boolean = false
+    var isLocked: Boolean = false,
+    var startTime: Long? = null, // Minutes from midnight
+    var endTime: Long? = null    // Minutes from midnight
 )
 

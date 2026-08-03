@@ -29,7 +29,7 @@ class SessionControllerDialogFactory(
 
     fun showEditSessionDialog(
         session: Session,
-        onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
+        onSessionUpdated: (newName: String, newDateMillis: Long, start: Long?, end: Long?) -> Unit
     ): AlertDialog {
         return DialogFactory.showSessionEntryDialog(
             context = activity,
@@ -38,16 +38,19 @@ class SessionControllerDialogFactory(
             positiveButtonResId = R.string.action_save,
             initialName = session.name,
             initialDate = session.date,
+            initialStartTime = session.startTime,
+            initialEndTime = session.endTime,
             onConfirmed = onSessionUpdated
         )
     }
 
     fun showCreateSessionDialog(
         courseId: Long,
-        addSession: (Long, String, Long) -> Unit
+        addSession: (Long, String, Long, Long?, Long?) -> Unit
     ) {
         lifecycleOwner.lifecycleScope.launch {
             val count = db.getSessionsByCourse(courseId).size + 1
+            val course = db.getAllCourses().find { it.id == courseId }
             withContext(Dispatchers.Main) {
                 val sessionPlaceholder = activity.getString(R.string.session_text) + " $count"
                 DialogFactory.showSessionEntryDialog(
@@ -56,8 +59,10 @@ class SessionControllerDialogFactory(
                     titleResId = R.string.title_new_session,
                     positiveButtonResId = R.string.action_create,
                     initialName = sessionPlaceholder,
-                    onConfirmed = { name, date ->
-                        addSession(courseId, name, date)
+                    initialStartTime = course?.startTime,
+                    initialEndTime = course?.endTime,
+                    onConfirmed = { name, date, start, end ->
+                        addSession(courseId, name, date, start, end)
                     }
                 )
             }

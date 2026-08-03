@@ -20,6 +20,8 @@ import com.example.presensor.controllers.TagController
 import com.example.presensor.tools.TimeUtils
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.timepicker.MaterialTimePicker
+import com.google.android.material.timepicker.TimeFormat
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import java.time.Instant
@@ -154,21 +156,25 @@ object DialogFactory {
                 "name" -> context.getString(R.string.dialog_mapping_field_name)
                 "email" -> context.getString(R.string.dialog_mapping_field_email)
                 "date" -> context.getString(R.string.dialog_mapping_field_date)
+                "start_time" -> context.getString(R.string.label_start_time)
+                "end_time" -> context.getString(R.string.label_end_time)
                 else -> field.replaceFirstChar { it.uppercase() }
             }
             row.hint = displayHint
             
             val autoComplete = row.findViewById<AutoCompleteTextView>(R.id.autoCompleteColumn)
             
-            val adapter = ArrayAdapter(context, android.R.layout.simple_dropdown_item_1line, columns)
+            val noneLabel = context.getString(R.string.label_mapping_none)
+            val selectableColumns = listOf(noneLabel) + columns
+            val adapter = ArrayAdapter(context, android.R.layout.simple_dropdown_item_1line, selectableColumns)
             autoComplete.setAdapter(adapter)
             
             // Try to auto-select if field name matches a column name
             val matchIdx = columns.indexOfFirst { it.contains(field, ignoreCase = true) || it.contains(displayHint, ignoreCase = true) }
             if (matchIdx != -1) {
                 autoComplete.setText(columns[matchIdx], false)
-            } else if (columns.isNotEmpty()) {
-                autoComplete.setText(columns[0], false)
+            } else {
+                autoComplete.setText(noneLabel, false)
             }
             
             autoCompleteViews[field] = autoComplete
@@ -206,12 +212,16 @@ object DialogFactory {
         positiveButtonResId: Int,
         initialName: String = "",
         initialDate: Long = System.currentTimeMillis(),
-        onConfirmed: (String, Long) -> Unit
+        initialStartTime: Long? = null,
+        initialEndTime: Long? = null,
+        onConfirmed: (String, Long, Long?, Long?) -> Unit
     ): AlertDialog {
         val layoutInflater = LayoutInflater.from(context)
         val dialogView = layoutInflater.inflate(R.layout.dialog_create_session, null)
         val edtName = dialogView.findViewById<EditText>(R.id.edtSessionName)
         val edtDate = dialogView.findViewById<TextInputEditText>(R.id.edtSessionDate)
+        val edtStartTime = dialogView.findViewById<TextInputEditText>(R.id.edtSessionStartTime)
+        val edtEndTime = dialogView.findViewById<TextInputEditText>(R.id.edtSessionEndTime)
 
         edtName.setText(initialName)
         if (initialName.isNotEmpty()) edtName.selectAll()
@@ -234,6 +244,34 @@ object DialogFactory {
             }
             datePicker.show(fragmentManager, "SESSION_DATE_PICKER")
         }
+
+        var selectedStartTime = initialStartTime
+        var selectedEndTime = initialEndTime
+
+        val setupTimePicker = { view: TextInputEditText, initial: Long?, onSelected: (Long) -> Unit ->
+            view.setText(TimeUtils.formatMinutesToTime(initial))
+            view.setOnClickListener {
+                val hour = (initial ?: (9 * 60)) / 60
+                val minute = (initial ?: (9 * 60)) % 60
+                val picker = MaterialTimePicker.Builder()
+                    .setTimeFormat(TimeFormat.CLOCK_24H)
+                    .setInputMode(MaterialTimePicker.INPUT_MODE_CLOCK)
+                    .setHour(hour.toInt())
+                    .setMinute(minute.toInt())
+                    .setTitleText(view.hint)
+                    .build()
+
+                picker.addOnPositiveButtonClickListener {
+                    val minutes = (picker.hour * 60 + picker.minute).toLong()
+                    view.setText(TimeUtils.formatMinutesToTime(minutes))
+                    onSelected(minutes)
+                }
+                picker.show(fragmentManager, "SESSION_TIME_PICKER")
+            }
+        }
+
+        setupTimePicker(edtStartTime, selectedStartTime) { selectedStartTime = it }
+        setupTimePicker(edtEndTime, selectedEndTime) { selectedEndTime = it }
 
         edtName.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -259,7 +297,7 @@ object DialogFactory {
                 // Normalize to start of day in local timezone to maintain consistency
                 val normalizedDate = TimeUtils.fromMillisToLocalDate(selectedTimestamp)
                     .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                onConfirmed(nameText, normalizedDate)
+                onConfirmed(nameText, normalizedDate, selectedStartTime, selectedEndTime)
                 dialog.dismiss()
             } else {
                 Toast.makeText(context, context.getString(R.string.error_empty_name), Toast.LENGTH_SHORT).show()

@@ -8,6 +8,7 @@ import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.controllers.dialogs.DialogFactory
 import com.example.presensor.data.InternalDataTable
+import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.tools.DataProcessor
@@ -106,10 +107,10 @@ abstract class BaseAndroidInteractionProvider(
 
     override fun parseSessionsFromTable(
         table: InternalDataTable,
-        courseId: Long,
+        course: Course,
         mapping: Map<String, String>?
     ): ImportResult<Session> {
-        return DataProcessor.parseSessionsFromTable(activity, table, courseId, mapping)
+        return DataProcessor.parseSessionsFromTable(activity, table, course, mapping)
     }
 
     override fun parseStudentsFromTable(

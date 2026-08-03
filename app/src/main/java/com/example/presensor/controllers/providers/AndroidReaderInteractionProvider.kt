@@ -169,9 +169,9 @@ class AndroidReaderInteractionProvider(
         }
     }
 
-    override fun addBacklogItem(item: BacklogItem) {
+    override fun addBacklogItem(item: BacklogItem, shouldAutoSelect: Boolean) {
         activity.runOnUiThread {
-            backlogAdapter?.addItem(item)
+            backlogAdapter?.addItem(item, shouldAutoSelect)
         }
     }
 

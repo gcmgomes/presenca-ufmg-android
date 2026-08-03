@@ -27,15 +27,16 @@ class ImportSessionController(
         onImportComplete: () -> Unit
     ) {
         scope.launch(mainDispatcher) {
+            val course = db.getAllCourses().find { it.id == courseId } ?: return@launch
             interactionProvider.showMappingDialog(
-                fields = listOf("name", "date"),
+                fields = listOf("name", "date", "start_time", "end_time"),
                 columns = table.headers,
                 sampleRow = table.rows.firstOrNull(),
                 onDismissed = { interactionProvider.toggleLoading(false) },
                 onConfirmed = { mapping ->
                     val result = interactionProvider.parseSessionsFromTable(
                         table,
-                        courseId,
+                        course,
                         mapping
                     )
                     if (result.items.isNotEmpty()) {

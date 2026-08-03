@@ -23,7 +23,7 @@ import java.io.OutputStream
 
 @Database(
     entities = [Course::class, Session::class, Student::class, Attendance::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -69,8 +69,20 @@ abstract class AppDatabase : RoomDatabase() {
     // SESSION ACTIONS
     // ==========================================
 
-    suspend fun insertSession(courseId: Long, sessionName: String, date: Long) {
-        val session = Session(courseId = courseId, name = sessionName, date = date)
+    suspend fun insertSession(
+        courseId: Long,
+        sessionName: String,
+        date: Long,
+        startTime: Long? = null,
+        endTime: Long? = null
+    ) {
+        val session = Session(
+            courseId = courseId,
+            name = sessionName,
+            date = date,
+            startTime = startTime,
+            endTime = endTime
+        )
         val newSessionId = dao().insertSession(session)
 
         if (useCourseCache && courseCache.courseId == courseId) {
@@ -311,9 +323,9 @@ abstract class AppDatabase : RoomDatabase() {
 
                 // Append Courses
                 sb.append("=== COURSES ===\n")
-                sb.append("Course ID,Course Name,Year,Semester\n")
+                sb.append("Course ID,Course Name,Year,Semester,Start Time,End Time\n")
                 allCourses.forEach {
-                    sb.append("${it.id},${it.name.replace(",", "")},${it.year},${it.semester}\n")
+                    sb.append("${it.id},${it.name.replace(",", "")},${it.year},${it.semester},${it.startTime ?: ""},${it.endTime ?: ""}\n")
                 }
                 
                 // Append Students
@@ -325,9 +337,9 @@ abstract class AppDatabase : RoomDatabase() {
 
                 // Append Sessions
                 sb.append("=== SESSIONS ===\n")
-                sb.append("Session ID,Course ID,Session Name,Timestamp/Date\n")
+                sb.append("Session ID,Course ID,Session Name,Timestamp/Date,Start Time,End Time\n")
                 allSessions.forEach {
-                    sb.append("${it.id},${it.courseId},${it.name.replace(",", "")},${it.date}\n")
+                    sb.append("${it.id},${it.courseId},${it.name.replace(",", "")},${it.date},${it.startTime ?: ""},${it.endTime ?: ""}\n")
                 }
 
                 // Append Attendance Records
@@ -383,12 +395,31 @@ abstract class AppDatabase : RoomDatabase() {
                             when (currentSection) {
                                 "=== COURSES ===" -> {
                                     if (rowTokens.size >= 4 && rowTokens[0].toLongOrNull() != null) {
-                                        coursesToInsert.add(Course(id = rowTokens[0].toLong(), name = rowTokens[1], year = rowTokens[2].toInt(), semester = rowTokens[3].toInt()))
+                                        coursesToInsert.add(
+                                            Course(
+                                                id = rowTokens[0].toLong(),
+                                                name = rowTokens[1],
+                                                year = rowTokens[2].toInt(),
+                                                semester = rowTokens[3].toInt(),
+                                                startTime = rowTokens.getOrNull(4)?.toLongOrNull(),
+                                                endTime = rowTokens.getOrNull(5)?.toLongOrNull()
+                                            )
+                                        )
                                     }
                                 }
+
                                 "=== SESSIONS ===" -> {
                                     if (rowTokens.size >= 4 && rowTokens[0].toLongOrNull() != null) {
-                                        sessionsToInsert.add(Session(id = rowTokens[0].toLong(), courseId = rowTokens[1].toLong(), name = rowTokens[2], date = rowTokens[3].toLong()))
+                                        sessionsToInsert.add(
+                                            Session(
+                                                id = rowTokens[0].toLong(),
+                                                courseId = rowTokens[1].toLong(),
+                                                name = rowTokens[2],
+                                                date = rowTokens[3].toLong(),
+                                                startTime = rowTokens.getOrNull(4)?.toLongOrNull(),
+                                                endTime = rowTokens.getOrNull(5)?.toLongOrNull()
+                                            )
+                                        )
                                     }
                                 }
                                 "=== STUDENTS ===" -> {

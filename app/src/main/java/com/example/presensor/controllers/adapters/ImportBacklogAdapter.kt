@@ -20,11 +20,13 @@ class ImportBacklogAdapter : RecyclerView.Adapter<ImportBacklogAdapter.ViewHolde
     private val selectedKeys = mutableSetOf<String>()
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
 
-    fun addItem(item: BacklogItem) {
+    fun addItem(item: BacklogItem, shouldAutoSelect: Boolean = true) {
         // Always insert at the top for descending order
         items.add(0, item)
-        // Default new items to selected
-        selectedKeys.add(item.tagId + item.timestamp)
+        // Default new items to selected based on flag
+        if (shouldAutoSelect) {
+            selectedKeys.add(item.tagId + item.timestamp)
+        }
         notifyItemInserted(0)
     }
 

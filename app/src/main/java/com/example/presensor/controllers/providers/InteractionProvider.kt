@@ -49,7 +49,7 @@ interface InteractionProvider {
 
     fun parseSessionsFromTable(
         table: InternalDataTable,
-        courseId: Long,
+        course: Course,
         mapping: Map<String, String>?
     ): ImportResult<Session>
 
@@ -107,12 +107,12 @@ interface SessionInteractionProvider : InteractionProvider {
 
     fun showEditSessionDialog(
         session: Session,
-        onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
+        onSessionUpdated: (newName: String, newDateMillis: Long, start: Long?, end: Long?) -> Unit
     )
 
     fun showCreateSessionDialog(
         courseId: Long,
-        onSessionCreated: (Long, String, Long) -> Unit
+        onSessionCreated: (Long, String, Long, Long?, Long?) -> Unit
     )
 
     fun showDeleteSessionDialog(session: Session)
@@ -161,7 +161,7 @@ interface ReaderInteractionProvider : InteractionProvider {
         onDismiss: () -> Unit
     )
 
-    fun addBacklogItem(item: BacklogItem)
+    fun addBacklogItem(item: BacklogItem, shouldAutoSelect: Boolean = true)
     fun removeBacklogItem(item: BacklogItem)
     fun updateBacklogCount(count: Int)
     fun toggleBacklogImportLoading(show: Boolean)
@@ -234,7 +234,8 @@ interface CourseInteractionProvider : InteractionProvider {
         course: Course,
         sessionIds: Set<Long>,
         studentEmails: Set<String>,
-        attendance: List<AttendanceRecord>
+        attendance: List<AttendanceRecord>,
+        onEditRequested: (Course) -> Unit
     )
 
     fun setupQuickActions(
@@ -251,9 +252,9 @@ interface CourseInteractionProvider : InteractionProvider {
     fun triggerCloudAttendanceExport()
 
     fun openOutputStream(uri: android.net.Uri): java.io.OutputStream?
-    fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit)
+    fun showEditCourseDialog(course: Course, onUpdateSelectedCourse: (Course) -> Unit, onCourseEdited: () -> Unit)
     fun showCreateCourseDialog(onCourseCreated: () -> Unit)
-    fun showCreateSessionDialog(courseId: Long, onSessionCreated: (Long, String, Long) -> Unit)
+    fun showCreateSessionDialog(courseId: Long, onSessionCreated: (Long, String, Long, Long?, Long?) -> Unit)
     fun showMassDateChangeDialog(courseId: Long)
     fun showDeleteSessionDialog(session: Session)
 

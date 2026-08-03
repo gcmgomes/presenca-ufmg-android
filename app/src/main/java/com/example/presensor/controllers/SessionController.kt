@@ -22,7 +22,7 @@ class SessionController(
     private val onSessionStateMutated: () -> Unit,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val onPulldown: () -> Unit,
+    private val onPulldown: (Session?) -> Unit,
     private val onSyncTimeout: (() -> Unit)? = null
 ) {
     var activeSession: Session? = null
@@ -72,7 +72,7 @@ class SessionController(
 
         interactionProvider.setOnRefreshListener {
             interactionProvider.showLayoutRefreshSpinner(true)
-            onPulldown()
+            onPulldown(activeSession)
             resetSyncTimeout()
         }
 
@@ -168,11 +168,13 @@ class SessionController(
         }
         interactionProvider.showEditSessionDialog(
             session,
-            onSessionUpdated = { updatedName, updatedTimestamp ->
+            onSessionUpdated = { updatedName, updatedTimestamp, start, end ->
                 scope.launch {
                     val modifiedSession = session.copy(
                         name = updatedName,
-                        date = updatedTimestamp
+                        date = updatedTimestamp,
+                        startTime = start,
+                        endTime = end
                     )
 
                     db.updateSession(modifiedSession)

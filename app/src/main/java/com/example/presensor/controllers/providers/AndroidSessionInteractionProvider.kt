@@ -77,7 +77,7 @@ class AndroidSessionInteractionProvider(
 
     override fun showEditSessionDialog(
         session: Session,
-        onSessionUpdated: (newName: String, newDateMillis: Long) -> Unit
+        onSessionUpdated: (newName: String, newDateMillis: Long, start: Long?, end: Long?) -> Unit
     ) {
         activity.runOnUiThread {
             activeAlertDialog =
@@ -87,7 +87,7 @@ class AndroidSessionInteractionProvider(
 
     override fun showCreateSessionDialog(
         courseId: Long,
-        onSessionCreated: (Long, String, Long) -> Unit
+        onSessionCreated: (Long, String, Long, Long?, Long?) -> Unit
     ) {
         activity.runOnUiThread {
             sessionDialogFactory.showCreateSessionDialog(courseId, onSessionCreated)

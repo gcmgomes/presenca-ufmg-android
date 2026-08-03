@@ -22,6 +22,7 @@ class CourseController(
     private val onSessionSelected: (Session) -> Unit,
     private val onToggleLockRequested: (Session) -> Unit,
     private val onEditSessionRequested: (Session) -> Unit,
+    private val onEditCourseRequested: (Course) -> Unit,
     private val onOpenStatistics: () -> Unit
 ) {
 
@@ -66,8 +67,8 @@ class CourseController(
 
     fun showCreateSessionDialog() {
         selectedCourse?.let { course ->
-            interactionProvider.showCreateSessionDialog(course.id) { courseId, sessionName, date ->
-                addSession(courseId, sessionName, date)
+            interactionProvider.showCreateSessionDialog(course.id) { courseId, sessionName, date, start, end ->
+                addSession(courseId, sessionName, date, start, end)
             }
         }
     }
@@ -129,9 +130,15 @@ class CourseController(
         interactionProvider.setupQuickActions(allActions, pageTitles)
     }
 
-    fun addSession(courseId: Long, sessionName: String, date: Long) {
+    fun addSession(
+        courseId: Long,
+        sessionName: String,
+        date: Long,
+        startTime: Long? = null,
+        endTime: Long? = null
+    ) {
         lifecycleOwner.lifecycleScope.launch {
-            db.insertSession(courseId, sessionName, date)
+            db.insertSession(courseId, sessionName, date, startTime, endTime)
             refreshCourseUI()
         }
     }
@@ -157,7 +164,8 @@ class CourseController(
                 course,
                 sessionList.map { it.id }.toSet(),
                 attendanceList.map { it.studentEmail }.toSet(),
-                attendanceList
+                attendanceList,
+                onEditRequested = { onEditCourseRequested(it) }
             )
         }
     }
@@ -173,7 +181,11 @@ class CourseController(
     }
 
     fun showEditCourseDialog(course: Course, onCourseEdited: () -> Unit) {
-        interactionProvider.showEditCourseDialog(course, onCourseEdited)
+        interactionProvider.showEditCourseDialog(
+            course = course,
+            onUpdateSelectedCourse = { updated -> setSelectedCourse(updated) },
+            onCourseEdited = onCourseEdited
+        )
     }
 
     private fun importSessionsFromCsv(uri: Uri, courseId: Long) {

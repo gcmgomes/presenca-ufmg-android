@@ -23,6 +23,10 @@
     <string name="hint_course_semester">Course semester</string>
     <string name="label_year">Year</string>
     <string name="label_semester">Semester</string>
+    <string name="label_start_time">Start Time</string>
+    <string name="label_end_time">End Time</string>
+    <string name="hint_start_time">Start</string>
+    <string name="hint_end_time">End</string>
     <string name="select_year">Select Year</string>
     <string name="select_semester">Select Semester</string>
     <string name="menu_title_course_management">Course Management</string>
@@ -217,6 +221,7 @@
     <string name="toast_csv_import_error">CSV Import error</string>
     <string name="label_student_email_column">Student Email</string>
     <string name="label_student_name_column">Student Name</string>
+    <string name="label_mapping_none">None (Skip)</string>
 
     <string name="label_new_reader_name">New Reader Name</string>
     <string name="label_old_password">Password</string>

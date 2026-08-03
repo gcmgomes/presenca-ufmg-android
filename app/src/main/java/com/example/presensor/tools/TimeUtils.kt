@@ -45,4 +45,19 @@ object TimeUtils {
         val pattern = context.getString(R.string.session_date_display_format)
         return DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
     }
+
+    fun formatMinutesToTime(minutes: Long?): String {
+        if (minutes == null) return "---"
+        val hours = minutes / 60
+        val mins = minutes % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", hours, mins)
+    }
+
+    fun parseTimeToMinutes(timeStr: String): Long? {
+        val parts = timeStr.split(":")
+        if (parts.size != 2) return null
+        val hours = parts[0].toLongOrNull() ?: return null
+        val mins = parts[1].toLongOrNull() ?: return null
+        return hours * 60 + mins
+    }
 }

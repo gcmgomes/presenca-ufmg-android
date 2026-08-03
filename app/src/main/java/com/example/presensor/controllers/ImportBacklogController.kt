@@ -10,6 +10,9 @@ import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.takeWhile
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 class ImportBacklogController(
     private val interactionProvider: ReaderInteractionProvider,
@@ -23,7 +26,7 @@ class ImportBacklogController(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
 
-    fun startImportFlow() {
+    fun startImportFlow(startTimeMinutes: Long? = null, endTimeMinutes: Long? = null, sessionDateMillis: Long? = null) {
         if (orchestrator == null || orchestrator.isAuthenticated.value != true) {
             toggleSpinner(false)
             interactionProvider.showToast("No authenticated device found.")
@@ -46,7 +49,7 @@ class ImportBacklogController(
         // Start fetching items
         scope.launch(mainDispatcher) {
             interactionProvider.toggleBacklogImportLoading(true)
-            fetchBacklogItems()
+            fetchBacklogItems(startTimeMinutes, endTimeMinutes, sessionDateMillis)
             toggleSpinner(false)
             interactionProvider.toggleBacklogImportLoading(false)
 
@@ -56,7 +59,7 @@ class ImportBacklogController(
         }
     }
 
-    private suspend fun fetchBacklogItems() {
+    private suspend fun fetchBacklogItems(startTimeMinutes: Long?, endTimeMinutes: Long?, sessionDateMillis: Long?) {
         val orch = orchestrator ?: return
 
         orch.requestInventory()
@@ -70,9 +73,26 @@ class ImportBacklogController(
                             val student = withContext(ioDispatcher) {
                                 db.getStudentByRfid(tagId.chunked(2).joinToString(":"))
                             }
+
+                            // Auto-select logic based on time window [start - 10, end + 10]
+                            var shouldAutoSelect = true
+                            if (sessionDateMillis != null && startTimeMinutes != null && endTimeMinutes != null) {
+                                val recordTime = Instant.ofEpochSecond(timestamp).atZone(ZoneId.systemDefault())
+                                val sessionDate = Instant.ofEpochMilli(sessionDateMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+                                
+                                if (recordTime.toLocalDate() != sessionDate) {
+                                    shouldAutoSelect = false
+                                } else {
+                                    val recordMinutes = recordTime.get(java.time.temporal.ChronoField.MINUTE_OF_DAY).toLong()
+                                    val startLimit = startTimeMinutes - 10
+                                    val endLimit = endTimeMinutes + 10
+                                    shouldAutoSelect = recordMinutes in startLimit..endLimit
+                                }
+                            }
+
                             val newItem = BacklogItem(tagId, student, timestamp)
                             withContext(mainDispatcher) {
-                                interactionProvider.addBacklogItem(newItem)
+                                interactionProvider.addBacklogItem(newItem, shouldAutoSelect)
                                 interactionProvider.updateBacklogCount(interactionProvider.getBacklogItemCount())
                             }
                         }
