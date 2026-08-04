@@ -5,6 +5,18 @@ import androidx.activity.OnBackPressedCallback
 import org.mockito.kotlin.mock
 
 class MainActivityForTest : MainActivity() {
+    var skipTagControllerInit = false
+
+    fun setAppState(state: MainActivity.Companion.AppState) {
+        currentState = state
+    }
+
+    fun getAppState(): MainActivity.Companion.AppState = currentState
+
+    fun handleBack() {
+        handleBackNavigation()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
     }
@@ -20,7 +32,9 @@ class MainActivityForTest : MainActivity() {
         courseController = mock()
         detailedCourseController = mock()
         sessionController = mock()
-        tagController = mock()
+        if (!skipTagControllerInit) {
+            tagController = mock()
+        }
         importSessionController = mock()
         importStudentController = mock()
         readerDiscoveryController = mock()
@@ -29,7 +43,9 @@ class MainActivityForTest : MainActivity() {
         cloudSyncController = mock()
 
         currentBackCallback = object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {}
+            override fun handleOnBackPressed() {
+                handleBackNavigation()
+            }
         }
     }
 }

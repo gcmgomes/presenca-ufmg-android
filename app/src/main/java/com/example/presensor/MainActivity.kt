@@ -501,65 +501,69 @@ open class MainActivity : AppCompatActivity() {
 
         currentBackCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // If loading overlay is visible, it means a cloud or heavy operation is in progress.
-                // Revert control to the user and clear any pending cloud actions.
-                if (loadingOverlay.isVisible) {
-                    cloudSyncController.cancelActiveOperation()
-                    toggleLoadingOverlay(false)
-                    pendingCloudAction = null
-                    isCloudAuthSuccessPendingRun = false
-                    return
-                }
-
-                when (currentState) {
-                    AppState.SESSION -> {
-                        readerOrchestrator?.setAppMode(
-                            AppMode.IDLE,
-                            "MainActivity back button from session"
-                        )
-                        sessionController.clearActiveSession()
-                        currentState = AppState.COURSE
-                        toggleAllViews(layoutCourseView = true)
-                        courseController.refreshCourseUI()
-                    }
-
-                    AppState.COURSE -> {
-                        courseController.clear()
-                        currentState = AppState.DASHBOARD
-                        toggleAllViews(layoutDashboardView = true)
-                        dashboardController.refreshDashboard()
-                    }
-
-                    AppState.COURSE_STATS -> {
-                        detailedCourseController.clear()
-                        currentState = AppState.COURSE
-                        toggleAllViews(layoutCourseView = true)
-                        courseController.refreshCourseUI()
-                    }
-
-                    AppState.READER_MANAGEMENT -> {
-                        readerDiscoveryController.teardownDiscovery()
-                        currentState = AppState.DASHBOARD
-                        toggleAllViews(layoutDashboardView = true)
-                        dashboardController.refreshDashboard()
-                    }
-
-                    AppState.DEVICE_MANAGER -> {
-                        readerManagementController.teardownView()
-                        currentState = AppState.READER_MANAGEMENT
-                        toggleAllViews(layoutReaderManagementView = true)
-                    }
-
-                    AppState.DASHBOARD -> {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                        isEnabled = true
-                    }
-                }
+                handleBackNavigation()
             }
         }
         onBackPressedDispatcher.addCallback(this, currentBackCallback)
         dashboardController.refreshDashboard()
+    }
+
+    internal fun handleBackNavigation() {
+        // If loading overlay is visible, it means a cloud or heavy operation is in progress.
+        // Revert control to the user and clear any pending cloud actions.
+        if (loadingOverlay.isVisible) {
+            cloudSyncController.cancelActiveOperation()
+            toggleLoadingOverlay(false)
+            pendingCloudAction = null
+            isCloudAuthSuccessPendingRun = false
+            return
+        }
+
+        when (currentState) {
+            AppState.SESSION -> {
+                readerOrchestrator?.setAppMode(
+                    AppMode.IDLE,
+                    "MainActivity back button from session"
+                )
+                sessionController.clearActiveSession()
+                currentState = AppState.COURSE
+                toggleAllViews(layoutCourseView = true)
+                courseController.refreshCourseUI()
+            }
+
+            AppState.COURSE -> {
+                courseController.clear()
+                currentState = AppState.DASHBOARD
+                toggleAllViews(layoutDashboardView = true)
+                dashboardController.refreshDashboard()
+            }
+
+            AppState.COURSE_STATS -> {
+                detailedCourseController.clear()
+                currentState = AppState.COURSE
+                toggleAllViews(layoutCourseView = true)
+                courseController.refreshCourseUI()
+            }
+
+            AppState.READER_MANAGEMENT -> {
+                readerDiscoveryController.teardownDiscovery()
+                currentState = AppState.DASHBOARD
+                toggleAllViews(layoutDashboardView = true)
+                dashboardController.refreshDashboard()
+            }
+
+            AppState.DEVICE_MANAGER -> {
+                readerManagementController.teardownView()
+                currentState = AppState.READER_MANAGEMENT
+                toggleAllViews(layoutReaderManagementView = true)
+            }
+
+            AppState.DASHBOARD -> {
+                currentBackCallback.isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                currentBackCallback.isEnabled = true
+            }
+        }
     }
 
     fun openReaderManagement() {
