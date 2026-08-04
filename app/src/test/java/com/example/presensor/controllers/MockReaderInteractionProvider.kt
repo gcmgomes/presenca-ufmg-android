@@ -6,6 +6,7 @@ import com.example.presensor.controllers.items.BacklogItem
 import com.example.presensor.controllers.items.DeviceItem
 import com.example.presensor.controllers.providers.ReaderInteractionProvider
 import com.example.presensor.data.InternalDataTable
+import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
 import com.example.presensor.data.entities.Student
 import com.example.presensor.tools.ImportResult
@@ -74,7 +75,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
 
     override fun parseSessionsFromTable(
         table: InternalDataTable,
-        courseId: Long,
+        course: Course,
         mapping: Map<String, String>?
     ): ImportResult<Session> = ImportResult(emptyList(), emptyList())
 
@@ -116,7 +117,7 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         onDismiss: () -> Unit
     ) {}
 
-    override fun addBacklogItem(item: BacklogItem) {}
+    override fun addBacklogItem(item: BacklogItem, shouldAutoSelect: Boolean) {}
     override fun removeBacklogItem(item: BacklogItem) {}
     override fun updateBacklogCount(count: Int) {}
     override fun toggleBacklogImportLoading(show: Boolean) {}

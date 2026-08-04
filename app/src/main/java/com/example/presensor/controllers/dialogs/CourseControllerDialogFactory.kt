@@ -23,7 +23,9 @@ import java.util.Calendar
 class CourseControllerDialogFactory(
     private val activity: MainActivity,
     private val lifecycleOwner: LifecycleOwner,
-    private val db: AppDatabase
+    private val db: AppDatabase,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main
 ) {
     private val layoutInflater: LayoutInflater = LayoutInflater.from(activity)
 
@@ -99,8 +101,8 @@ class CourseControllerDialogFactory(
                     return@setOnClickListener
                 }
 
-                lifecycleOwner.lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
+                lifecycleOwner.lifecycleScope.launch(mainDispatcher) {
+                    withContext(ioDispatcher) {
                         val newCourse = Course(
                             name = courseName,
                             year = parsedYear,
@@ -167,8 +169,8 @@ class CourseControllerDialogFactory(
                     return@setOnClickListener
                 }
 
-                lifecycleOwner.lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
+                lifecycleOwner.lifecycleScope.launch(mainDispatcher) {
+                    withContext(ioDispatcher) {
                         val updatedCourse = course.copy(
                             name = updatedName,
                             year = updatedYear,

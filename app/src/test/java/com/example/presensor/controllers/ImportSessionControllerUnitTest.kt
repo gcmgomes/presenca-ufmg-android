@@ -39,6 +39,10 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
             mainDispatcher = mainDispatcherRule.testDispatcher,
             ioDispatcher = mainDispatcherRule.testDispatcher
         )
+
+        runTest {
+            insertTestCourse(1L)
+        }
     }
 
     @Test
@@ -51,7 +55,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             eq(table.headers),
             any(),
             any(),
@@ -91,7 +95,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             eq(table.headers),
             any(),
             any(),
@@ -148,7 +152,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             any(),
             any(),
             any(),
@@ -182,7 +186,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             any(),
             any(),
             any(),
@@ -205,7 +209,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             eq(table.headers),
             any(),
             onDismissedCaptor.capture(),
@@ -218,8 +222,6 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
 
     @Test
     fun preview_confirm_insertsToDb() = runTest {
-        insertTestCourse(1L)
-
         val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
         val sessions = listOf(Session(courseId = 1L, name = "S1", date = 1000L))
         val result = ImportResult(sessions, emptyList<String>())
@@ -240,7 +242,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             any(),
             any(),
             any(),
@@ -289,7 +291,7 @@ class ImportSessionControllerUnitTest : BaseControllerTest() {
         advanceUntilIdle()
 
         verify(interactionProvider).showMappingDialog(
-            any(),
+            argThat { containsAll(listOf("name", "date", "start_time", "end_time")) },
             any(),
             any(),
             any(),

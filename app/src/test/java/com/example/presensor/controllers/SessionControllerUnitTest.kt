@@ -22,7 +22,7 @@ class SessionControllerUnitTest : BaseControllerTest() {
     private lateinit var sessionController: SessionController
     private val interactionProvider: SessionInteractionProvider = mock()
     private val onSessionStateMutated: () -> Unit = mock()
-    private val onPulldown: () -> Unit = mock()
+    private val onPulldown: (Session?) -> Unit = mock()
 
     @Before
     override fun setup() {
@@ -300,12 +300,12 @@ class SessionControllerUnitTest : BaseControllerTest() {
         val session = Session(id = 500, courseId = courseId, name = "Original", date = 1000L, isLocked = false)
         db.insertSessions(listOf(session))
         
-        val onSessionUpdatedCaptor = argumentCaptor<(String, Long) -> Unit>()
+        val onSessionUpdatedCaptor = argumentCaptor<(String, Long, Long?, Long?) -> Unit>()
         sessionController.showEditSessionDialog(session)
         verify(interactionProvider).showEditSessionDialog(eq(session), onSessionUpdatedCaptor.capture())
         
         sessionController.clearActiveSession()
-        onSessionUpdatedCaptor.firstValue.invoke("New", 2000L)
+        onSessionUpdatedCaptor.firstValue.invoke("New", 2000L, 480L, 600L)
         advanceUntilIdle()
         ShadowLooper.idleMainLooper()
         

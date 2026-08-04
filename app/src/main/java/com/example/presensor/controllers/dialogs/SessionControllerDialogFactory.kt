@@ -24,7 +24,9 @@ class SessionControllerDialogFactory(
     private val activity: MainActivity,
     private val lifecycleOwner: LifecycleOwner,
     private val db: AppDatabase,
-    private val refreshUI: () -> Unit
+    private val refreshUI: () -> Unit,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main
 ) {
 
     fun showEditSessionDialog(
@@ -48,10 +50,10 @@ class SessionControllerDialogFactory(
         courseId: Long,
         addSession: (Long, String, Long, Long?, Long?) -> Unit
     ) {
-        lifecycleOwner.lifecycleScope.launch {
+        lifecycleOwner.lifecycleScope.launch(mainDispatcher) {
             val count = db.getSessionsByCourse(courseId).size + 1
             val course = db.getAllCourses().find { it.id == courseId }
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 val sessionPlaceholder = activity.getString(R.string.session_text) + " $count"
                 DialogFactory.showSessionEntryDialog(
                     context = activity,
@@ -75,8 +77,8 @@ class SessionControllerDialogFactory(
             title = activity.getString(R.string.dialog_delete_session_title),
             message = activity.getString(R.string.dialog_delete_session_message, session.name),
             onConfirmed = {
-                lifecycleOwner.lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
+                lifecycleOwner.lifecycleScope.launch(mainDispatcher) {
+                    withContext(ioDispatcher) {
                         db.deleteSession(session)
                     }
                     refreshUI()
@@ -141,8 +143,8 @@ class SessionControllerDialogFactory(
                     return@setOnClickListener
                 }
 
-                lifecycleOwner.lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
+                lifecycleOwner.lifecycleScope.launch(mainDispatcher) {
+                    withContext(ioDispatcher) {
                         val targetedSessions = db.getSessionsByCourse(courseId)
                             .filter { it.date >= currentThreshold }
                             .sortedBy { it.date }

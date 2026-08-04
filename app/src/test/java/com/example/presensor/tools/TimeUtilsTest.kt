@@ -55,4 +55,32 @@ class TimeUtilsTest {
         assertFalse(TimeUtils.isDateInCurrentWeek(today.minusMonths(1)))
         assertFalse(TimeUtils.isDateInCurrentWeek(today.plusMonths(1)))
     }
+
+    @Test
+    fun `formatMinutesToTime converts correctly`() {
+        assertEquals("08:00", TimeUtils.formatMinutesToTime(480L))
+        assertEquals("14:30", TimeUtils.formatMinutesToTime(870L))
+        assertEquals("00:05", TimeUtils.formatMinutesToTime(5L))
+        assertEquals("---", TimeUtils.formatMinutesToTime(null))
+    }
+
+    @Test
+    fun `parseTimeToMinutes parses correctly`() {
+        assertEquals(480L, TimeUtils.parseTimeToMinutes("08:00"))
+        assertEquals(870L, TimeUtils.parseTimeToMinutes("14:30"))
+        assertEquals(5L, TimeUtils.parseTimeToMinutes("00:05"))
+        assertEquals(0L, TimeUtils.parseTimeToMinutes("00:00"))
+        assertEquals(1439L, TimeUtils.parseTimeToMinutes("23:59"))
+
+        // Invalid formats
+        assertNull(TimeUtils.parseTimeToMinutes("invalid"))
+        assertNull(TimeUtils.parseTimeToMinutes("8:0"))
+        assertNull(TimeUtils.parseTimeToMinutes("08:0"))
+        assertEquals(480L, TimeUtils.parseTimeToMinutes("8:00"))
+        
+        // Out of range
+        assertNull(TimeUtils.parseTimeToMinutes("24:00"))
+        assertNull(TimeUtils.parseTimeToMinutes("00:60"))
+        assertNull(TimeUtils.parseTimeToMinutes("-01:00"))
+    }
 }

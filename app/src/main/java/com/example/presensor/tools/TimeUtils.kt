@@ -57,7 +57,10 @@ object TimeUtils {
         val parts = timeStr.split(":")
         if (parts.size != 2) return null
         val hours = parts[0].toLongOrNull() ?: return null
-        val mins = parts[1].toLongOrNull() ?: return null
+        val minutesStr = parts[1]
+        if (minutesStr.length != 2) return null
+        val mins = minutesStr.toLongOrNull() ?: return null
+        if (hours !in 0..23 || mins !in 0..59) return null
         return hours * 60 + mins
     }
 }

@@ -31,6 +31,10 @@ class AndroidSessionInteractionProvider(
     private val sessionDialogFactory: SessionControllerDialogFactory
 ) : BaseAndroidInteractionProvider(activity), SessionInteractionProvider {
 
+    init {
+        println("AndroidSessionInteractionProvider initialized")
+    }
+
     private val attendanceAdapter = AttendanceAdapter()
 
     override fun showSessionImportPreview(
@@ -251,6 +255,18 @@ class AndroidSessionInteractionProvider(
             }
 
             edtSearch.addTextChangedListener { refreshList(it.toString()) }
+        }
+    }
+
+    override fun showManualRegistrationDialog(
+        rfid: String,
+        onStudentSaved: (name: String, email: String, dialog: Any) -> Unit
+    ) {
+        activity.runOnUiThread {
+            activeAlertDialog =
+                sessionDialogFactory.showManualRegistrationDialog(rfid) { name, email, dialog ->
+                    onStudentSaved(name, email, dialog)
+                }
         }
     }
 }

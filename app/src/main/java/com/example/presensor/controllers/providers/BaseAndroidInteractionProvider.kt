@@ -20,8 +20,8 @@ abstract class BaseAndroidInteractionProvider(
     protected val activity: MainActivity
 ) : InteractionProvider {
 
-    protected var activeBottomSheet: BottomSheetDialog? = null
-    protected var activeAlertDialog: AlertDialog? = null
+    internal var activeBottomSheet: BottomSheetDialog? = null
+    internal var activeAlertDialog: AlertDialog? = null
 
     override fun showToast(message: String, isShort: Boolean) {
         activity.runOnUiThread {

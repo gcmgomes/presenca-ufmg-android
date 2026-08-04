@@ -18,6 +18,7 @@ class CourseControllerTest : BaseControllerTest() {
     private val onSessionSelected: (Session) -> Unit = mock()
     private val onToggleLockRequested: (Session) -> Unit = mock()
     private val onEditSessionRequested: (Session) -> Unit = mock()
+    private val onEditCourseRequested: (Course) -> Unit = mock()
     private val onOpenStatistics: () -> Unit = mock()
 
     @Before
@@ -36,6 +37,7 @@ class CourseControllerTest : BaseControllerTest() {
             onSessionSelected = onSessionSelected,
             onToggleLockRequested = onToggleLockRequested,
             onEditSessionRequested = onEditSessionRequested,
+            onEditCourseRequested = onEditCourseRequested,
             onOpenStatistics = onOpenStatistics
         )
     }

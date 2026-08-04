@@ -67,8 +67,8 @@ open class MainActivity : AppCompatActivity() {
 
     protected var currentState = AppState.DASHBOARD
 
-    private lateinit var db: AppDatabase
-    fun getDb(): AppDatabase = db
+    protected lateinit var appDatabase: AppDatabase
+    fun getDb(): AppDatabase = appDatabase
     lateinit var dashboardController: DashboardController
     lateinit var courseController: CourseController
     lateinit var detailedCourseController: DetailedCourseController
@@ -286,10 +286,10 @@ open class MainActivity : AppCompatActivity() {
 
         checkAndRequestBluetoothPermissions()
 
-        db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, DATABASE_NAME)
+        appDatabase = Room.databaseBuilder(applicationContext, AppDatabase::class.java, DATABASE_NAME)
             .addCallback(dbCallback).fallbackToDestructiveMigration().build()
 
-        lifecycleScope.launch { db.preloadStudents() }
+        lifecycleScope.launch { appDatabase.preloadStudents() }
 
         val mainRoot = findViewById<LinearLayout>(R.id.layoutUniversalContainer)
         val statusBarBg = findViewById<View>(R.id.statusBarBackground)
@@ -311,12 +311,12 @@ open class MainActivity : AppCompatActivity() {
         val courseDialogFactory = CourseControllerDialogFactory(
             activity = this,
             lifecycleOwner = this,
-            db = db
+            db = appDatabase
         )
         val sessionDialogFactory = SessionControllerDialogFactory(
             activity = this,
             lifecycleOwner = this,
-            db = db,
+            db = appDatabase,
             refreshUI = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
         )
 
@@ -336,25 +336,25 @@ open class MainActivity : AppCompatActivity() {
         // Initialize Cloud Sync Controller
         cloudSyncController = CloudSyncController(
             scope = lifecycleScope,
-            db = db,
+            db = appDatabase,
             interactionProvider = cloudInteractionProvider
         )
 
         importSessionController = ImportSessionController(
             interactionProvider = sessionInteractionProvider,
-            db = db,
+            db = appDatabase,
             scope = lifecycleScope
         )
         importStudentController = ImportStudentController(
             interactionProvider = studentInteractionProvider,
-            db = db,
+            db = appDatabase,
             scope = lifecycleScope
         )
 
         // Initialize Dashboard Controller
         dashboardController = DashboardController(
             activity = this,
-            db = db,
+            db = appDatabase,
             scope = lifecycleScope,
             uiProvider = dashboardInteractionProvider,
             cloudSyncController = cloudSyncController,
@@ -384,7 +384,7 @@ open class MainActivity : AppCompatActivity() {
         )
 
         readerManagementController = ReaderManagementController(
-            db = db,
+            db = appDatabase,
             secureStoreManager = secureStoreManager,
             interactionProvider = readerInteractionProvider,
             orchestrator = readerOrchestrator!!,
@@ -395,7 +395,7 @@ open class MainActivity : AppCompatActivity() {
         sessionController = SessionController(
             interactionProvider = sessionInteractionProvider,
             scope = lifecycleScope,
-            db = db,
+            db = appDatabase,
             getColorForAccent = { name ->
                 UiUtils.getColorForAccent(
                     name,
@@ -420,7 +420,7 @@ open class MainActivity : AppCompatActivity() {
         importBacklogController = ImportBacklogController(
             interactionProvider = readerInteractionProvider,
             scope = lifecycleScope,
-            db = db,
+            db = appDatabase,
             orchestrator = readerOrchestrator,
             toggleSpinner = { sessionController.showLayoutRefreshSpinner(it) },
             registerAttendance = { student, time, skip ->
@@ -436,7 +436,7 @@ open class MainActivity : AppCompatActivity() {
         // Initialize Tag Controller
         tagController = TagController(
             interactionProvider = tagInteractionProvider,
-            db = db,
+            db = appDatabase,
             scope = lifecycleScope,
             readerOrchestrator = readerOrchestrator,
             sessionController = sessionController,
@@ -456,7 +456,7 @@ open class MainActivity : AppCompatActivity() {
         courseController = CourseController(
             lifecycleOwner = this,
             selectedCourse = null,
-            db = db,
+            db = appDatabase,
             interactionProvider = courseInteractionProvider,
             onSessionSelected = { session ->
                 openSessionView(session)
@@ -481,7 +481,7 @@ open class MainActivity : AppCompatActivity() {
 
         detailedCourseController = DetailedCourseController(
             scope = lifecycleScope,
-            db = db,
+            db = appDatabase,
             courseController = courseController,
             interactionProvider = detailedCourseInteractionProvider,
             getColorFromAttr = { attr ->
@@ -619,12 +619,12 @@ open class MainActivity : AppCompatActivity() {
             onConfirmed = {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
-                        val sessions = db.getSessionsByCourse(course.id)
+                        val sessions = appDatabase.getSessionsByCourse(course.id)
                         sessions.forEach {
-                            db.deleteAttendancesBySessionId(it.id)
-                            db.deleteSession(it)
+                            appDatabase.deleteAttendancesBySessionId(it.id)
+                            appDatabase.deleteSession(it)
                         }
-                        db.deleteCourse(course)
+                        appDatabase.deleteCourse(course)
                     }
                     dashboardController.refreshDashboard()
                     Toast.makeText(
