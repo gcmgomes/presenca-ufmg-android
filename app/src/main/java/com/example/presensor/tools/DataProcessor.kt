@@ -23,7 +23,19 @@ data class ImportResult<T>(
     val errors: List<String>
 )
 
-object DataProcessor {
+interface DataLoader {
+    fun ingestFromGoogleSheets(
+        context: Context,
+        sheetsService: Sheets,
+        spreadsheetId: String,
+        range: String,
+        caller: String = "Unknown"
+    ): InternalDataTable
+
+    fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri, caller: String = "Unknown"): InternalDataTable
+}
+
+object DataProcessor : DataLoader {
 
     fun parseCsvLine(line: String): List<String> {
         val tokens = mutableListOf<String>()
@@ -55,7 +67,7 @@ object DataProcessor {
         return tokens
     }
 
-    fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri, caller: String = "Unknown"): InternalDataTable {
+    override fun ingestFromCsv(contentResolver: ContentResolver, uri: Uri, caller: String): InternalDataTable {
         return contentResolver.openInputStream(uri)?.use { inputStream ->
             ingestFromInputStream(inputStream, caller)
         } ?: InternalDataTable(emptyList(), emptyList())
@@ -87,12 +99,12 @@ object DataProcessor {
         return InternalDataTable(headers, rows)
     }
 
-    fun ingestFromGoogleSheets(
+    override fun ingestFromGoogleSheets(
         context: Context,
         sheetsService: Sheets,
         spreadsheetId: String,
         range: String,
-        caller: String = "Unknown"
+        caller: String
     ): InternalDataTable {
         val response = sheetsService.spreadsheets().values().get(spreadsheetId, range).execute()
         val values = response.getValues() ?: emptyList<List<Any>>()

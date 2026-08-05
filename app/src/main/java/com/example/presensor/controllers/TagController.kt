@@ -3,6 +3,7 @@ package com.example.presensor.controllers
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.util.Log
+import com.example.presensor.MainActivity
 import com.example.presensor.R
 import com.example.presensor.communication.ReaderOrchestrator
 import com.example.presensor.communication.core.AppMode
@@ -26,6 +27,7 @@ class TagController(
     private val isDialogShowingCheck: () -> Boolean,
     private val disableRefreshSpinner: () -> Unit,
     private val resetSyncTimeout: () -> Unit,
+    private val getCurrentState: () -> MainActivity.Companion.AppState
 ) : NfcAdapter.ReaderCallback {
 
     internal var readerCollectionJob: Job? = null
@@ -114,6 +116,13 @@ class TagController(
      */
     fun handleTagDiscovered(rfid: String, time: Long) {
         if (isDialogShowingCheck()) return
+        
+        val state = getCurrentState()
+        if (state != MainActivity.Companion.AppState.COURSE && state != MainActivity.Companion.AppState.SESSION) {
+            Log.d("TagController", "Ignoring tag discovery while in state $state")
+            return
+        }
+
         Log.d("TagController", "Processing $rfid for timestamp $time.")
 
         scope.launch {

@@ -266,7 +266,10 @@ open class MainActivity : AppCompatActivity() {
     /**
      * Isolated initialization logic to allow test subclasses to override and skip heavy init.
      */
-    open fun initializeDependenciesAndControllers() {
+    open fun initializeDependenciesAndControllers(
+        mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main,
+        ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
+    ) {
         secureStoreManager = SecureStoreManager(this)
         val transport = BleTransport(this, lifecycleScope)
         readerOrchestrator = ReaderOrchestrator(
@@ -337,18 +340,24 @@ open class MainActivity : AppCompatActivity() {
         cloudSyncController = CloudSyncController(
             scope = lifecycleScope,
             db = appDatabase,
-            interactionProvider = cloudInteractionProvider
+            interactionProvider = cloudInteractionProvider,
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher
         )
 
         importSessionController = ImportSessionController(
             interactionProvider = sessionInteractionProvider,
             db = appDatabase,
-            scope = lifecycleScope
+            scope = lifecycleScope,
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher
         )
         importStudentController = ImportStudentController(
             interactionProvider = studentInteractionProvider,
             db = appDatabase,
-            scope = lifecycleScope
+            scope = lifecycleScope,
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher
         )
 
         // Initialize Dashboard Controller
@@ -371,7 +380,9 @@ open class MainActivity : AppCompatActivity() {
                 courseController.showEditCourseDialog(course) {
                     dashboardController.refreshDashboard()
                 }
-            }
+            },
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher
         )
         dashboardController.setupQuickActionsAccordion()
         dashboardController.setupOnClickListeners()
@@ -442,14 +453,17 @@ open class MainActivity : AppCompatActivity() {
             sessionController = sessionController,
             isDialogShowingCheck = { tagInteractionProvider.isAnyDialogOpen() },
             disableRefreshSpinner = { sessionController.showLayoutRefreshSpinner(false) },
-            resetSyncTimeout = { sessionController.resetSyncTimeout() }
+            resetSyncTimeout = { sessionController.resetSyncTimeout() },
+            getCurrentState = { currentState }
         )
         DialogFactory.tagController = tagController
         tagController.startReaderCollection()
 
         courseInteractionProvider.initializeCourseCloudActions(
             getSelectedCourse = { if (::courseController.isInitialized) courseController.getSelectedCourse() else null },
-            onImportComplete = { if (::courseController.isInitialized) courseController.refreshCourseUI() }
+            onImportComplete = { if (::courseController.isInitialized) courseController.refreshCourseUI() },
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher
         )
 
         // Initialize Course Controller

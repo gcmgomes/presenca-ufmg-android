@@ -51,6 +51,8 @@ class DashboardController(
     private val onCourseLongClicked: (Course) -> Unit,
     private val onCourseCreateRequested: (() -> Unit) -> Unit,
     private val onCourseEditRequested: (Course) -> Unit,
+    private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 ) {
     // Safely look up views directly from the Activity context to prevent null reference crashes
     private val container: LinearLayout = activity.findViewById(R.id.currentCoursesContainer)
@@ -63,7 +65,9 @@ class DashboardController(
         cloudSyncController = cloudSyncController,
         importStudentController = importStudentController,
         runWithCloudAuthentication = { action: () -> Unit -> activity.runWithCloudAuthentication(action) },
-        refreshDashboard = { refreshDashboard() }
+        refreshDashboard = { refreshDashboard() },
+        mainDispatcher = mainDispatcher,
+        ioDispatcher = ioDispatcher
     )
 
     init {

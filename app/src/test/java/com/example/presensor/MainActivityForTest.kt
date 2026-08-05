@@ -21,7 +21,10 @@ class MainActivityForTest : MainActivity() {
         super.onCreate(savedInstanceState)
     }
 
-    override fun initializeDependenciesAndControllers() {
+    override fun initializeDependenciesAndControllers(
+        mainDispatcher: kotlinx.coroutines.CoroutineDispatcher,
+        ioDispatcher: kotlinx.coroutines.CoroutineDispatcher
+    ) {
         // Skip heavy init
         setTheme(androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
         

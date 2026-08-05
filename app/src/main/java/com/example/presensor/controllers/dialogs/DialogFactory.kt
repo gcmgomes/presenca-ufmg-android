@@ -186,15 +186,11 @@ object DialogFactory {
             .setTitle(context.getString(R.string.dialog_mapping_title))
             .setView(view)
             .setCancelable(true)
-            .showWithSmartNfcReading()
-            
-        dialog.setOnDismissListener {
-            isDialogOpen = false
-            tagController?.resumeNfcScanning()
-            if (!confirmed) {
-                onDismissed?.invoke()
-            }
-        }
+            .showWithSmartNfcReading(onDismiss = {
+                if (!confirmed) {
+                    onDismissed?.invoke()
+                }
+            })
             
         view.findViewById<Button>(R.id.btnConfirmMapping).setOnClickListener {
             confirmed = true

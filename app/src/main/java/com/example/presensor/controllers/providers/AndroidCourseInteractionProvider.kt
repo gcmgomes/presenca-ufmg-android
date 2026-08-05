@@ -48,7 +48,10 @@ class AndroidCourseInteractionProvider(
 
     fun initializeCourseCloudActions(
         getSelectedCourse: () -> Course?,
-        onImportComplete: () -> Unit
+        onImportComplete: () -> Unit,
+        mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main,
+        ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+        dataLoader: com.example.presensor.tools.DataLoader = com.example.presensor.tools.DataProcessor
     ) {
         courseCloudActions = CourseCloudActions(
             uiProvider = this,
@@ -59,7 +62,10 @@ class AndroidCourseInteractionProvider(
             getSelectedCourse = getSelectedCourse,
             onImportComplete = onImportComplete,
             runWithCloudAuthentication = { action -> activity.runWithCloudAuthentication(action) },
-            setCurrentOverlayJob = { job -> activity.setCurrentOverlayJob(job) }
+            setCurrentOverlayJob = { job -> activity.setCurrentOverlayJob(job) },
+            mainDispatcher = mainDispatcher,
+            ioDispatcher = ioDispatcher,
+            dataLoader = dataLoader
         )
     }
 

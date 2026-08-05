@@ -15,7 +15,9 @@ class DashboardCloudActions(
     private val cloudSyncController: CloudSyncController,
     private val importStudentController: ImportStudentController,
     private val runWithCloudAuthentication: (() -> Unit) -> Unit,
-    private val refreshDashboard: () -> Unit
+    private val refreshDashboard: () -> Unit,
+    private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 ) {
 
     fun triggerStudentImportCloudPicker() {

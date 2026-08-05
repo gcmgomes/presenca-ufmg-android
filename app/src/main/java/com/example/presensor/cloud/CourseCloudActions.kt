@@ -11,6 +11,7 @@ import com.example.presensor.data.AppDatabase
 import com.example.presensor.data.InternalDataTable
 import com.example.presensor.data.entities.Course
 import com.example.presensor.data.entities.Session
+import com.example.presensor.tools.DataLoader
 import com.example.presensor.tools.DataProcessor
 import com.example.presensor.tools.TimeUtils
 import com.google.api.services.sheets.v4.model.ValueRange
@@ -31,7 +32,10 @@ class CourseCloudActions(
     private val getSelectedCourse: () -> Course?,
     private val onImportComplete: () -> Unit,
     private val runWithCloudAuthentication: (() -> Unit) -> Unit,
-    private val setCurrentOverlayJob: (Job?) -> Unit
+    private val setCurrentOverlayJob: (Job?) -> Unit,
+    private val mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val dataLoader: DataLoader = DataProcessor
 ) {
 
     /**
@@ -149,11 +153,11 @@ class CourseCloudActions(
     /**
      * Downloads the chosen spreadsheet matrix, joins missing students/sessions, and updates cells.
      */
-    private fun performCloudSpreadsheetMatrixSync(spreadsheetId: String, tabName: String) {
+    internal fun performCloudSpreadsheetMatrixSync(spreadsheetId: String, tabName: String) {
         val course = getSelectedCourse() ?: return
         uiProvider.toggleLoading(true)
 
-        val job = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        val job = lifecycleOwner.lifecycleScope.launch(ioDispatcher) {
             try {
                 val sheetsService = cloudSyncController.getSheetsService()
                     ?: throw IllegalStateException("Sheets service was not initialized properly")
@@ -167,7 +171,7 @@ class CourseCloudActions(
                     .groupBy { it.studentEmail to it.sessionId }
 
                 // 2. Fetch Existing Cloud Layout Bounds
-                val table = DataProcessor.ingestFromGoogleSheets(
+                val table = dataLoader.ingestFromGoogleSheets(
                     uiProvider.getContext(),
                     sheetsService,
                     spreadsheetId,
@@ -244,13 +248,13 @@ class CourseCloudActions(
                     .setValueInputOption("USER_ENTERED")
                     .execute()
 
-                withContext(Dispatchers.Main) {
+                withContext(mainDispatcher) {
                     uiProvider.toggleLoading(false)
                     uiProvider.showToast(R.string.toast_cloud_attendance_sync_success)
                 }
             } catch (e: Exception) {
                 Log.e("CourseCloudActions", "Cloud spreadsheet matching sync execution crash", e)
-                withContext(Dispatchers.Main) {
+                withContext(mainDispatcher) {
                     uiProvider.toggleLoading(false)
                     uiProvider.showToast(R.string.toast_cloud_sync_failed)
                 }

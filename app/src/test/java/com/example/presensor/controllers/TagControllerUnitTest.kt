@@ -1,6 +1,8 @@
 package com.example.presensor.controllers
 
+import com.example.presensor.MainActivity
 import com.example.presensor.communication.ReaderOrchestrator
+import com.example.presensor.communication.core.AppMode
 import com.example.presensor.controllers.providers.TagInteractionProvider
 import com.example.presensor.data.entities.Student
 import android.nfc.Tag
@@ -25,12 +27,14 @@ class TagControllerUnitTest : BaseControllerTest() {
     private val resetSyncTimeout: () -> Unit = mock()
     private lateinit var testScope: TestScope
     private val rfidSwipeFlow = MutableSharedFlow<Pair<String, Long>>(extraBufferCapacity = 1)
+    private var mockState = MainActivity.Companion.AppState.COURSE
 
     @Before
     override fun setup() {
         super.setup()
         testScope = TestScope(mainDispatcherRule.testDispatcher)
         whenever(readerOrchestrator.rfidSwipeFlow).thenReturn(rfidSwipeFlow)
+        mockState = MainActivity.Companion.AppState.COURSE
 
         tagController = TagController(
             interactionProvider = interactionProvider,
@@ -41,13 +45,24 @@ class TagControllerUnitTest : BaseControllerTest() {
             mainDispatcher = mainDispatcherRule.testDispatcher,
             isDialogShowingCheck = { false },
             disableRefreshSpinner = disableRefreshSpinner,
-            resetSyncTimeout = resetSyncTimeout
+            resetSyncTimeout = resetSyncTimeout,
+            getCurrentState = { mockState }
         )
+    }
+
+    @Test
+    fun handleTagDiscovered_DASHBOARD_ignoresTag() = runTest {
+        mockState = MainActivity.Companion.AppState.DASHBOARD
+        tagController.handleTagDiscovered("RFID", 1000L)
+        advanceUntilIdle()
+        verifyNoInteractions(sessionController)
+        verifyNoInteractions(interactionProvider)
     }
 
     @Test
     fun handleTagDiscovered_studentExists_activeSession_registersAttendance() =
         runTest(mainDispatcherRule.testDispatcher) {
+            mockState = MainActivity.Companion.AppState.SESSION
             val rfid = "AA:BB:CC:DD"
             val time = 1000L
             val student = Student(email = "test@example.com", name = "Test Student", rfid = rfid)
@@ -114,7 +129,8 @@ class TagControllerUnitTest : BaseControllerTest() {
             mainDispatcher = mainDispatcherRule.testDispatcher,
             isDialogShowingCheck = { true },
             disableRefreshSpinner = {},
-            resetSyncTimeout = {}
+            resetSyncTimeout = {},
+            getCurrentState = { MainActivity.Companion.AppState.COURSE }
         )
 
         tagControllerWithOpenDialog.handleTagDiscovered(rfid, time)
@@ -259,6 +275,12 @@ class TagControllerUnitTest : BaseControllerTest() {
     fun resumeNfcScanning_callsToggleNfcScanning() {
         tagController.resumeNfcScanning()
         verify(interactionProvider).toggleNfcScanning(eq(true), eq(tagController))
+    }
+
+    @Test
+    fun resumeReader_callsOrchestrator() {
+        tagController.resumeReader()
+        verify(readerOrchestrator).setAppMode(eq(AppMode.ACTIVE), any())
     }
 
     @Test
