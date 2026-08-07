@@ -34,11 +34,17 @@ class ImportStudentController(
                     val result =
                         interactionProvider.parseStudentsFromTable(table, mapping)
                     if (result.items.isNotEmpty()) {
-                        interactionProvider.showStudentImportPreview(
-                            result.items,
-                            onConfirm = { selected -> executeImport(selected) },
-                            onDismiss = { interactionProvider.toggleLoading(false) }
-                        )
+                        scope.launch(ioDispatcher) {
+                            val allExisting = db.getAllStudents().map { it.email }.toSet()
+                            withContext(mainDispatcher) {
+                                interactionProvider.showStudentImportPreview(
+                                    result.items,
+                                    existingEmails = allExisting,
+                                    onConfirm = { selected -> executeImport(selected) },
+                                    onDismiss = { interactionProvider.toggleLoading(false) }
+                                )
+                            }
+                        }
                         if (result.errors.isNotEmpty()) {
                             interactionProvider.showToast(
                                 interactionProvider.getString(

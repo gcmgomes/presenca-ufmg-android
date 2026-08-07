@@ -18,10 +18,19 @@ import com.example.presensor.R
 class ImportStudentAdapter : ListAdapter<Student, ImportStudentAdapter.ViewHolder>(StudentDiffCallback()) {
 
     private val selectedEmails = mutableSetOf<String>()
+    private var existingEmails = emptySet<String>()
+
+    fun setExistingEmails(emails: Set<String>) {
+        this.existingEmails = emails
+    }
 
     override fun submitList(list: List<Student>?) {
         super.submitList(list)
-        list?.forEach { selectedEmails.add(it.email) }
+        list?.forEach { 
+            if (it.email !in existingEmails) {
+                selectedEmails.add(it.email)
+            }
+        }
     }
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -53,9 +62,14 @@ class ImportStudentAdapter : ListAdapter<Student, ImportStudentAdapter.ViewHolde
         holder.dateText.visibility = View.GONE
 
         val isSelected = selectedEmails.contains(student.email)
-        holder.selectionAccent.setBackgroundColor(
-            if (isSelected) "#4CAF50".toColorInt() else Color.TRANSPARENT
-        )
+        val isExisting = existingEmails.contains(student.email)
+
+        val accentColor = when {
+            isExisting -> holder.itemView.context.getColor(R.color.chalk_orange)
+            isSelected -> "#4CAF50".toColorInt()
+            else -> Color.TRANSPARENT
+        }
+        holder.selectionAccent.setBackgroundColor(accentColor)
         
         val alpha = if (isSelected) 1.0f else 0.5f
         holder.cardRoot.alpha = alpha

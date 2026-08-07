@@ -19,6 +19,7 @@ class AndroidStudentInteractionProvider(
 
     override fun showStudentImportPreview(
         students: List<Student>,
+        existingEmails: Set<String>,
         onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     ) {
@@ -35,6 +36,7 @@ class AndroidStudentInteractionProvider(
             btnConfirm.text = activity.getString(R.string.dialog_import_students_button_text)
 
             val adapter = ImportStudentAdapter()
+            adapter.setExistingEmails(existingEmails)
             rvPreview.layoutManager = LinearLayoutManager(activity)
             rvPreview.adapter = adapter
             adapter.submitList(students)

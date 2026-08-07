@@ -90,6 +90,7 @@ interface TagInteractionProvider : InteractionProvider {
 interface StudentInteractionProvider : InteractionProvider {
     fun showStudentImportPreview(
         students: List<Student>,
+        existingEmails: Set<String>,
         onConfirm: (List<Student>) -> Unit,
         onDismiss: () -> Unit
     )

@@ -34,7 +34,7 @@ class AndroidStudentInteractionProviderTest {
     fun `showStudentImportPreview inflates and shows bottom sheet`() {
         var confirmed = false
         val students = listOf(Student(email = "e1", name = "N1"))
-        provider.showStudentImportPreview(students, { confirmed = true }, {})
+        provider.showStudentImportPreview(students, emptySet(), { confirmed = true }, {})
         ShadowLooper.idleMainLooper()
         
         val latestDialog = ShadowDialog.getLatestDialog() as? BottomSheetDialog

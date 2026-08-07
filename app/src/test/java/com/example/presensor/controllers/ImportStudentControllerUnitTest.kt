@@ -236,6 +236,7 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
 
         verify(interactionProvider).showStudentImportPreview(
             eq(students),
+            any(),
             onPreviewConfirmCaptor.capture(),
             any()
         )
@@ -282,11 +283,43 @@ class ImportStudentControllerUnitTest : BaseControllerTest() {
         verify(interactionProvider).showStudentImportPreview(
             any(),
             any(),
+            any(),
             onPreviewDismissCaptor.capture()
         )
         onPreviewDismissCaptor.firstValue.invoke()
         advanceUntilIdle()
 
         verify(interactionProvider, atLeastOnce()).toggleLoading(false)
+    }
+
+    @Test
+    fun handleMappingConfirmed_identifiesExistingStudents() = runTest {
+        val existing = Student(name = "Existing", email = "existing@test.com")
+        db.insertStudents(listOf(existing))
+
+        val table = InternalDataTable(headers = listOf("H1"), rows = listOf(listOf("R1")))
+        val students = listOf(
+            Student(name = "New", email = "new@test.com"),
+            existing
+        )
+        val result = ImportResult(students, emptyList())
+
+        whenever(interactionProvider.ingestFromCsv(any(), any())).thenReturn(table)
+        whenever(interactionProvider.parseStudentsFromTable(any(), any())).thenReturn(result)
+
+        val onConfirmedCaptor = argumentCaptor<(Map<String, String>) -> Unit>()
+        controller.importFromLocal(mock())
+        advanceUntilIdle()
+
+        verify(interactionProvider).showMappingDialog(any(), any(), any(), any(), onConfirmedCaptor.capture())
+        onConfirmedCaptor.firstValue.invoke(mapOf("name" to "H1"))
+        advanceUntilIdle()
+
+        verify(interactionProvider).showStudentImportPreview(
+            eq(students),
+            eq(setOf("existing@test.com")),
+            any(),
+            any()
+        )
     }
 }
