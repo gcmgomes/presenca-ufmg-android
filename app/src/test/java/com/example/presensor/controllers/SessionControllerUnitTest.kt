@@ -334,4 +334,156 @@ class SessionControllerUnitTest : BaseControllerTest() {
         sessionController.showLayoutRefreshSpinner(true)
         verify(interactionProvider).showLayoutRefreshSpinner(true)
     }
+
+    @Test
+    fun registerAttendance_nullStudent_showsTagNotRegisteredToast() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        sessionController.openSessionView(insertedSession)
+
+        sessionController.registerAttendance(null, 2000L)
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        verify(interactionProvider).showToast(eq(R.string.toast_tag_not_registered), any())
+    }
+
+    @Test
+    fun showManualAttendanceDialog_onStudentSelected_recordsAttendanceAndDismisses() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        val student = Student(email = "manual@test.com", name = "Manual Student", rfid = "M1")
+        db.insertStudents(listOf(student))
+
+        sessionController.openSessionView(insertedSession)
+        advanceUntilIdle()
+
+        val onStudentSelectedCaptor = argumentCaptor<(Student) -> Unit>()
+        sessionController.showManualAttendanceDialog()
+        advanceUntilIdle()
+        verify(interactionProvider).showStudentSearchDialog(any(), onStudentSelectedCaptor.capture(), any())
+
+        onStudentSelectedCaptor.firstValue.invoke(student)
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        val records = db.getAttendanceRecordsForSession(insertedSession.id)
+        assert(records.any { it.studentEmail == student.email })
+        verify(interactionProvider).dismissActiveDialog()
+    }
+
+    @Test
+    fun showManualAttendanceDialog_onManualRegistrationRequested_worksCorrectly() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+
+        sessionController.openSessionView(insertedSession)
+        advanceUntilIdle()
+
+        val onManualRequestedCaptor = argumentCaptor<() -> Unit>()
+        sessionController.showManualAttendanceDialog()
+        advanceUntilIdle()
+        verify(interactionProvider).showStudentSearchDialog(any(), any(), onManualRequestedCaptor.capture())
+
+        onManualRequestedCaptor.firstValue.invoke()
+        verify(interactionProvider).dismissActiveDialog()
+
+        val onRegistrationConfirmCaptor = argumentCaptor<(String, String, Any) -> Unit>()
+        verify(interactionProvider).showManualRegistrationDialog(eq(""), onRegistrationConfirmCaptor.capture())
+
+        onRegistrationConfirmCaptor.firstValue.invoke("New Student", "new@test.com", "any")
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        val allStudents = db.getAllStudents()
+        assert(allStudents.any { it.email == "new@test.com" })
+        val records = db.getAttendanceRecordsForSession(insertedSession.id)
+        assert(records.any { it.studentEmail == "new@test.com" })
+        verify(interactionProvider, times(2)).dismissActiveDialog()
+    }
+
+    @Test
+    fun openSessionView_refreshListener_triggersOnPulldownAndResetSync() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Test", date = 1000L)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+
+        val onRefreshCaptor = argumentCaptor<() -> Unit>()
+        sessionController.openSessionView(insertedSession)
+        verify(interactionProvider).setOnRefreshListener(onRefreshCaptor.capture())
+
+        onRefreshCaptor.firstValue.invoke()
+
+        verify(interactionProvider).showLayoutRefreshSpinner(true)
+        verify(onPulldown).invoke(eq(insertedSession))
+
+        // Verify resetSyncTimeout effects (timer starts)
+        advanceTimeBy(5001)
+        verify(interactionProvider).showToast(argThat<String> { contains("Sync timed out") }, eq(true))
+    }
+
+    @Test
+    fun showEditSessionDialog_onSessionUpdated_activeSession_updatedInPlace() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "Original", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        sessionController.openSessionView(insertedSession)
+
+        val onSessionUpdatedCaptor = argumentCaptor<(String, Long, Long?, Long?) -> Unit>()
+        sessionController.showEditSessionDialog(insertedSession)
+        verify(interactionProvider).showEditSessionDialog(eq(insertedSession), onSessionUpdatedCaptor.capture())
+
+        onSessionUpdatedCaptor.firstValue.invoke("Updated Name", 2000L, 100L, 200L)
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        assert(sessionController.activeSession?.name == "Updated Name")
+        assert(sessionController.activeSession?.date == 2000L)
+        verify(interactionProvider).updateSessionCard(eq("Updated Name"), eq(2000L), any())
+    }
+
+    @Test
+    fun executeLockStateUpdate_idMatches_updatesLocalCopy() = runTest(mainDispatcherRule.testDispatcher) {
+        val courseId = db.insertCourse(Course(name = "C1"))
+        val session = Session(courseId = courseId, name = "LockMe", date = 1000L, isLocked = false)
+        db.insertSessions(listOf(session))
+        val insertedSession = db.getSessionsByCourse(courseId).first()
+        sessionController.openSessionView(insertedSession)
+
+        sessionController.handleLockToggleSequence(insertedSession)
+        advanceUntilIdle()
+        ShadowLooper.idleMainLooper()
+
+        assert(sessionController.activeSession?.isLocked == true)
+        verify(interactionProvider).updateLockState(true)
+    }
+
+    @Test
+    fun resetSyncTimeout_triggersOnSyncTimeout() = runTest(mainDispatcherRule.testDispatcher) {
+        val onSyncTimeout: () -> Unit = mock()
+        sessionController = SessionController(
+            interactionProvider = interactionProvider,
+            scope = CoroutineScope(mainDispatcherRule.testDispatcher),
+            db = db,
+            getColorForAccent = { 0 },
+            onSessionStateMutated = onSessionStateMutated,
+            mainDispatcher = mainDispatcherRule.testDispatcher,
+            ioDispatcher = mainDispatcherRule.testDispatcher,
+            onPulldown = onPulldown,
+            onSyncTimeout = onSyncTimeout
+        )
+
+        sessionController.resetSyncTimeout()
+        advanceTimeBy(5001)
+
+        verify(onSyncTimeout).invoke()
+    }
 }

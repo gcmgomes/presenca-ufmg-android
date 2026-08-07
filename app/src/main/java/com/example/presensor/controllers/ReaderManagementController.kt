@@ -19,7 +19,9 @@ class ReaderManagementController(
     private val secureStoreManager: SecureStoreManager,
     private val interactionProvider: ReaderInteractionProvider,
     private val orchestrator: ReaderOrchestrator,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private var metricsJob: Job? = null
     private var inventoryJob: Job? = null
@@ -40,7 +42,7 @@ class ReaderManagementController(
 
     fun setupReaderManagementView(address: String? = null) {
         currentDashboardAddress = address ?: orchestrator.connectedDeviceAddress
-        
+
         interactionProvider.setupReaderManagementUI(
             onEditDeviceRequested = { handleEditDevice() },
             onSyncTimeRequested = { handleSyncTime() },
@@ -54,7 +56,7 @@ class ReaderManagementController(
         updateHeader()
 
         dashboardUIJob?.cancel()
-        dashboardUIJob = scope.launch(Dispatchers.Main) {
+        dashboardUIJob = scope.launch(mainDispatcher) {
             kotlinx.coroutines.flow.combine(
                 orchestrator.connectionState,
                 orchestrator.isAuthenticated
@@ -81,9 +83,10 @@ class ReaderManagementController(
         }
 
         metricsJob?.cancel()
-        metricsJob = scope.launch(Dispatchers.Main) {
+        metricsJob = scope.launch(mainDispatcher) {
             orchestrator.metricsFlow.collect { (epoch, battery) ->
-                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
+                val timeStr =
+                    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
                 val batteryStr = "$battery%"
                 interactionProvider.updateReaderManagementHeader(
                     deviceName = secureStoreManager.deviceName,
@@ -96,7 +99,7 @@ class ReaderManagementController(
         }
 
         inventoryJob?.cancel()
-        inventoryJob = scope.launch(Dispatchers.Main) {
+        inventoryJob = scope.launch(mainDispatcher) {
             orchestrator.inventoryFlow.collect { (rawTagId, timestamp) ->
                 if (rawTagId == "SYNC_DONE") {
                     if (isSyncInProgress) {
@@ -111,7 +114,7 @@ class ReaderManagementController(
                     refreshManagementData("Post-Deletion Refresh")
                 } else {
                     val tagId = rawTagId.chunked(2).joinToString(":")
-                    val student = withContext(Dispatchers.IO) {
+                    val student = withContext(ioDispatcher) {
                         db.getStudentByRfid(tagId)
                     }
                     val item = BacklogItem(tagId, student, timestamp)
@@ -187,7 +190,7 @@ class ReaderManagementController(
             delay(1000)
             orchestrator.requestInventory()
             delay(5000)
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 // Check if still refreshing
                 // We don't have a direct "isRefreshing" getter in the provider anymore, 
                 // but we can just force it false and toast.
@@ -211,7 +214,7 @@ class ReaderManagementController(
     private fun updateHeader() {
         val mac = orchestrator.connectedDeviceAddress ?: "XX:XX:XX:XX:XX:XX"
         val activeDevice = orchestrator.discoveredDevices.value.find { it.address == mac }
-        
+
         val batteryStr = activeDevice?.batteryLevel?.let { "$it%" } ?: "--%"
         val timeStr = activeDevice?.deviceEpoch?.let { epoch ->
             SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(epoch * 1000L))
@@ -238,10 +241,14 @@ class ReaderManagementController(
     }
 
     internal fun handleBacklogItemLongClick(item: BacklogItem) {
-        val studentName = item.student?.name ?: interactionProvider.getString(R.string.label_unknown_student)
+        val studentName =
+            item.student?.name ?: interactionProvider.getString(R.string.label_unknown_student)
         interactionProvider.showDestructiveDeleteDialog(
             title = interactionProvider.getString(R.string.delete_action_text),
-            message = interactionProvider.getString(R.string.dialog_delete_session_message, studentName),
+            message = interactionProvider.getString(
+                R.string.dialog_delete_session_message,
+                studentName
+            ),
             onConfirmed = {
                 orchestrator.deleteBacklogItem(item.tagId, item.timestamp)
             }

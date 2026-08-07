@@ -23,7 +23,8 @@ class CourseController(
     private val onToggleLockRequested: (Session) -> Unit,
     private val onEditSessionRequested: (Session) -> Unit,
     private val onEditCourseRequested: (Course) -> Unit,
-    private val onOpenStatistics: () -> Unit
+    private val onOpenStatistics: () -> Unit,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
 ) {
 
     init {
@@ -194,7 +195,7 @@ class CourseController(
 
     private fun performExport(uri: Uri) {
         val course = selectedCourse ?: return
-        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleOwner.lifecycleScope.launch(ioDispatcher) {
             val sessions = db.getSessionsByCourse(course.id).sortedBy { it.date }
             val allAttendance = db.getAllAttendanceForCourse(course.id)
             val allStudents = db.getAllStudents()

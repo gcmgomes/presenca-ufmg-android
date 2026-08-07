@@ -99,6 +99,9 @@ open class MainActivity : AppCompatActivity() {
     lateinit var secureStoreManager: SecureStoreManager
     var readerOrchestrator: ReaderOrchestrator? = null
 
+    internal lateinit var mainDispatcher: kotlinx.coroutines.CoroutineDispatcher
+    internal lateinit var ioDispatcher: kotlinx.coroutines.CoroutineDispatcher
+
 
     fun toggleLoadingOverlay(show: Boolean) {
         if (!::loadingOverlay.isInitialized) return
@@ -270,6 +273,9 @@ open class MainActivity : AppCompatActivity() {
         mainDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Main,
         ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
     ) {
+        this.mainDispatcher = mainDispatcher
+        this.ioDispatcher = ioDispatcher
+        
         secureStoreManager = SecureStoreManager(this)
         val transport = BleTransport(this, lifecycleScope)
         readerOrchestrator = ReaderOrchestrator(
@@ -635,8 +641,8 @@ open class MainActivity : AppCompatActivity() {
             title = getString(R.string.dialog_delete_course_title),
             message = getString(R.string.dialog_delete_course_message, course.name),
             onConfirmed = {
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
+                lifecycleScope.launch(mainDispatcher) {
+                    withContext(ioDispatcher) {
                         val sessions = appDatabase.getSessionsByCourse(course.id)
                         sessions.forEach {
                             appDatabase.deleteAttendancesBySessionId(it.id)

@@ -1,13 +1,32 @@
 package com.example.presensor.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.annotation.VisibleForTesting
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import androidx.core.content.edit
 import org.json.JSONObject
 import android.util.Log
 
-class SecureStoreManager(context: Context) {
+class SecureStoreManager @VisibleForTesting constructor(
+    private val sharedPreferences: SharedPreferences
+) {
+
+    constructor(context: Context) : this(
+        try {
+            EncryptedSharedPreferences.create(
+                PREF_FILE_NAME,
+                MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
+                context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            Log.e("SecureStoreManager", "Failed to create EncryptedSharedPreferences, falling back to regular", e)
+            context.getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE)
+        }
+    )
 
     companion object {
         private const val PREF_FILE_NAME = "presensor_secure_prefs"
@@ -17,16 +36,6 @@ class SecureStoreManager(context: Context) {
 
         private const val DEFAULT_DEVICE_NAME = "Presensor_Reader"
     }
-
-    private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-
-    private val sharedPreferences = EncryptedSharedPreferences.create(
-        PREF_FILE_NAME,
-        masterKeyAlias,
-        context,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
 
     /**
      * Persists the user's preference for using a BLE reader.

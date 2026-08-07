@@ -71,7 +71,7 @@ android {
 
 tasks.withType<Test> {
     maxHeapSize = "4096m" // Bumped memory to eliminate GC thrashing
-    maxParallelForks = 1 // Restrict to 1 for stability during optimization
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
     configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true

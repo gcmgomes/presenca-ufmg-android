@@ -16,7 +16,8 @@ class ReaderDiscoveryController(
     private val secureStoreManager: SecureStoreManager,
     private val interactionProvider: ReaderInteractionProvider,
     private val orchestrator: ReaderOrchestrator,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main
 ) {
     private var currentDevices: List<com.example.presensor.communication.core.ReaderDevice> =
         emptyList()
@@ -24,6 +25,7 @@ class ReaderDiscoveryController(
     private var statusJob: Job? = null
     private var refreshJob: Job? = null
     private var eventJob: Job? = null
+    private var discoveryTimeoutJob: Job? = null
 
     private var pendingPassword: String? = null
     private var pendingDeviceName: String? = null
@@ -67,14 +69,14 @@ class ReaderDiscoveryController(
         updateDeviceList()
 
         statusJob?.cancel()
-        statusJob = scope.launch(Dispatchers.Main) {
+        statusJob = scope.launch(mainDispatcher) {
             orchestrator.discoveredDevices.collect { devices ->
                 deviceUpdate(devices)
             }
         }
 
         eventJob?.cancel()
-        eventJob = scope.launch(Dispatchers.Main) {
+        eventJob = scope.launch(mainDispatcher) {
             launch {
                 orchestrator.isReaderEnabled.collect { enabled ->
                     interactionProvider.setReaderEnabledState(enabled)
@@ -89,13 +91,14 @@ class ReaderDiscoveryController(
         }
 
         if (orchestrator.isReaderEnabled.value) {
-            startDiscovery()
             startRefreshLoop()
         }
     }
 
     fun teardownDiscovery(fullDisconnect: Boolean = false) {
         orchestrator.isBroadDiscoveryMode = false
+        discoveryTimeoutJob?.cancel()
+        discoveryTimeoutJob = null
         if (fullDisconnect) {
             orchestrator.disconnect()
         } else {
@@ -113,7 +116,8 @@ class ReaderDiscoveryController(
     private fun startDiscovery() {
         orchestrator.isBroadDiscoveryMode = true
         orchestrator.startScan()
-        scope.launch {
+        discoveryTimeoutJob?.cancel()
+        discoveryTimeoutJob = scope.launch {
             delay(5000)
             orchestrator.stopScanning()
         }
@@ -122,7 +126,7 @@ class ReaderDiscoveryController(
 
     private fun startRefreshLoop() {
         refreshJob?.cancel()
-        refreshJob = scope.launch(Dispatchers.Main) {
+        refreshJob = scope.launch(mainDispatcher) {
             while (isActive) {
                 if (orchestrator.isReaderEnabled.value) {
                     startDiscovery()
@@ -145,7 +149,12 @@ class ReaderDiscoveryController(
 
     private fun updateDeviceList() {
         if (orchestrator.isReaderEnabled.value != true) {
-            interactionProvider.updateDeviceList(emptyList(), emptyList(), emptyList(), { _, _ -> }, { _, _ -> })
+            interactionProvider.updateDeviceList(
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                { _, _ -> },
+                { _, _ -> })
             return
         }
 

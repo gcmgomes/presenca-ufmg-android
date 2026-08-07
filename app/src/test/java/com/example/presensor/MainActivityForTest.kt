@@ -25,8 +25,11 @@ class MainActivityForTest : MainActivity() {
         mainDispatcher: kotlinx.coroutines.CoroutineDispatcher,
         ioDispatcher: kotlinx.coroutines.CoroutineDispatcher
     ) {
+        this.mainDispatcher = mainDispatcher
+        this.ioDispatcher = ioDispatcher
+
         // Skip heavy init
-        setTheme(androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
+        setTheme(R.style.Theme_Presensor)
         
         // Initialize minimal required lateinits
         secureStoreManager = mock()

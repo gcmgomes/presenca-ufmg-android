@@ -35,7 +35,6 @@ import com.example.presensor.data.entities.Course
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -228,7 +227,7 @@ class DashboardController(
             uri?.let { handleImportUriSelected(it) }
         }
 
-    private fun triggerStudentImportPicker() {
+    internal fun triggerStudentImportPicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "text/comma-separated-values"
@@ -240,7 +239,7 @@ class DashboardController(
         importStudentLauncher.launch(intent)
     }
 
-    private fun triggerDatabaseExportPicker() {
+    internal fun triggerDatabaseExportPicker() {
         val timestamp = java.time.LocalDateTime.now()
             .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val fileName = "Presensor_Backup_$timestamp.csv"
@@ -250,10 +249,10 @@ class DashboardController(
     }
 
 
-    private fun handleDumpUriSelected(uri: Uri) {
+    internal fun handleDumpUriSelected(uri: Uri) {
         activity.lifecycleScope.launch {
             // Open the stream context via ContentResolver safely on a background worker thread
-            val success = withContext(Dispatchers.IO) {
+            val success = withContext(ioDispatcher) {
                 val outputStream = activity.contentResolver.openOutputStream(uri)
                 if (outputStream != null) {
                     db.performFullDatabaseDump(outputStream)
@@ -279,14 +278,14 @@ class DashboardController(
         }
     }
 
-    private fun triggerDatabaseImportPicker() {
+    internal fun triggerDatabaseImportPicker() {
         // Limits the picker visibility to CSV files cleanly
         databaseImportLauncher.launch("text/comma-separated-values")
     }
 
-    private fun handleImportUriSelected(uri: Uri) {
+    internal fun handleImportUriSelected(uri: Uri) {
         activity.lifecycleScope.launch {
-            val success = withContext(Dispatchers.IO) {
+            val success = withContext(ioDispatcher) {
                 val inputStream = activity.contentResolver.openInputStream(uri)
                 if (inputStream != null) {
                     db.importFullDatabaseDump(inputStream)

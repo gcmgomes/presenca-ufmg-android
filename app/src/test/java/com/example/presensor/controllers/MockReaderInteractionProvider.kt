@@ -26,9 +26,42 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     var onConfigSaved: ((String, String) -> Unit)? = null
     var lastEditReaderName: String? = null
 
+    var onReaderEnabledChanged: ((Boolean) -> Unit)? = null
+    var onRefreshRequestedReader: (() -> Unit)? = null
+
+    var lastConnectedList: List<DeviceItem>? = null
+    var lastKnownList: List<DeviceItem>? = null
+    var lastUnknownList: List<DeviceItem>? = null
+    var onDeviceSelected: ((String, String) -> Unit)? = null
+    var onDeviceLongClicked: ((String, String) -> Unit)? = null
+
+    var lastReaderEnabledState: Boolean? = null
+    var lastDiscoveryRefreshing: Boolean? = null
+    var lastOpenDeviceManagerName: String? = null
+    var lastOpenDeviceManagerAddress: String? = null
+
     var onDestructiveConfirmed: (() -> Unit)? = null
     var lastDestructiveTitle: String? = null
     var lastDestructiveMessage: String? = null
+
+    var onEditDeviceRequested: (() -> Unit)? = null
+    var onSyncTimeRequested: (() -> Unit)? = null
+    var onForgetDeviceRequested: (() -> Unit)? = null
+    var onRefreshRequested: (() -> Unit)? = null
+    var onDisconnectRequested: (() -> Unit)? = null
+    var onConnectRequested: (() -> Unit)? = null
+    var onBacklogItemLongClicked: ((BacklogItem) -> Unit)? = null
+
+    var lastHeaderDeviceName: String? = null
+    var lastHeaderDeviceMac: String? = null
+    var lastHeaderBatteryLevel: String? = null
+    var lastHeaderDeviceTime: String? = null
+    var lastHeaderBacklogCount: String? = null
+
+    var lastBacklogItems: List<BacklogItem>? = null
+    var lastIsReady: Boolean? = null
+    var lastIsConnecting: Boolean? = null
+    var lastIsManagementRefreshing: Boolean? = null
 
     override fun showToast(message: String, isShort: Boolean) {
         lastToastMessage = message
@@ -41,8 +74,18 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     }
 
     override fun toggleLoading(show: Boolean) {}
-    override fun getString(resId: Int): String = "Mock String"
-    override fun getString(resId: Int, vararg formatArgs: Any): String = "Mock String"
+    var lastStringResId: Int? = null
+    var lastStringFormatArgs: Array<out Any>? = null
+
+    override fun getString(resId: Int): String {
+        lastStringResId = resId
+        return "MockString($resId)"
+    }
+    override fun getString(resId: Int, vararg formatArgs: Any): String {
+        lastStringResId = resId
+        lastStringFormatArgs = formatArgs
+        return "MockString($resId, ${formatArgs.joinToString()})"
+    }
     override fun getContext(): Context = mock()
     override fun getContentResolver(): ContentResolver = mock()
     override fun dismissActiveDialog() {}
@@ -126,7 +169,10 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
     override fun setupReaderDiscoveryUI(
         onReaderEnabledChanged: (Boolean) -> Unit,
         onRefreshRequested: () -> Unit
-    ) {}
+    ) {
+        this.onReaderEnabledChanged = onReaderEnabledChanged
+        this.onRefreshRequestedReader = onRefreshRequested
+    }
 
     override fun updateDeviceList(
         connected: List<DeviceItem>,
@@ -134,11 +180,26 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         unknown: List<DeviceItem>,
         onDeviceSelected: (String, String) -> Unit,
         onDeviceLongClicked: (String, String) -> Unit
-    ) {}
+    ) {
+        lastConnectedList = connected
+        lastKnownList = known
+        lastUnknownList = unknown
+        this.onDeviceSelected = onDeviceSelected
+        this.onDeviceLongClicked = onDeviceLongClicked
+    }
 
-    override fun setReaderEnabledState(enabled: Boolean) {}
-    override fun setDiscoveryRefreshing(isRefreshing: Boolean) {}
-    override fun openDeviceManager(name: String, address: String) {}
+    override fun setReaderEnabledState(enabled: Boolean) {
+        lastReaderEnabledState = enabled
+    }
+
+    override fun setDiscoveryRefreshing(isRefreshing: Boolean) {
+        lastDiscoveryRefreshing = isRefreshing
+    }
+
+    override fun openDeviceManager(name: String, address: String) {
+        lastOpenDeviceManagerName = name
+        lastOpenDeviceManagerAddress = address
+    }
 
     override fun setupReaderManagementUI(
         onEditDeviceRequested: () -> Unit,
@@ -148,7 +209,15 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         onDisconnectRequested: () -> Unit,
         onConnectRequested: () -> Unit,
         onBacklogItemLongClicked: (BacklogItem) -> Unit
-    ) {}
+    ) {
+        this.onEditDeviceRequested = onEditDeviceRequested
+        this.onSyncTimeRequested = onSyncTimeRequested
+        this.onForgetDeviceRequested = onForgetDeviceRequested
+        this.onRefreshRequested = onRefreshRequested
+        this.onDisconnectRequested = onDisconnectRequested
+        this.onConnectRequested = onConnectRequested
+        this.onBacklogItemLongClicked = onBacklogItemLongClicked
+    }
 
     override fun updateReaderManagementHeader(
         deviceName: String,
@@ -156,11 +225,24 @@ class MockReaderInteractionProvider : ReaderInteractionProvider {
         batteryLevel: String?,
         deviceTime: String?,
         backlogCount: String
-    ) {}
+    ) {
+        lastHeaderDeviceName = deviceName
+        lastHeaderDeviceMac = deviceMac
+        lastHeaderBatteryLevel = batteryLevel
+        lastHeaderDeviceTime = deviceTime
+        lastHeaderBacklogCount = backlogCount
+    }
 
-    override fun updateReaderManagementBacklog(items: List<BacklogItem>) {}
+    override fun updateReaderManagementBacklog(items: List<BacklogItem>) {
+        lastBacklogItems = items
+    }
 
-    override fun updateReaderManagementStatus(isReady: Boolean, isConnecting: Boolean) {}
+    override fun updateReaderManagementStatus(isReady: Boolean, isConnecting: Boolean) {
+        lastIsReady = isReady
+        lastIsConnecting = isConnecting
+    }
 
-    override fun setManagementRefreshing(isRefreshing: Boolean) {}
+    override fun setManagementRefreshing(isRefreshing: Boolean) {
+        lastIsManagementRefreshing = isRefreshing
+    }
 }

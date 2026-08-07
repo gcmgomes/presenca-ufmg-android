@@ -51,6 +51,11 @@ abstract class BaseControllerTest {
 
     @After
     open fun tearDown() {
-        db.close()
+        if (::activity.isInitialized) {
+            activity.finish()
+        }
+        if (::db.isInitialized) {
+            db.close()
+        }
     }
 }
